@@ -1,0 +1,20 @@
+# Thư mục chứa file PDF & Audio gốc nặng (được bỏ qua khỏi Git)
+sources/*
+!sources/README.md
+
+# File nhị phân & media nặng
+*.pdf
+*.zip
+*.mp3
+*.wav
+*.m4a
+
+# Sản phẩm đóng gói 1 file & cấu hình môi trường
+dist/
+.env
+*.log
+
+# File hệ thống
+.DS_Store
+Thumbs.db
+desktop.ini
