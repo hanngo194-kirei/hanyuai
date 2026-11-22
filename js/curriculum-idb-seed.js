@@ -116,11 +116,12 @@ function registerVocabWord(w){
   if(existing){
     if(!existing.py&&w.py)existing.py=w.py;
     if(!existing.vi&&w.vi)existing.vi=w.vi;
+    if(!existing.pos&&w.pos)existing.pos=w.pos;
     if(!existing.ex&&w.ex){existing.ex=w.ex;existing.exPy=w.exPy||'';existing.exVi=w.exVi||'';}
     return existing.id;
   }
   const id=w.id||genId('w');
-  store.vocabBank[id]={id,zh:w.zh.trim(),py:(w.py||'').trim(),vi:(w.vi||'').trim(),ex:w.ex||'',exPy:w.exPy||'',exVi:w.exVi||'',canonicalKey:ck,createdAt:Date.now()};
+  store.vocabBank[id]={id,zh:w.zh.trim(),py:(w.py||'').trim(),vi:(w.vi||'').trim(),pos:(w.pos||'').trim(),ex:w.ex||'',exPy:w.exPy||'',exVi:w.exVi||'',canonicalKey:ck,createdAt:Date.now()};
   return id;
 }
 
@@ -137,20 +138,39 @@ function buildStandardCatalogSeed(){
   const now=1700000200000;
   const courses=[],lessons=[];
   const hnMeta={
-    1:{lvl:'Sơ cấp',desc:'Giáo trình Hán ngữ Quyển 1 (15 bài · 15 MP3). Đã nạp đầy đủ nội dung chi tiết cả 15 bài (Từ mới, Bài khóa, Ngữ pháp, Chữ Hán).'},
-    2:{lvl:'Sơ cấp',desc:'Giáo trình Hán ngữ Quyển 2 (Bài 16–30 · 15 MP3). Đã nạp sẵn danh mục 15 bài từ sách gốc.'},
-    3:{lvl:'Sơ trung cấp',desc:'Giáo trình Hán ngữ Quyển 3 (10 bài · 10 MP3). Đã nạp sẵn danh mục 10 bài từ sách gốc.'},
-    4:{lvl:'Trung cấp',desc:'Giáo trình Hán ngữ Quyển 4 (Bài 11–20 · 10 MP3). Đã nạp sẵn danh mục 10 bài từ sách gốc.'},
-    5:{lvl:'Trung cao cấp',desc:'Giáo trình Hán ngữ Quyển 5 (13 bài · 13 MP3). Đã nạp sẵn danh mục 13 bài từ sách gốc.'},
-    6:{lvl:'Cao cấp',desc:'Giáo trình Hán ngữ Quyển 6 (Bài 14–26 · 13 MP3). Đã nạp sẵn danh mục 13 bài từ sách gốc.'}
+    1:{lvl:'Sơ cấp',range:'15 bài',desc:'Giáo trình Hán ngữ Quyển 1 (15 bài · 15 MP3). Đã nạp đầy đủ nội dung chi tiết cả 15 bài (Từ mới, Bài khóa, Ngữ pháp, Chữ Hán).'},
+    2:{lvl:'Sơ cấp',range:'Bài 16–30',desc:'Giáo trình Hán ngữ Quyển 2 (Bài 16–30 · 15 MP3). Đã nạp sẵn danh mục 15 bài từ sách gốc.'},
+    3:{lvl:'Sơ trung cấp',range:'10 bài',desc:'Giáo trình Hán ngữ Quyển 3 (10 bài · 10 MP3). Đã nạp sẵn danh mục 10 bài từ sách gốc.'},
+    4:{lvl:'Trung cấp',range:'Bài 11–20',desc:'Giáo trình Hán ngữ Quyển 4 (Bài 11–20 · 10 MP3). Đã nạp sẵn danh mục 10 bài từ sách gốc.'},
+    5:{lvl:'Trung cao cấp',range:'13 bài',desc:'Giáo trình Hán ngữ Quyển 5 (13 bài · 13 MP3). Đã nạp sẵn danh mục 13 bài từ sách gốc.'},
+    6:{lvl:'Cao cấp',range:'Bài 14–26',desc:'Giáo trình Hán ngữ Quyển 6 (Bài 14–26 · 13 MP3). Đã nạp sẵn danh mục 13 bài từ sách gốc.'}
+  };
+  const hnFullByVol={
+    1:(typeof HN1_FULL_DATA!=='undefined'?HN1_FULL_DATA:null),
+    2:(typeof HN2_FULL_DATA!=='undefined'?HN2_FULL_DATA:null),
+    3:(typeof HN3_FULL_DATA!=='undefined'?HN3_FULL_DATA:null),
+    4:(typeof HN4_FULL_DATA!=='undefined'?HN4_FULL_DATA:null),
+    5:(typeof HN5_FULL_DATA!=='undefined'?HN5_FULL_DATA:null),
+    6:(typeof HN6_FULL_DATA!=='undefined'?HN6_FULL_DATA:null)
+  };
+  const hnExtByVol={
+    1:(typeof HN1_EXT_MAP!=='undefined'?HN1_EXT_MAP:null),
+    2:(typeof HN2_EXT_MAP!=='undefined'?HN2_EXT_MAP:null),
+    3:(typeof HN3_EXT_MAP!=='undefined'?HN3_EXT_MAP:null),
+    4:(typeof HN4_EXT_MAP!=='undefined'?HN4_EXT_MAP:null),
+    5:(typeof HN5_EXT_MAP!=='undefined'?HN5_EXT_MAP:null),
+    6:(typeof HN6_EXT_MAP!=='undefined'?HN6_EXT_MAP:null)
   };
   [1,2,3,4,5,6].forEach(num=>{
     const cId=`course_hn_${num}`,order=[],list=HN_CATALOG_TITLES[num]||[];
+    const volData=hnFullByVol[num],volExt=hnExtByVol[num];
+    let loadedCnt=0;
     list.forEach(([b,zhTitle,pyTitle,viTitle])=>{
       const lId=`lesson_hn${num}_b${b}`;
       order.push(lId);
       const mp3=`Quyển ${num} Bài ${b}.mp3`;
-      const full=(num===1&&HN1_FULL_DATA[b])?HN1_FULL_DATA[b]:null;
+      const full=(volData&&volData[b])?volData[b]:null;
+      if(full)loadedCnt++;
       const wordIds=[];
       if(full&&full.words){
         full.words.forEach(w=>{const wid=registerVocabWord(w);if(wid&&!wordIds.includes(wid))wordIds.push(wid);});
@@ -163,7 +183,7 @@ function buildStandardCatalogSeed(){
         status:full?'published':'draft',
         sourceRef:{fileName:`GT Hán Ngữ ${num}.pdf`,fileHash:'',pageRange:full?full.pages:'—'},
         audioTracks:[makeAudioTrack(mp3,'dialog',`Audio bài khóa (${mp3})`)],
-        workbook:null,optionalExtensions:(num===1&&HN1_EXT_MAP[b])?HN1_EXT_MAP[b]:{hackNaoIds:[],mindMapRootChars:[]},
+        workbook:null,optionalExtensions:(volExt&&volExt[b])?volExt[b]:{hackNaoIds:[],mindMapRootChars:[]},
         originalContent:'',supplementalContent:'',
         wordIds,
         sentences:dlg.map(d=>({zh:d.zh,py:d.py,vi:d.vi})),
@@ -173,10 +193,15 @@ function buildStandardCatalogSeed(){
         grammarQuiz:[],orderBank:[],chars,updatedAt:now
       });
     });
+    const desc=(loadedCnt>0&&loadedCnt===list.length)
+      ?`Giáo trình Hán ngữ Quyển ${num} (${hnMeta[num].range} · ${list.length} MP3). Đã nạp đầy đủ nội dung chi tiết cả ${list.length} bài (Từ mới, Bài khóa, Ngữ pháp, Chữ Hán).`
+      :(loadedCnt>0
+        ?`Giáo trình Hán ngữ Quyển ${num} (${hnMeta[num].range} · ${list.length} MP3). Đã nạp nội dung chi tiết ${loadedCnt}/${list.length} bài.`
+        :hnMeta[num].desc);
     courses.push({
       id:cId,title:`Giáo trình Hán ngữ ${num}`,group:'hanngu',systemTrack:'hanngu',
       versionLabel:`Quyển ${num} (${order.length} bài · ${order.length} MP3)`,
-      source:`GT Hán Ngữ ${num}.pdf + MP3 Q${num}`,level:hnMeta[num].lvl,desc:hnMeta[num].desc,
+      source:`GT Hán Ngữ ${num}.pdf + MP3 Q${num}`,level:hnMeta[num].lvl,desc,
       status:'published',lessonOrder:order,createdAt:now,updatedAt:now
     });
   });

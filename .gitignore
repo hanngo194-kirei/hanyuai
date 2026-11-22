@@ -1,6 +1,7 @@
 # Thư mục chứa file PDF & Audio gốc nặng (được bỏ qua khỏi Git)
 sources/*
 !sources/README.md
+data hanyu/
 
 # File nhị phân & media nặng
 *.pdf

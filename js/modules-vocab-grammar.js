@@ -584,15 +584,23 @@ const gramCtrl=(function(){
   let curGp='ye',qi=0,correct=0,wrong=0,answered=false,recorded=false,wrongList=[];
 
   function renderPoint(key){
+    const g=GRAMMAR_POINTS[key];
+    if(!g)return;
     curGp=key;
     $$('#gp-tabs button').forEach(b=>b.classList.toggle('on',b.dataset.gp===key));
-    const g=GRAMMAR_POINTS[key];
+    const han=g.han||'语法';
+    const py=g.py||'';
+    const desc=g.desc||g.explain||'';
+    const structHtml=g.struct?`<div class="struct"><b><svg class="ic"><use href="#i-layers"/></svg>Cấu trúc:</b><span>${escHtml(g.struct)}</span></div>`:'';
+    const exList=Array.isArray(g.examples)?g.examples:(g.ex?[{zh:g.ex,hl:'',py:'',vi:'',ic:'book'}]:[]);
+    const exHtml=exList.length?`<h3 style="border-left:4px solid var(--accent);padding-left:8px">Ví dụ</h3>
+      <div>${exList.map(ex=>`<div class="ex"><span class="ib"><svg class="ic"><use href="#i-${escHtml(ex.ic||'book')}"/></svg></span><div><div class="zh">${ex.hl?highlightText(escHtml(ex.zh||''),escHtml(ex.hl)):escHtml(ex.zh||'')}</div>${ex.py?`<small>${escHtml(ex.py)}</small>`:''}${ex.vi?`<small>${escHtml(ex.vi)}</small>`:''}</div><button type="button" class="playbtn" data-say="${escHtml(ex.zh||'')}" aria-label="Nghe ví dụ"><svg class="ic"><use href="#i-vol"/></svg></button></div>`).join('')}</div>`:'';
+    const noteHtml=g.note?`<div class="note"><svg class="ic"><use href="#i-bulb"/></svg><div><b>Lưu ý:</b> ${escHtml(g.note)}</div></div>`:'';
     $('#gp-card').innerHTML=`
-      <div class="gram"><div class="big">${g.han}<small>${g.py}</small></div><div><h3>${g.title}</h3><p class="muted small" style="margin-top:4px">${g.desc}</p></div></div>
-      <div class="struct"><b><svg class="ic"><use href="#i-layers"/></svg>Cấu trúc:</b><span>${g.struct}</span></div>
-      <h3 style="border-left:4px solid var(--accent);padding-left:8px">Ví dụ</h3>
-      <div>${g.examples.map(ex=>`<div class="ex"><span class="ib"><svg class="ic"><use href="#i-${ex.ic}"/></svg></span><div><div class="zh">${highlightText(ex.zh,ex.hl)}</div><small>${ex.py}</small><small>${ex.vi}</small></div><button type="button" class="playbtn" data-say="${ex.zh}" aria-label="Nghe ví dụ"><svg class="ic"><use href="#i-vol"/></svg></button></div>`).join('')}</div>
-      <div class="note"><svg class="ic"><use href="#i-bulb"/></svg><div><b>Lưu ý:</b> ${g.note}</div></div>`;
+      <div class="gram"><div class="big">${escHtml(han)}<small>${escHtml(py)}</small></div><div><h3>${escHtml(g.title||'')}</h3>${desc?`<p class="muted small" style="margin-top:4px">${escHtml(desc)}</p>`:''}</div></div>
+      ${structHtml}
+      ${exHtml}
+      ${noteHtml}`;
   }
 
   function renderQuiz(){
@@ -645,7 +653,16 @@ const gramCtrl=(function(){
   $('#gq-next').onclick=()=>{qi+=1;renderQuiz();};
   $('#gq-retry').onclick=()=>{if(answered&&wrong>0)wrong--;renderQuiz();};
 
-  return {init(){renderPoint('ye');renderQuiz();}};
+  return {init(){
+    const ks=Object.keys(GRAMMAR_POINTS||{});
+    if(ks.length)renderPoint(ks[0]);
+    if(GRAMMAR_QUIZ&&GRAMMAR_QUIZ.length){renderQuiz();}
+    else{
+      const wrap=$('#gq-wrap'),sum=$('#gq-summary');
+      if(wrap)wrap.classList.add('hide');
+      if(sum)sum.classList.add('hide');
+    }
+  }};
 })();
 
 function updateLessonExerciseStatus(){

@@ -39,5 +39,6 @@
 ## 4. Quy ước thư mục & Quy trình làm việc
 - `data gemini/` là bản lưu trữ gốc từ Gemini Web — **tuyệt đối không sửa hoặc xóa**.
 - File chạy chính hiện tại là `index.html`. Kế hoạch tách mô-đun ("2 trong 1": tách `css/`, `js/`, `data/*.js` + script gộp 1 file `dist/hanyu-ai.html`) xem tại `docs/ARCHITECTURE.md`.
-- File PDF & Audio gốc đặt tại `sources/` (đã có trong `.gitignore`); ảnh demo giao diện đặt tại `docs/references/`.
+- File PDF & Audio gốc hiện đặt tại `data hanyu/` (và `sources/`, cả hai đều nằm trong `.gitignore`); ảnh demo giao diện đặt tại `docs/references/`.
+- **Quy ước chọn model cho Swarm Worker (tiết kiệm quota):** Ưu tiên dòng Gemini — dùng `gemini-4-neon-medium` cho tác vụ trích xuất PDF scan chữ Hán/Pinyin hoặc logic phức tạp nhiều tệp; dùng `gemini-4-hydrogen-medium` cho tác vụ cấu trúc đơn giản/UI; chỉ dùng dòng Claude 5.5 khi người dùng chủ động yêu cầu gợi ý thiết kế/giao diện.
 - **Trước khi bắt tay làm việc mới:** Đọc `docs/TASKS.md` để nắm mốc hiện tại; làm xong việc nào nhớ cập nhật dấu `[x]` vào `docs/TASKS.md`.
