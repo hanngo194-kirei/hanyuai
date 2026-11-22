@@ -19,8 +19,8 @@
 ---
 
 ## Milestone 2 — Nạp nội dung Giáo trình Hán ngữ Quyển 2–6 (61 bài còn lại)
-*(Cần chép từng file `GT Hán Ngữ 2..6.pdf` vào `sources/` trước khi làm; lưu ý kiểm tra ảnh trang vì PDF scan có lớp OCR lỗi)*
-- [ ] Quyển 2 (Bài 16–30, từ `sources/GT Hán Ngữ 2 .pdf` → `data/hn2-full.js`)
+*(Đọc trực tiếp ảnh trang từng file `GT Hán Ngữ 2..6.pdf` trong `data hanyu/` hoặc `sources/` vì PDF scan có lớp OCR lỗi)*
+- [x] Quyển 2 (Bài 16–30, từ `GT Hán Ngữ 2 .pdf` → `data/hn2-full.js`; đã xử lý lỗi in trùng trang tập viết p.171 của Bài 26)
 - [ ] Quyển 3 (Bài 1–10, từ `sources/GT Hán Ngữ 3.pdf` → `data/hn3-full.js`)
 - [ ] Quyển 4 (Bài 11–20, từ `sources/GT Hán Ngữ 4.pdf` → `data/hn4-full.js`)
 - [ ] Quyển 5 (Bài 1–13, từ `sources/GT Hán Ngữ 5.pdf` → `data/hn5-full.js`)

@@ -78,9 +78,10 @@ kirei hanyu/
 ├── data/
 │   ├── hn-catalog.js                 #   1 dòng (~7 KB)   — HN_CATALOG_TITLES (76 tiêu đề Hán ngữ Q1–Q6)
 │   ├── hn1-full.js                   #   1 dòng (~50 KB)  — HN1_FULL_DATA (15 bài chi tiết Quyển 1)
+│   ├── hn2-full.js                   #   HN2_FULL_DATA (15 bài chi tiết Quyển 2: Bài 16–30)
 │   ├── hsk-audio-manifest.js         #   1 dòng (~6 KB)   — HSK_AUDIO_MANIFEST (407 track audio NEW HSK 3.0)
 │   ├── hn1-ext.js                    #   1 dòng (~3 KB)   — HN1_EXT_MAP (liên kết bổ trợ Hack não & Sơ đồ tư duy Q1)
-│   ├── hn2-full.js ... hn6-full.js   # (Sẽ nạp dần ở Milestone 2)
+│   ├── hn3-full.js ... hn6-full.js   # (Sẽ nạp dần ở Milestone 2)
 │   └── hsk1.js ... hsk3.js           # (Sẽ nạp dần ở Milestone 3)
 ├── js/
 │   ├── core-storage.js               # 374 dòng (~22 KB)  — Dữ liệu mẫu, tiện ích, router, click chung, localStorage SCHEMA_VERSION=10, SRS, tìm kiếm & cài đặt
@@ -99,7 +100,7 @@ kirei hanyu/
 1. **CSS (giữ nguyên thứ tự cascade của Bản 20):** `css/modules.css` (trước `<title>`, base64 icons, Google Fonts) → `css/tokens-core.css` (sau Google Fonts).
 2. **DOM trước `<script>`:** `#hanyu-modal` và `#hanyu-modal-box` nằm ở cuối `<body>` (L806–L808), **trước toàn bộ thẻ `<script>`**.
 3. **Script (đúng thứ tự thực thi):**
-   `data/hn-catalog.js` → `data/hn1-full.js` → `data/hsk-audio-manifest.js` → `data/hn1-ext.js` → `js/core-storage.js` → `js/modules-vocab-grammar.js` → `js/modules-listen-speak-write.js` → `js/curriculum-idb-seed.js` → `js/views-reader.js` → `js/editor-import-boot.js`.
+   `data/hn-catalog.js` → `data/hn1-full.js` → `data/hn2-full.js` → `data/hsk-audio-manifest.js` → `data/hn1-ext.js` → `js/core-storage.js` → `js/modules-vocab-grammar.js` → `js/modules-listen-speak-write.js` → `js/curriculum-idb-seed.js` → `js/views-reader.js` → `js/editor-import-boot.js`.
 
 ### Tại sao dùng file dữ liệu `.js` thay vì `.json`?
 - Mở file `index.html` trực tiếp trên máy tính (giao thức `file://`) sẽ bị trình duyệt chặn `fetch('data/xxx.json')` vì chính sách bảo mật CORS.

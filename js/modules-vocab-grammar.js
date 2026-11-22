@@ -98,6 +98,7 @@ function makeDeck(root,opts){
 }
 
 const vocab=makeDeck($('#vocab'),{listFn:()=>WORDS,sessionQueue:false,onMutate(){vocab.render();renderReviewDash();renderWordbook();}});
+window.renderFlash=()=>{vocab.reset();try{renderReviewDash();renderWordbook();}catch(_){}};
 
 /* ---------- Màn 2: Ôn tập theo lịch ---------- */
 let rmode='today',rCustomIds=null,inReviewSession=false;
@@ -582,6 +583,7 @@ const exCtrl=(function(){
 /* ---------- Bộ điều khiển Ngữ pháp (#grammar) ---------- */
 const gramCtrl=(function(){
   let curGp='ye',qi=0,correct=0,wrong=0,answered=false,recorded=false,wrongList=[];
+  const esc=s=>(typeof escHtml==='function')?escHtml(s):String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
   function renderPoint(key){
     const g=GRAMMAR_POINTS[key];
@@ -591,13 +593,13 @@ const gramCtrl=(function(){
     const han=g.han||'语法';
     const py=g.py||'';
     const desc=g.desc||g.explain||'';
-    const structHtml=g.struct?`<div class="struct"><b><svg class="ic"><use href="#i-layers"/></svg>Cấu trúc:</b><span>${escHtml(g.struct)}</span></div>`:'';
+    const structHtml=g.struct?`<div class="struct"><b><svg class="ic"><use href="#i-layers"/></svg>Cấu trúc:</b><span>${esc(g.struct)}</span></div>`:'';
     const exList=Array.isArray(g.examples)?g.examples:(g.ex?[{zh:g.ex,hl:'',py:'',vi:'',ic:'book'}]:[]);
     const exHtml=exList.length?`<h3 style="border-left:4px solid var(--accent);padding-left:8px">Ví dụ</h3>
-      <div>${exList.map(ex=>`<div class="ex"><span class="ib"><svg class="ic"><use href="#i-${escHtml(ex.ic||'book')}"/></svg></span><div><div class="zh">${ex.hl?highlightText(escHtml(ex.zh||''),escHtml(ex.hl)):escHtml(ex.zh||'')}</div>${ex.py?`<small>${escHtml(ex.py)}</small>`:''}${ex.vi?`<small>${escHtml(ex.vi)}</small>`:''}</div><button type="button" class="playbtn" data-say="${escHtml(ex.zh||'')}" aria-label="Nghe ví dụ"><svg class="ic"><use href="#i-vol"/></svg></button></div>`).join('')}</div>`:'';
-    const noteHtml=g.note?`<div class="note"><svg class="ic"><use href="#i-bulb"/></svg><div><b>Lưu ý:</b> ${escHtml(g.note)}</div></div>`:'';
+      <div>${exList.map(ex=>`<div class="ex"><span class="ib"><svg class="ic"><use href="#i-${esc(ex.ic||'book')}"/></svg></span><div><div class="zh">${ex.hl?highlightText(esc(ex.zh||''),esc(ex.hl)):esc(ex.zh||'')}</div>${ex.py?`<small>${esc(ex.py)}</small>`:''}${ex.vi?`<small>${esc(ex.vi)}</small>`:''}</div><button type="button" class="playbtn" data-say="${esc(ex.zh||'')}" aria-label="Nghe ví dụ"><svg class="ic"><use href="#i-vol"/></svg></button></div>`).join('')}</div>`:'';
+    const noteHtml=g.note?`<div class="note"><svg class="ic"><use href="#i-bulb"/></svg><div><b>Lưu ý:</b> ${esc(g.note)}</div></div>`:'';
     $('#gp-card').innerHTML=`
-      <div class="gram"><div class="big">${escHtml(han)}<small>${escHtml(py)}</small></div><div><h3>${escHtml(g.title||'')}</h3>${desc?`<p class="muted small" style="margin-top:4px">${escHtml(desc)}</p>`:''}</div></div>
+      <div class="gram"><div class="big">${esc(han)}<small>${esc(py)}</small></div><div><h3>${esc(g.title||'')}</h3>${desc?`<p class="muted small" style="margin-top:4px">${esc(desc)}</p>`:''}</div></div>
       ${structHtml}
       ${exHtml}
       ${noteHtml}`;
@@ -653,7 +655,8 @@ const gramCtrl=(function(){
   $('#gq-next').onclick=()=>{qi+=1;renderQuiz();};
   $('#gq-retry').onclick=()=>{if(answered&&wrong>0)wrong--;renderQuiz();};
 
-  return {init(){
+  window.renderGrammarPoint=renderPoint;
+  return {renderPoint,init(){
     const ks=Object.keys(GRAMMAR_POINTS||{});
     if(ks.length)renderPoint(ks[0]);
     if(GRAMMAR_QUIZ&&GRAMMAR_QUIZ.length){renderQuiz();}
