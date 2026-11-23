@@ -1046,8 +1046,18 @@ function recordLearningEvent(ev){
   else if(rec.type==='record'||rec.type==='assess')d.speak=(d.speak||0)+1;
   else if(rec.type==='writing')d.write=(d.write||0)+1;
   if(rec.meta&&Number.isFinite(rec.meta.correct))d.correct=(d.correct||0)+rec.meta.correct;
+  if(typeof markLessonSectionDone==='function'&&store.activeLessonId){
+    const mapType={exercise:'exercise',grammar:'grammar',listen:'listen',dictation:'listen',record:'speak',assess:'speak',writing:'writing'};
+    const secKey=mapType[rec.type];
+    if(secKey){
+      markLessonSectionDone(store.activeLessonId,secKey,true);
+    }else if((rec.type==='vocab'||rec.type==='srs')&&typeof WORDS!=='undefined'&&WORDS.length&&WORDS.every(w=>store.words&&store.words[w.id]&&store.words[w.id].status!=='new')){
+      markLessonSectionDone(store.activeLessonId,'vocab',true);
+    }
+  }
   saveStore(store);
   refreshDashboards();
+  if(curView==='lesson'&&typeof renderLessonDetail==='function')renderLessonDetail();
 }
 
 function computeStreak(now=Date.now()){
@@ -1247,7 +1257,9 @@ function refreshDashboards(){
   if(st.dueWords>0)recs.push({t:'Ôn tập từ vựng đến hạn',d:`Có ${st.dueWords} từ đến hạn theo lịch SRS`,go:'review',btn:'Ôn ngay'});
   if(store.listening.wrongIds.length)recs.push({t:'Luyện lại câu nghe sai',d:`${store.listening.wrongIds.length} câu nghe cần củng cố`,go:'listen',btn:'Mở Nghe'});
   if(st.skills.write.retry.length)recs.push({t:'Chữ Hán cần luyện viết thêm',d:st.skills.write.retry.map(c=>c.ch).join(' · '),go:'writing',btn:'Luyện viết'});
-  if(!recs.length)recs.push({t:'Tiếp tục Bài 4 · Sở thích',d:'Học từ mới, làm bài tập hoặc luyện nghe/viết để tích lũy tiến độ',go:'lesson',btn:'Vào học'});
+  const _actL=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
+  const _actTitle=_actL?`Tiếp tục ${_actL.code||''}${_actL.titleVi?' · '+_actL.titleVi:''}`:'Tiếp tục bài học hôm nay';
+  if(!recs.length)recs.push({t:_actTitle,d:'Học từ mới, làm bài tập hoặc luyện nghe/viết để tích lũy tiến độ',go:'lesson',btn:'Vào học'});
   const recEl=$('#me-recs');
   if(recEl)recEl.innerHTML=recs.map(r=>`<div class="rec-item"><div class="mid"><b>${r.t}</b><span>${r.d}</span></div><button type="button" class="chip on" data-go="${r.go}">${r.btn}</button></div>`).join('');
 
@@ -1299,6 +1311,12 @@ $('#me-goal-save').onclick=()=>{
   g.listen=v('#g-lis',1,20,1);g.speak=v('#g-spk',1,30,3);g.write=v('#g-wri',1,30,2);
   saveStore(store);$('#me-goal-form').classList.add('hide');refreshDashboards();toast('Đã lưu mục tiêu hằng ngày');
 };
-$('#themebtn').onclick=()=>{const r=document.documentElement,dark=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;r.dataset.theme=dark?'light':'dark'};
+function syncSidebarThemeLabel(){
+  const r=document.documentElement;
+  const isDark=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;
+  const sp=$('#sb-theme-btn span');
+  if(sp)sp.textContent=isDark?'Giao diện Sáng':'Giao diện Tối';
+}
+$('#themebtn').onclick=()=>{const r=document.documentElement,dark=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;r.dataset.theme=dark?'light':'dark';syncSidebarThemeLabel();};
 
 

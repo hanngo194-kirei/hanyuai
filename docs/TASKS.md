@@ -29,6 +29,15 @@
 
 ---
 
+## Nâng cấp Giao diện & Chức năng (4 Đợt · theo bộ 22 ảnh thiết kế)
+*(Thực hiện trước khi trích xuất Quyển 3–6 & NEW HSK 3.0)*
+- [x] **Đợt 1:** Brand Kit đỏ gốm – kem (`#8B2E2E`, `#C7463B`, `#E9967A`, `#F8E8DE`, `#FFF9F4`), Responsive Tablet/PC (`>= 900px` Sidebar 6 mục + 2 cột; Mobile 5 tab `Trang chủ · Học tập · Ôn luyện · Luyện nói · Cá nhân`), tile lối tắt pastel trên `#home`, và cấu trúc bài học 9 phần (5 bắt buộc để mở khóa `Qua bài tiếp theo →` + 4 mở rộng 2×2 tính vào 100%)
+- [ ] **Đợt 2:** Module *Chép bài khóa*, *Luyện dịch (Việt ↔ Trung)*, trình phát hội thoại & bố cục ghi chú 3 cột trên Tablet
+- [ ] **Đợt 3:** Nâng cấp các module học tập (*Phân biệt thanh điệu*, *Hướng dẫn sửa lỗi phát âm*, khung so sánh chữ Hán 2 ô, chồng thẻ SRS `Ôn tập hôm nay`)
+- [ ] **Đợt 4:** Hub lộ trình song song Hán ngữ 1–6 / HSK 1–6 & 4 tab thống kê `#me` (XP/Streak cục bộ)
+
+---
+
 ## Milestone 3 — Nạp NEW HSK 3.0 (Cấp 1–3 + SBT 1–2 + Đáp án + Lời thoại)
 *(Khớp với 407 track MP3 đã khai báo sẵn trong `HSK_AUDIO_MANIFEST`)*
 - [ ] Cấp 1 (15 bài + Đề thi thử `模拟测试` + SBT 1 + Đáp án)

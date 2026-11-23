@@ -59,16 +59,86 @@ function refreshModulesForLesson(){
 }
 
 /* ---------- Chi tiết bài học #lesson ---------- */
+const LS_REQ_KEYS=['vocab','grammar','listen','speak','exercise'];
+const LS_EXT_KEYS=['dialog','copy','writing','trans'];
+function getLessonSectionProgress(l){
+  const sec=(store.lessonSections&&l&&l.id&&store.lessonSections[l.id])||{};
+  const wList=((l&&l.wordIds)||[]).map(id=>store.vocabBank[id]).filter(Boolean);
+  const allWordsStudied=wList.length>0&&wList.every(w=>store.words&&store.words[w.id]&&store.words[w.id].status!=='new');
+  const doneMap={
+    vocab:!!(sec.vocab||allWordsStudied),
+    grammar:!!sec.grammar,
+    listen:!!sec.listen,
+    speak:!!sec.speak,
+    exercise:!!sec.exercise,
+    dialog:!!sec.dialog,
+    copy:!!sec.copy,
+    writing:!!sec.writing,
+    trans:!!sec.trans
+  };
+  const reqDone=LS_REQ_KEYS.filter(k=>doneMap[k]).length;
+  const extDone=LS_EXT_KEYS.filter(k=>doneMap[k]).length;
+  const totalDone=reqDone+extDone;
+  return {doneMap,reqDone,extDone,totalDone,pct:Math.round(totalDone*100/9)};
+}
+function markLessonSectionDone(lessonId,key,silent){
+  const lid=lessonId||store.activeLessonId;
+  if(!lid||!key)return;
+  if(!store.lessonSections||typeof store.lessonSections!=='object')store.lessonSections={};
+  const prev=store.lessonSections[lid]||{};
+  if(prev[key])return;
+  store.lessonSections[lid]=Object.assign({},prev,{[key]:Date.now()});
+  const l=LESSONS.find(x=>x.id===lid);
+  const prog=getLessonSectionProgress(l||{id:lid});
+  if(prog.reqDone>=LS_REQ_KEYS.length&&typeof markLessonCompleted==='function'){
+    markLessonCompleted(lid);
+  }else{
+    saveStore(store);
+  }
+  if(!silent&&curView==='lesson'&&typeof renderLessonDetail==='function'){
+    renderLessonDetail();
+  }
+}
+
 function renderLessonDetail(){
   const l=LESSONS.find(x=>x.id===store.activeLessonId);
   const hero=$('#ls-hero-txt');
   const dlCard=$('#ls-download-card');
+  const pill=$('#ls-status-pill'),tbBtn=$('#ls-read-tb-btn'),progBar=$('#ls-prog-bar'),progCnt=$('#ls-prog-cnt'),progNote=$('#ls-prog-note'),reqCnt=$('#ls-req-cnt'),extCnt=$('#ls-ext-cnt'),nextBtn=$('#ls-next-lesson-cta');
   if(!l){
     if(hero)hero.innerHTML='<span class="chipsm">Chưa có bài</span><h1>Chưa chọn bài học</h1><div class="py">Hãy tạo hoặc chọn bài học trong Thư viện</div>';
     if(dlCard){dlCard.classList.add('hide');dlCard.innerHTML='';}
+    if(pill){pill.className='ls-status-pill na';pill.textContent='Chưa chọn bài';}
+    if(tbBtn)tbBtn.classList.add('hide');
+    if(progBar)progBar.style.width='0%';
+    if(progCnt)progCnt.textContent='0/9 · 0%';
+    if(reqCnt){reqCnt.textContent='Đã hoàn thành: 0/5';reqCnt.classList.remove('done');}
+    if(extCnt)extCnt.textContent='0/4 · cộng vào 100%';
+    if(progNote)progNote.textContent='Hãy chọn một bài học trong Thư viện để bắt đầu.';
+    if(nextBtn)nextBtn.classList.add('hide');
     return;
   }
   const dlState=typeof getLessonDownloadState==='function'?getLessonDownloadState(l):(isLessonContentLoaded(l)?'downloaded':'unavailable');
+  const prog=getLessonSectionProgress(l);
+  if(pill){
+    if(dlState==='available'){pill.className='ls-status-pill dl';pill.textContent='⬇ Chưa tải';}
+    else if(dlState==='unavailable'){pill.className='ls-status-pill na';pill.textContent='Chưa có dữ liệu';}
+    else if(prog.reqDone>=5){pill.className='ls-status-pill ok';pill.textContent='✓ Đạt 5/5 bắt buộc';}
+    else{pill.className='ls-status-pill ok';pill.textContent=['lesson_hn1_b1','lesson_hn1_b2'].includes(l.id)?'✓ Đã tải sẵn':'✓ Đã tải';}
+  }
+  if(tbBtn){
+    if(l.courseId){tbBtn.classList.remove('hide');tbBtn.dataset.courseId=l.courseId;tbBtn.dataset.lessonId=l.id;}
+    else tbBtn.classList.add('hide');
+  }
+  if(progBar)progBar.style.width=prog.pct+'%';
+  if(progCnt)progCnt.textContent=`${prog.totalDone}/9 · ${prog.pct}%`;
+  if(reqCnt){reqCnt.textContent=`Đã hoàn thành: ${prog.reqDone}/5`;reqCnt.classList.toggle('done',prog.reqDone>=5);}
+  if(extCnt)extCnt.textContent=`${prog.extDone}/4 · cộng vào 100%`;
+  if(progNote){
+    if(dlState==='available')progNote.textContent='Bấm ⬇ Tải bài này để mở khóa đầy đủ 9 phần học của bài.';
+    else if(prog.reqDone>=5)progNote.textContent='Tuyệt vời! Bạn đã hoàn thành đủ 5/5 phần bắt buộc — nút Qua bài tiếp theo đã mở.';
+    else progNote.textContent=`Còn ${5-prog.reqDone} phần bắt buộc nữa để mở khóa nút Qua bài tiếp theo.`;
+  }
   if(hero){
     const badge=dlState==='available'?' · Chưa tải':(l.status==='draft'?' · Bản nháp':'');
     hero.innerHTML=`<span class="chipsm">${escHtml(l.code||'Bài học')}${badge}</span><h1>${escHtml(l.titleVi||'Chưa đặt tên')}</h1><div class="zh">${escHtml(l.titleZh||'')}</div><div class="py">${escHtml(l.py||'')}</div>${l.sourceRef&&l.sourceRef.fileName?`<div class="small muted" style="margin-top:4px">Nguồn: ${escHtml(l.sourceRef.fileName)} (${escHtml(l.sourceRef.pageRange||'—')})</div>`:''}`;
@@ -170,23 +240,41 @@ function renderLessonDetail(){
     }
   }
 
-  const setAct=(id,sub,hasData)=>{
+  const setAct=(id,sub,hasData,isDone,todoLabel)=>{
     const el=$('#'+id);if(!el)return;
     const sp=el.querySelector('.tx span');if(sp)sp.textContent=sub;
+    el.classList.toggle('done',!!isDone);
     const st=el.querySelector('.st');
     if(st){
       if(!hasData){st.className='st todo';st.innerHTML='<span class="ring"></span>Chưa có dữ liệu';}
-      else if(st.textContent.includes('Chưa có dữ liệu')){st.className='st todo';st.innerHTML='<span class="ring"></span>Chưa học';}
+      else if(isDone){st.className='st done';st.innerHTML='✓ Xong';}
+      else{st.className='st todo';st.innerHTML='<span class="ring"></span>'+(todoLabel||'Chưa học');}
     }
   };
-  setAct('ls-act-vocab', WORDS.length?`Học ${WORDS.length} từ vựng trong bài`:'Chưa có từ vựng (nhấn để bổ sung)', WORDS.length>0);
-  setAct('ls-act-ex', WORDS.length?`Bài tập với ${WORDS.length} từ vựng`:'Cần có ít nhất 2 từ vựng', WORDS.length>=2);
+  setAct('ls-act-vocab', WORDS.length?`Học ${WORDS.length} từ vựng trong bài`:'Chưa có từ vựng (nhấn để bổ sung)', WORDS.length>0, prog.doneMap.vocab, 'Chưa học');
+  setAct('ls-act-ex', WORDS.length?`Bài tập với ${WORDS.length} từ vựng`:'Cần có ít nhất 2 từ vựng', WORDS.length>=2, prog.doneMap.exercise, 'Chưa làm');
   const gCnt=Object.keys(GRAMMAR_POINTS||{}).length;
-  setAct('ls-act-gram', gCnt?`${gCnt} cấu trúc trọng tâm`:'Chưa có ngữ pháp', gCnt>0);
-  setAct('ls-act-dlg', LISTEN_DIALOG.length?`${LISTEN_DIALOG.length} câu hội thoại`:'Chưa có hội thoại', LISTEN_DIALOG.length>0);
-  setAct('ls-act-lis', (WORDS.length||LISTEN_DIALOG.length)?'Nghe chọn, chép chính tả, hội thoại':'Chưa có dữ liệu nghe', (WORDS.length+LISTEN_DIALOG.length)>0);
-  setAct('ls-act-spk', (WORDS.length||SENT.length)?'Luyện đọc từ và câu mẫu':'Chưa có câu luyện đọc', (WORDS.length+SENT.length)>0);
-  setAct('ls-act-wri', CHARS.length?`Tập viết ${CHARS.length} chữ Hán`:'Chưa có chữ Hán luyện viết', CHARS.length>0);
+  setAct('ls-act-gram', gCnt?`${gCnt} cấu trúc trọng tâm`:'Chưa có ngữ pháp', gCnt>0, prog.doneMap.grammar, 'Chưa học');
+  setAct('ls-act-dlg', LISTEN_DIALOG.length?`${LISTEN_DIALOG.length} câu hội thoại`:'Chưa có hội thoại', LISTEN_DIALOG.length>0, prog.doneMap.dialog, 'Chưa đọc');
+  setAct('ls-act-lis', (WORDS.length||LISTEN_DIALOG.length)?'Nghe chọn, chép chính tả, hội thoại':'Chưa có dữ liệu nghe', (WORDS.length+LISTEN_DIALOG.length)>0, prog.doneMap.listen, 'Chưa học');
+  setAct('ls-act-spk', (WORDS.length||SENT.length)?'Luyện đọc từ và câu mẫu':'Chưa có câu luyện đọc', (WORDS.length+SENT.length)>0, prog.doneMap.speak, 'Chưa học');
+  setAct('ls-act-wri', CHARS.length?`Tập viết ${CHARS.length} chữ Hán`:'Chưa có chữ Hán luyện viết', CHARS.length>0, prog.doneMap.writing, 'Chưa học');
+  const copySt=$('#ls-act-copy .st');if(copySt&&!prog.doneMap.copy){copySt.className='st todo';copySt.textContent='Sắp có';}
+  const transSt=$('#ls-act-trans .st');if(transSt&&!prog.doneMap.trans){transSt.className='st todo';transSt.textContent='Sắp có';}
+  if(nextBtn){
+    const list=(typeof getCourseLessons==='function'&&l.courseId)?getCourseLessons(l.courseId,true):[];
+    const idx=list.findIndex(x=>x.id===l.id);
+    const nextL=(idx>=0&&idx+1<list.length)?list[idx+1]:null;
+    if(nextL&&prog.reqDone>=5){
+      nextBtn.classList.remove('hide');
+      nextBtn.dataset.nextLesson=nextL.id;
+      const nextDl=typeof getLessonDownloadState==='function'?getLessonDownloadState(nextL):'downloaded';
+      nextBtn.textContent=`Qua bài tiếp theo (${nextL.code||nextL.titleVi||'Bài mới'}${nextDl==='available'?' · Tải ngay':''}) →`;
+    }else{
+      nextBtn.classList.add('hide');
+      delete nextBtn.dataset.nextLesson;
+    }
+  }
 }
 
 /* ---------- Lộ trình học ngang trên #home ---------- */

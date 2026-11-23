@@ -384,6 +384,12 @@ function onViewEntered(id){
   if(id==='pdf-import')refreshPdfCourseSelect();
   if(id==='home')renderRoadmap();
   if(id==='lesson')renderLessonDetail();
+  if(id==='dialog'&&typeof LISTEN_DIALOG!=='undefined'&&LISTEN_DIALOG.length&&typeof markLessonSectionDone==='function'){
+    markLessonSectionDone(store.activeLessonId,'dialog',true);
+  }
+  if(id==='grammar'&&(typeof GRAMMAR_QUIZ==='undefined'||!GRAMMAR_QUIZ||!GRAMMAR_QUIZ.length)&&typeof GRAMMAR_POINTS!=='undefined'&&Object.keys(GRAMMAR_POINTS||{}).length&&typeof markLessonSectionDone==='function'){
+    markLessonSectionDone(store.activeLessonId,'grammar',true);
+  }
 }
 
 document.addEventListener('click',async e=>{
@@ -682,6 +688,37 @@ $('#cd-add-lesson').onclick=()=>openLessonEditor(null,{courseId:curDetailCourseI
 $('#cd-import-pdf').onclick=()=>{refreshPdfCourseSelect();goView('pdf-import');};
 $('#cd-view-textbook').onclick=()=>{openTextbookReader(curDetailCourseId);};
 $('#ls-edit-btn').onclick=()=>{if(store.activeLessonId)openLessonEditor(store.activeLessonId);};
+const _sbLogo=$('#sb-logo-img'),_topLogo=$('.top .logo');
+if(_sbLogo&&_topLogo&&_topLogo.src)_sbLogo.src=_topLogo.src;
+if(typeof syncSidebarThemeLabel==='function')syncSidebarThemeLabel();
+if($('#sb-theme-btn'))$('#sb-theme-btn').onclick=()=>{const tb=$('#themebtn');if(tb)tb.click();if(typeof syncSidebarThemeLabel==='function')syncSidebarThemeLabel();};
+if($('#hdr-bell-btn'))$('#hdr-bell-btn').onclick=()=>{
+  const now=Date.now();
+  const dueCnt=Object.values(store.words||{}).filter(r=>r&&r.status!=='new'&&Number.isFinite(r.dueAt)&&r.dueAt<=now).length;
+  const actL=LESSONS.find(x=>x.id===store.activeLessonId);
+  const name=actL?`${actL.code||''}${actL.titleVi?' · '+actL.titleVi:''}`:'bài học hiện tại';
+  toast(dueCnt?`Hôm nay có ${dueCnt} từ SRS cần ôn · Đang học ${name}`:`Chưa có từ SRS đến hạn · Đang học ${name}`);
+};
+if($('#ls-read-tb-btn'))$('#ls-read-tb-btn').onclick=()=>{
+  const l=LESSONS.find(x=>x.id===store.activeLessonId);
+  openTextbookReader((l&&l.courseId)||store.activeCourseId||'course_hn_1',l?l.id:null);
+};
+if($('#ls-next-lesson-cta'))$('#ls-next-lesson-cta').onclick=async()=>{
+  const btn=$('#ls-next-lesson-cta');
+  const nextLid=btn&&btn.dataset.nextLesson;
+  if(!nextLid)return;
+  const nextL=LESSONS.find(x=>x.id===nextLid);
+  if(!nextL)return;
+  const dlState=typeof getLessonDownloadState==='function'?getLessonDownloadState(nextL):'downloaded';
+  if(dlState==='available'&&typeof downloadLessonById==='function'){
+    btn.disabled=true;btn.textContent='Đang tải bài tiếp theo...';
+    try{await downloadLessonById(nextLid);}finally{btn.disabled=false;}
+  }
+  store.activeCourseId=nextL.courseId||store.activeCourseId;
+  store.activeLessonId=nextL.id;
+  saveStore(store);applyActiveLesson();renderRoadmap();renderLessonDetail();
+  try{window.scrollTo(0,0);}catch(_){}
+};
 
 $('#q').addEventListener('input',()=>renderLibrary());
 $('#filters').addEventListener('click',()=>setTimeout(renderLibrary,0));

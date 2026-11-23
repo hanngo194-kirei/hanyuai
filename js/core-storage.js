@@ -77,6 +77,8 @@ function route(forced){
   curView=id;
   $$('.view').forEach(v=>v.classList.toggle('on',v.dataset.view===id));
   $$('.tabs a').forEach(a=>{const on=a.dataset.tab===TAB[id];a.classList.toggle('on',on);on?a.setAttribute('aria-current','page'):a.removeAttribute('aria-current')});
+  const sbTab=(id==='wordbook')?'wordbook':TAB[id];
+  $$('.sidebar [data-tab]').forEach(a=>{const on=a.dataset.tab===sbTab;a.classList.toggle('on',on);on?a.setAttribute('aria-current','page'):a.removeAttribute('aria-current')});
   document.body.classList.toggle('sub',['lesson','vocab','exercise','grammar','dialog','listen','writing','wordbook','course-detail','lesson-editor','pdf-import','textbook-reader'].includes(id));
   try{window.scrollTo(0,0);}catch(_){}
   if(id!=='listen'&&window._stopListen)window._stopListen();
@@ -135,7 +137,8 @@ function defaultStore(){
     daily:{},
     events:[],
     downloadedLessonIds:['lesson_hn1_b1','lesson_hn1_b2'],
-    lazyPrunedV1:false
+    lazyPrunedV1:false,
+    lessonSections:{}
   };
 }
 function sanitizeWordRec(r){
@@ -277,6 +280,9 @@ function migrateStore(raw){
     base.downloadedLessonIds=[...new Set(['lesson_hn1_b1','lesson_hn1_b2',...raw.downloadedLessonIds.filter(x=>typeof x==='string'&&x)])];
   }
   if(typeof raw.lazyPrunedV1==='boolean')base.lazyPrunedV1=raw.lazyPrunedV1;
+  if(raw.lessonSections&&typeof raw.lessonSections==='object'&&!Array.isArray(raw.lessonSections)){
+    base.lessonSections=raw.lessonSections;
+  }
   if(Array.isArray(raw.events)){
     base.events=raw.events.filter(e=>e&&typeof e==='object'&&e.id&&e.type).slice(-200);
   }
