@@ -77,8 +77,9 @@ kirei hanyu/
 │   └── tokens-core.css               # 399 dòng (~101 KB) — Style block 2 (Tokens đỏ gốm–kem, layout chính, Lộ trình SVG v18, Trình xem giáo trình); nạp SAU Google Fonts
 ├── data/
 │   ├── hn-catalog.js                 #   1 dòng (~7 KB)   — HN_CATALOG_TITLES (76 tiêu đề Hán ngữ Q1–Q6)
-│   ├── hn1-full.js                   #   1 dòng (~50 KB)  — HN1_FULL_DATA (15 bài chi tiết Quyển 1)
-│   ├── hn2-full.js                   #   HN2_FULL_DATA (15 bài chi tiết Quyển 2: Bài 16–30)
+│   ├── hn-starter.js                 #   Khởi đầu nhẹ     — DEFAULT_PRELOADED_LESSON_IDS, LESSON_PACK_MANIFEST, HN_STARTER_DATA (chỉ Bài 1–2 Hán ngữ 1)
+│   ├── hn1-full.js                   #   1 dòng (~50 KB)  — HN1_FULL_DATA (15 bài chi tiết Quyển 1 — nạp lười khi bấm Tải)
+│   ├── hn2-full.js                   #   HN2_FULL_DATA (15 bài chi tiết Quyển 2: Bài 16–30 — nạp lười khi bấm Tải)
 │   ├── hsk-audio-manifest.js         #   1 dòng (~6 KB)   — HSK_AUDIO_MANIFEST (407 track audio NEW HSK 3.0)
 │   ├── hn1-ext.js                    #   1 dòng (~3 KB)   — HN1_EXT_MAP (liên kết bổ trợ Hack não & Sơ đồ tư duy Q1)
 │   ├── hn3-full.js ... hn6-full.js   # (Sẽ nạp dần ở Milestone 2)
@@ -98,15 +99,16 @@ kirei hanyu/
 
 ### Thứ tự nạp bắt buộc trong `index.html`
 1. **CSS (giữ nguyên thứ tự cascade của Bản 20):** `css/modules.css` (trước `<title>`, base64 icons, Google Fonts) → `css/tokens-core.css` (sau Google Fonts).
-2. **DOM trước `<script>`:** `#hanyu-modal` và `#hanyu-modal-box` nằm ở cuối `<body>` (L806–L808), **trước toàn bộ thẻ `<script>`**.
+2. **DOM trước `<script>`:** `#hanyu-modal` và `#hanyu-modal-box` nằm ở cuối `<body>` (gần cuối file), **trước toàn bộ thẻ `<script>`**.
 3. **Script (đúng thứ tự thực thi):**
-   `data/hn-catalog.js` → `data/hn1-full.js` → `data/hn2-full.js` → `data/hsk-audio-manifest.js` → `data/hn1-ext.js` → `js/core-storage.js` → `js/modules-vocab-grammar.js` → `js/modules-listen-speak-write.js` → `js/curriculum-idb-seed.js` → `js/views-reader.js` → `js/editor-import-boot.js`.
+   `data/hn-catalog.js` → `data/hn-starter.js` → `data/hsk-audio-manifest.js` → `data/hn1-ext.js` → `js/core-storage.js` → `js/modules-vocab-grammar.js` → `js/modules-listen-speak-write.js` → `js/curriculum-idb-seed.js` → `js/views-reader.js` → `js/editor-import-boot.js`.
+   *(Các gói đầy đủ `data/*-full.js` chỉ được nạp lười khi người dùng bấm nút **⬇ Tải** bài học: trên `index.html` chèn `<script>` động, còn trong `dist/hanyu-ai.html` nhúng dạng `<script type="text/plain" data-lazy-pack="data/...">` ngay trước `</body>` để không tốn công parse khi khởi động).*
 
 ### Tại sao dùng file dữ liệu `.js` thay vì `.json`?
 - Mở file `index.html` trực tiếp trên máy tính (giao thức `file://`) sẽ bị trình duyệt chặn `fetch('data/xxx.json')` vì chính sách bảo mật CORS.
-- Khi lưu dữ liệu dưới dạng `data/*.js` (khai báo hằng số toàn cục như `const HN1_FULL_DATA = ...` và nạp qua `<script src="data/hn1-full.js"></script>`), người dùng **vẫn nháy đúp thẳng vào `index.html` để học ngay không cần cài server**, đồng thời mỗi quyển nằm ở 1 file gọn nhẹ riêng biệt để mở chat riêng trích xuất song song mà không đụng file code chính.
+- Khi lưu dữ liệu dưới dạng `data/*.js` (khai báo hằng số toàn cục như `const HN1_FULL_DATA = ...` và nạp qua `<script src="data/...js"></script>`), người dùng **vẫn nháy đúp thẳng vào `index.html` để học ngay không cần cài server**, đồng thời mỗi quyển nằm ở 1 file gọn nhẹ riêng biệt để mở chat riêng trích xuất song song mà không đụng file code chính.
 
 ### Cơ chế đóng gói 1 file (`scripts/build-single.ps1`)
 - Viết bằng **Windows PowerShell 5.1 thuần** (không cần Node.js hay Python), đọc/ghi chuẩn UTF-8 không BOM.
 - Chạy bằng lệnh: `powershell -ExecutionPolicy Bypass -File scripts/build-single.ps1`
-- Script đọc `index.html`, dùng `[regex]::Replace` với `MatchEvaluator` (tránh lỗi ký tự `$` trong JS như `$('#toast')`, `${...}`) để chỉ nhúng nội tuyến `<link rel="stylesheet" href="css/..."/>` thành `<style>...</style>` và `<script src="(data|js)/..."></script>` thành `<script>...</script>`, giữ nguyên link Google Fonts và icon base64, đồng thời tự động kiểm tra `#hanyu-modal` nằm trước `<script>` trước khi xuất `dist/hanyu-ai.html`.
+- Script đọc `index.html`, dùng `[regex]::Replace` với `MatchEvaluator` (tránh lỗi ký tự `$` trong JS như `$('#toast')`, `${...}`) để nhúng nội tuyến `<link rel="stylesheet" href="css/..."/>` thành `<style>...</style>` và `<script src="(data|js)/..."></script>` thành `<script>...</script>`, đồng thời nhúng các file `data/*-full.js` chưa nạp trực tiếp thành `<script type="text/plain" data-lazy-pack="data/...">` ở cuối `<body>`, giữ nguyên link Google Fonts và icon base64, và tự động kiểm tra `#hanyu-modal` nằm trước `<script>` đầu tiên trước khi xuất `dist/hanyu-ai.html`.

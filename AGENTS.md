@@ -35,6 +35,9 @@
 6. **Quy chuẩn PDF & Tiếng Trung:**
    - **Cảnh báo PDF scan:** 6 file `GT Hán Ngữ 1–6.pdf` là PDF scan có lớp text OCR bị lỗi ký tự — tuyệt đối không tin mù lớp text OCR lỗi; phải kiểm tra hình ảnh trang trực tiếp khi trích xuất.
    - Chữ Hán dùng **Giản thể chuẩn**, Pinyin có dấu thanh điệu chuẩn (bao gồm `ü`), nghĩa tiếng Việt rõ ràng, chính xác.
+7. **Tải bài theo yêu cầu (On-demand Download):**
+   - Mặc định chỉ tải sẵn nội dung chi tiết **Bài 1 & Bài 2 của Giáo trình Hán ngữ 1** qua `data/hn-starter.js`.
+   - Các gói dữ liệu đầy đủ (`data/hn1-full.js`, `data/hn2-full.js`, ...) vẫn giữ nguyên trong kho `data/` nhưng không nạp sẵn khi mở app (`index.html` nạp `<script>` động khi người dùng bấm nút **⬇ Tải**, còn bản 1 file `dist/hanyu-ai.html` nhúng dưới dạng `<script type="text/plain" data-lazy-pack="...">` và chỉ giải mã/nạp khi bấm Tải).
 
 ## 4. Quy ước thư mục & Quy trình làm việc
 - `data gemini/` là bản lưu trữ gốc từ Gemini Web — **tuyệt đối không sửa hoặc xóa**.

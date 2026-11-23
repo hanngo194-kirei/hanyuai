@@ -428,6 +428,36 @@ document.addEventListener('click',async e=>{
   // Open course detail from #learn
   const oc=e.target.closest('[data-open-course]');
   if(oc){renderCourseDetail(oc.dataset.openCourse);goView('course-detail');return;}
+  // Download on-demand lesson pack
+  const dlBtn=e.target.closest('[data-dl-lesson]');
+  if(dlBtn){
+    e.preventDefault();e.stopPropagation();
+    if(dlBtn.disabled)return;
+    const orig=dlBtn.innerHTML;
+    dlBtn.disabled=true;
+    dlBtn.textContent='Đang tải…';
+    try{await downloadLessonById(dlBtn.dataset.dlLesson);}
+    finally{if(document.body.contains(dlBtn)){dlBtn.disabled=false;dlBtn.innerHTML=orig;}}
+    return;
+  }
+  const dlStartBtn=e.target.closest('[data-dl-and-start]');
+  if(dlStartBtn){
+    e.preventDefault();e.stopPropagation();
+    if(dlStartBtn.dataset.loading==='1')return;
+    const lid=dlStartBtn.dataset.dlAndStart;
+    dlStartBtn.dataset.loading='1';
+    const sp=dlStartBtn.querySelector('span');
+    const origSp=sp?sp.textContent:'';
+    if(sp)sp.textContent='Đang tải bài học…';
+    let ok=false;
+    try{ok=await downloadLessonById(lid);}
+    finally{delete dlStartBtn.dataset.loading;if(!ok&&sp&&document.body.contains(sp))sp.textContent=origSp;}
+    if(ok){
+      if(store.activeLessonId!==lid){store.activeLessonId=lid;saveStore(store);applyActiveLesson();}
+      goView('vocab');
+    }
+    return;
+  }
   // Open lesson from course-detail
   const ol=e.target.closest('[data-open-lesson]');
   if(ol){

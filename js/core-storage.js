@@ -116,7 +116,11 @@ const STORAGE_KEY='hanyu_ai_data';
 const SCHEMA_VERSION=10;
 const DAY_MS=86400000;
 const RELEARN_MS=10*60*1000;
-const wordById=id=>WORDS.find(w=>w.id===id)||(typeof store!=='undefined'&&store.vocabBank&&store.vocabBank[id])||null;
+function wordById(id){
+  const w=WORDS.find(x=>x.id===id);
+  if(w)return w;
+  try{return (store&&store.vocabBank&&store.vocabBank[id])||null;}catch(_){return null;}
+}
 
 function defaultStore(){
   return {
@@ -129,7 +133,9 @@ function defaultStore(){
     speaking:{mode:'sentence',maxSec:15,items:{}},
     goals:{minutes:20,newWords:5,reviews:10,listen:1,speak:3,write:2},
     daily:{},
-    events:[]
+    events:[],
+    downloadedLessonIds:['lesson_hn1_b1','lesson_hn1_b2'],
+    lazyPrunedV1:false
   };
 }
 function sanitizeWordRec(r){
@@ -147,8 +153,10 @@ function sanitizeWordRec(r){
     history:Array.isArray(r.history)?r.history.slice(-30):[]
   };
 }
-function mapLegacyId(k){
-  if(wordById(k))return k;
+function mapLegacyId(k,bank){
+  if(WORDS.some(w=>w.id===k))return k;
+  if(bank&&bank[k])return k;
+  if(typeof k==='string'&&k.startsWith('w_'))return k;
   const idx=Number(k);
   if(Number.isInteger(idx)&&idx>=0&&idx<WORDS.length)return WORDS[idx].id;
   return null;
@@ -156,6 +164,7 @@ function mapLegacyId(k){
 function migrateStore(raw){
   const base=defaultStore();
   if(!raw||typeof raw!=='object')return base;
+  if(raw.vocabBank&&typeof raw.vocabBank==='object')base.vocabBank=raw.vocabBank;
   if(raw.settings&&typeof raw.settings==='object'){
     base.settings.showPinyin=raw.settings.showPinyin!==false;
     base.settings.showVi=raw.settings.showVi!==false;
@@ -165,14 +174,14 @@ function migrateStore(raw){
   }
   if(raw.words&&typeof raw.words==='object'){
     for(const [k,v] of Object.entries(raw.words)){
-      const id=mapLegacyId(k),rec=id?sanitizeWordRec(v):null;
+      const id=mapLegacyId(k,base.vocabBank),rec=id?sanitizeWordRec(v):null;
       if(id&&rec)base.words[id]=rec;
     }
   }
   if(raw.mem&&typeof raw.mem==='object'){
     const now=Date.now();
     for(const [k,v] of Object.entries(raw.mem)){
-      const id=mapLegacyId(k);if(!id||base.words[id])continue;
+      const id=mapLegacyId(k,base.vocabBank);if(!id||base.words[id])continue;
       const r=Number(v);
       base.words[id]={status:r===2?'review':'learning',reps:r>0?1:0,lapses:r===0?1:0,intervalDays:r===2?3:r===1?1:0,ease:2.5,
         dueAt:r===2?now+3*DAY_MS:r===1?now+DAY_MS:now+RELEARN_MS,lastReviewedAt:now,wrongCount:r===0?1:0,history:[{at:now,rating:r,mode:'zh',intervalDays:r===2?3:r===1?1:0}]};
@@ -180,8 +189,8 @@ function migrateStore(raw){
   }
   const difSrc=Array.isArray(raw.difficultIds)?raw.difficultIds:(Array.isArray(raw.hard)?raw.hard:[]);
   const favSrc=Array.isArray(raw.favoriteIds)?raw.favoriteIds:(Array.isArray(raw.star)?raw.star:[]);
-  base.difficultIds=[...new Set(difSrc.map(mapLegacyId).filter(Boolean))];
-  base.favoriteIds=[...new Set(favSrc.map(mapLegacyId).filter(Boolean))];
+  base.difficultIds=[...new Set(difSrc.map(x=>mapLegacyId(x,base.vocabBank)).filter(Boolean))];
+  base.favoriteIds=[...new Set(favSrc.map(x=>mapLegacyId(x,base.vocabBank)).filter(Boolean))];
   if(raw.exercises&&typeof raw.exercises==='object'){
     base.exercises.attempts=Number.isFinite(raw.exercises.attempts)?raw.exercises.attempts:0;
     base.exercises.bestPct=Number.isFinite(raw.exercises.bestPct)?raw.exercises.bestPct:0;
@@ -260,11 +269,14 @@ function migrateStore(raw){
       };
     }
   }
-  if(raw.vocabBank&&typeof raw.vocabBank==='object')base.vocabBank=raw.vocabBank;
   if(typeof raw.activeCourseId==='string'&&raw.activeCourseId)base.activeCourseId=raw.activeCourseId;
   if(typeof raw.activeLessonId==='string'&&raw.activeLessonId)base.activeLessonId=raw.activeLessonId;
   if(typeof raw.freeExplore==='boolean')base.freeExplore=raw.freeExplore;
   if(raw.courseProgress&&typeof raw.courseProgress==='object')base.courseProgress=raw.courseProgress;
+  if(Array.isArray(raw.downloadedLessonIds)){
+    base.downloadedLessonIds=[...new Set(['lesson_hn1_b1','lesson_hn1_b2',...raw.downloadedLessonIds.filter(x=>typeof x==='string'&&x)])];
+  }
+  if(typeof raw.lazyPrunedV1==='boolean')base.lazyPrunedV1=raw.lazyPrunedV1;
   if(Array.isArray(raw.events)){
     base.events=raw.events.filter(e=>e&&typeof e==='object'&&e.id&&e.type).slice(-200);
   }

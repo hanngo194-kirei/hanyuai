@@ -20,6 +20,7 @@
 
 ## Milestone 2 — Nạp nội dung Giáo trình Hán ngữ Quyển 2–6 (61 bài còn lại)
 *(Đọc trực tiếp ảnh trang từng file `GT Hán Ngữ 2..6.pdf` trong `data hanyu/` hoặc `sources/` vì PDF scan có lớp OCR lỗi)*
+- [x] Kiến trúc Tải bài theo yêu cầu (On-demand Lesson Download): mặc định chỉ tải sẵn Bài 1–2 Hán ngữ 1 (`data/hn-starter.js`), các bài còn lại bấm **⬇ Tải** ở từng bài để nạp lười từ `data/*-full.js` (hỗ trợ cả `file://`, HTTP cục bộ & bản 1 file `dist/hanyu-ai.html`, tự dọn gọn 1 lần các bài chưa học trên trình duyệt cũ và giữ nguyên 100% SRS)
 - [x] Quyển 2 (Bài 16–30, từ `GT Hán Ngữ 2 .pdf` → `data/hn2-full.js`; đã xử lý lỗi in trùng trang tập viết p.171 của Bài 26)
 - [ ] Quyển 3 (Bài 1–10, từ `sources/GT Hán Ngữ 3.pdf` → `data/hn3-full.js`)
 - [ ] Quyển 4 (Bài 11–20, từ `sources/GT Hán Ngữ 4.pdf` → `data/hn4-full.js`)

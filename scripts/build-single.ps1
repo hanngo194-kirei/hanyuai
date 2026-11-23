@@ -71,6 +71,32 @@ $jsEvaluator = [System.Text.RegularExpressions.MatchEvaluator]{
 }
 $html = [regex]::Replace($html, $jsPattern, $jsEvaluator, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
 
+# 2b. Nhung cac goi du lieu tai theo yeu cau (data/*-full.js chua duoc nhung truc tiep) duoi dang text/plain
+$lazyPacks = New-Object System.Collections.Generic.List[string]
+$dataDir = Join-Path $rootDir 'data'
+if (Test-Path -LiteralPath $dataDir) {
+  $packFiles = Get-ChildItem -LiteralPath $dataDir -Filter '*-full.js' -File | Sort-Object Name
+  $lazyHtmlBuilder = New-Object System.Text.StringBuilder
+  foreach ($pf in $packFiles) {
+    $relPack = ('data/' + $pf.Name)
+    if ($inlinedJs.Contains($relPack)) { continue }
+    $packContent = [System.IO.File]::ReadAllText($pf.FullName, $utf8NoBom)
+    if ($packContent -match '</script>') {
+      throw "File goi du lieu chua chuoi </script> khong hop le de nhung: $relPack"
+    }
+    $trimmedPack = $packContent.TrimEnd("`r", "`n")
+    [void]$lazyHtmlBuilder.Append("<script type=`"text/plain`" data-lazy-pack=`"$relPack`">`n$trimmedPack`n</script>`n")
+    $lazyPacks.Add($relPack)
+  }
+  if ($lazyHtmlBuilder.Length -gt 0) {
+    $bodyCloseIdx = $html.LastIndexOf('</body>', [System.StringComparison]::OrdinalIgnoreCase)
+    if ($bodyCloseIdx -lt 0) {
+      throw 'Loi cau truc: Khong tim thay the </body> de chen goi du lieu tai theo yeu cau.'
+    }
+    $html = $html.Insert($bodyCloseIdx, $lazyHtmlBuilder.ToString())
+  }
+}
+
 # 3. Kiem tra toan ven truoc khi ghi file
 $modalPos  = $html.IndexOf('id="hanyu-modal"', [System.StringComparison]::Ordinal)
 $modalBox  = $html.IndexOf('id="hanyu-modal-box"', [System.StringComparison]::Ordinal)
@@ -112,4 +138,5 @@ Write-Host ("Dau ra : {0}" -f $OutputHtml)
 Write-Host ("Kich co: {0:N0} bytes ({1} KB) | {2:N0} dong" -f $fi.Length, $sizeKB, $lineCount)
 Write-Host ("CSS nhung ({0}): {1}" -f $inlinedCss.Count, ($inlinedCss -join ', '))
 Write-Host ("JS/Data nhung ({0}): {1}" -f $inlinedJs.Count, ($inlinedJs -join ', '))
+Write-Host ("Lazy packs nhung ({0}): {1}" -f $lazyPacks.Count, ($(if ($lazyPacks.Count) { $lazyPacks -join ', ' } else { 'khong co' })))
 Write-Host ("Kiem tra #hanyu-modal truoc <script>: PASS (modal={0}, box={1} < script={2})" -f $modalPos, $modalBox, $scriptPos)

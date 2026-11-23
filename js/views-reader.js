@@ -62,12 +62,27 @@ function refreshModulesForLesson(){
 function renderLessonDetail(){
   const l=LESSONS.find(x=>x.id===store.activeLessonId);
   const hero=$('#ls-hero-txt');
+  const dlCard=$('#ls-download-card');
   if(!l){
     if(hero)hero.innerHTML='<span class="chipsm">Chưa có bài</span><h1>Chưa chọn bài học</h1><div class="py">Hãy tạo hoặc chọn bài học trong Thư viện</div>';
+    if(dlCard){dlCard.classList.add('hide');dlCard.innerHTML='';}
     return;
   }
+  const dlState=typeof getLessonDownloadState==='function'?getLessonDownloadState(l):(isLessonContentLoaded(l)?'downloaded':'unavailable');
   if(hero){
-    hero.innerHTML=`<span class="chipsm">${escHtml(l.code||'Bài học')}${l.status==='draft'?' · Bản nháp':''}</span><h1>${escHtml(l.titleVi||'Chưa đặt tên')}</h1><div class="zh">${escHtml(l.titleZh||'')}</div><div class="py">${escHtml(l.py||'')}</div>${l.sourceRef&&l.sourceRef.fileName?`<div class="small muted" style="margin-top:4px">Nguồn: ${escHtml(l.sourceRef.fileName)} (${escHtml(l.sourceRef.pageRange||'—')})</div>`:''}`;
+    const badge=dlState==='available'?' · Chưa tải':(l.status==='draft'?' · Bản nháp':'');
+    hero.innerHTML=`<span class="chipsm">${escHtml(l.code||'Bài học')}${badge}</span><h1>${escHtml(l.titleVi||'Chưa đặt tên')}</h1><div class="zh">${escHtml(l.titleZh||'')}</div><div class="py">${escHtml(l.py||'')}</div>${l.sourceRef&&l.sourceRef.fileName?`<div class="small muted" style="margin-top:4px">Nguồn: ${escHtml(l.sourceRef.fileName)} (${escHtml(l.sourceRef.pageRange||'—')})</div>`:''}`;
+  }
+  if(dlCard){
+    if(dlState==='available'){
+      dlCard.classList.remove('hide');
+      dlCard.style.background='var(--surface2)';
+      dlCard.style.borderColor='var(--accent)';
+      dlCard.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div style="flex:1;min-width:190px"><b>Bài học chưa được tải xuống</b><div class="small muted" style="margin-top:2px">Dữ liệu có sẵn trong ứng dụng (Từ mới, Bài khóa, Ngữ pháp, Chữ Hán). Tải bài này khi cần học để giữ ứng dụng luôn nhẹ.</div></div><button type="button" class="btn sm" data-dl-lesson="${escHtml(l.id)}" style="white-space:nowrap">⬇ Tải bài này</button></div>`;
+    }else{
+      dlCard.classList.add('hide');
+      dlCard.innerHTML='';
+    }
   }
   const gUl=$('#ls-goals');
   if(gUl){
@@ -93,8 +108,18 @@ function renderLessonDetail(){
   const subW=$('#ls-sub-wri');if(subW)subW.textContent=cList.length?`Luyện viết ${cList.length} chữ Hán`:'Luyện viết chữ Hán';
   const pvW=$('#ls-pv-wri');
   if(pvW)pvW.innerHTML=cList.slice(0,4).map(ch=>`<i>${escHtml(typeof ch==='string'?ch:(ch.ch||''))}</i>`).join('')+(cList.length>4?'<span class="small muted">…</span>':'');
-  const ctaSpan=$('#ls-start-cta span');
-  if(ctaSpan)ctaSpan.textContent=`Bắt đầu học ${(l.code||'bài').toLowerCase()}`;
+  const startCta=$('#ls-start-cta'),ctaSpan=$('#ls-start-cta span');
+  if(startCta){
+    if(dlState==='available'){
+      startCta.removeAttribute('data-go');
+      startCta.dataset.dlAndStart=l.id;
+      if(ctaSpan)ctaSpan.textContent=`Tải & bắt đầu học ${(l.code||'bài').toLowerCase()}`;
+    }else{
+      startCta.setAttribute('data-go','vocab');
+      delete startCta.dataset.dlAndStart;
+      if(ctaSpan)ctaSpan.textContent=`Bắt đầu học ${(l.code||'bài').toLowerCase()}`;
+    }
+  }
   // Audio đối chiếu (8D)
   const audioCard=$('#ls-audio-card');
   if(audioCard){
@@ -149,7 +174,10 @@ function renderLessonDetail(){
     const el=$('#'+id);if(!el)return;
     const sp=el.querySelector('.tx span');if(sp)sp.textContent=sub;
     const st=el.querySelector('.st');
-    if(st&&!hasData){st.className='st todo';st.innerHTML='<span class="ring"></span>Chưa có dữ liệu';}
+    if(st){
+      if(!hasData){st.className='st todo';st.innerHTML='<span class="ring"></span>Chưa có dữ liệu';}
+      else if(st.textContent.includes('Chưa có dữ liệu')){st.className='st todo';st.innerHTML='<span class="ring"></span>Chưa học';}
+    }
   };
   setAct('ls-act-vocab', WORDS.length?`Học ${WORDS.length} từ vựng trong bài`:'Chưa có từ vựng (nhấn để bổ sung)', WORDS.length>0);
   setAct('ls-act-ex', WORDS.length?`Bài tập với ${WORDS.length} từ vựng`:'Cần có ít nhất 2 từ vựng', WORDS.length>=2);
@@ -275,6 +303,9 @@ function renderLibrary(){
       const doneCnt=(prog.completedLessonIds||[]).filter(id=>ls.some(l=>l.id===id)).length;
       const pct=ls.length?Math.round(doneCnt/ls.length*100):0;
       const isAct=c.id===store.activeCourseId;
+      const pStats=typeof getCoursePackStats==='function'?getCoursePackStats(c.id):{total:ls.length,downloaded:0,available:0};
+      const hasPackCourse=pStats.available>0||(pStats.downloaded>0&&ls.some(l=>typeof hasPackForLesson==='function'&&hasPackForLesson(l.id)));
+      const metaPrefix=hasPackCourse?`Đã tải ${pStats.downloaded}/${pStats.total} bài · `:`${ls.length} bài · `;
       html+=`<div role="button" tabindex="0" class="course-card ${isAct?'active':''}" data-open-course="${escHtml(c.id)}">
         <span class="cover ${c.group==='hsk'?'c2':c.group==='personal'?'c4':c.group==='kouyu'?'c3':'c1'}"><span><big>${c.group==='hsk'?'HSK':c.group==='personal'?'Tôi':c.group==='kouyu'?'口语':'汉语'}</big>${escHtml(c.level||'Cơ bản')}</span></span>
         <div class="mid" style="flex:1;min-width:0">
@@ -283,7 +314,7 @@ function renderLibrary(){
             ${isAct?'<span class="course-badge ok">Đang học</span>':''}
             ${c.status==='draft'?'<span class="course-badge draft">Nháp</span>':''}
           </div>
-          <div class="meta">${ls.length} bài · ${escHtml(c.versionLabel||c.level||'Chưa gắn phiên bản')}</div>
+          <div class="meta">${metaPrefix}${escHtml(c.versionLabel||c.level||'Chưa gắn phiên bản')}</div>
           <div class="bar"><i style="width:${pct}%"></i></div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
@@ -352,14 +383,14 @@ function renderTextbookReader(){
   tocEl.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
       <b style="font-size:14px">Mục lục bài học (${ls.length} bài)</b>
-      <span class="small muted">● Đủ nội dung · ○ Khung bài · ✓ Đã học</span>
+      <span class="small muted">● Đã tải · ⬇ Chưa tải · ○ Chưa có sách · ✓ Đã học</span>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:6px">
       ${ls.map((l,i)=>{
-        const hasBody = (l.wordIds&&l.wordIds.length>0) || (l.dialog&&l.dialog.length>0);
+        const st = typeof getLessonDownloadState==='function' ? getLessonDownloadState(l) : ((l.wordIds&&l.wordIds.length>0)||(l.dialog&&l.dialog.length>0)?'downloaded':'unavailable');
         const isDone = doneSet.has(l.id);
         const isOn = l.id === curTextbookLessonId;
-        const mark = isDone ? '✓' : (hasBody ? '●' : '○');
+        const mark = isDone ? '✓' : (st==='downloaded' ? '●' : (st==='available' ? '⬇' : '○'));
         return `<button type="button" class="chip ${isOn?'on':''}" data-tb-lesson="${escHtml(l.id)}" style="font-size:12px;padding:6px 10px">${mark} ${escHtml(l.code||('Bài '+(i+1)))}</button>`;
       }).join('')}
     </div>
@@ -395,11 +426,22 @@ function renderTextbookReader(){
   `;
 
   if(!hasBody){
-    bodyHtml += `
-      <div class="card" style="margin-bottom:12px">
-        <p class="small muted" style="margin:0">Khung bài học đã được nạp sẵn với tiêu đề chuẩn và mã audio đối chiếu. Nội dung chi tiết (từ mới, bài khóa, ngữ pháp) của bài này chưa được trích xuất từ PDF.</p>
-      </div>
-    `;
+    const dlState = typeof getLessonDownloadState==='function' ? getLessonDownloadState(l) : 'unavailable';
+    if(dlState==='available'){
+      bodyHtml += `
+        <div class="card" style="margin-bottom:12px;background:var(--surface2);border-color:var(--accent)">
+          <b>Bài học chưa được tải xuống</b>
+          <p class="small muted" style="margin:4px 0 8px">Nội dung bài này có sẵn trong kho ứng dụng nhưng chưa tải xuống để giữ app nhẹ.</p>
+          <button type="button" class="btn sm" data-dl-lesson="${escHtml(l.id)}">⬇ Tải bài này</button>
+        </div>
+      `;
+    } else {
+      bodyHtml += `
+        <div class="card" style="margin-bottom:12px">
+          <p class="small muted" style="margin:0">Khung bài học đã được nạp sẵn với tiêu đề chuẩn và mã audio đối chiếu. Nội dung chi tiết (từ mới, bài khóa, ngữ pháp) của bài này chưa được trích xuất từ PDF.</p>
+        </div>
+      `;
+    }
   } else {
     if(words.length){
       bodyHtml += `
@@ -505,6 +547,9 @@ function renderCourseDetail(courseId){
   const pct=ls.length?Math.round(doneCnt/ls.length*100):0;
   const isAct=c.id===store.activeCourseId;
 
+  const pStats=typeof getCoursePackStats==='function'?getCoursePackStats(c.id):{total:ls.length,downloaded:0,available:0};
+  const hasPackCourse=pStats.available>0||(pStats.downloaded>0&&ls.some(l=>typeof hasPackForLesson==='function'&&hasPackForLesson(l.id)));
+
   $('#cd-summary').innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
       <div>
@@ -512,6 +557,7 @@ function renderCourseDetail(courseId){
           <span class="course-badge">${c.group==='hsk'?'HSK':c.group==='personal'?'Cá nhân':'Hán ngữ'}</span>
           <span class="course-badge ${c.status==='published'?'ok':'draft'}">${c.status==='published'?'Đã xuất bản':'Bản nháp'}</span>
           ${c.versionLabel?`<span class="course-badge draft">${escHtml(c.versionLabel)}</span>`:''}
+          ${hasPackCourse?`<span class="course-badge ok">Đã tải ${pStats.downloaded}/${pStats.total} bài</span>`:''}
         </div>
         <p class="small muted" style="margin:4px 0">${escHtml(c.desc||'Chưa có mô tả.')}</p>
         ${c.source?`<p class="small muted" style="margin:2px 0">Nguồn: ${escHtml(c.source)}</p>`:''}
@@ -545,13 +591,16 @@ function renderCourseDetail(courseId){
       const isNow=l.id===store.activeLessonId;
       const stCls=isDone?'done':(isNow?'now':'todo');
       const wCount=(l.wordIds||[]).length;
+      const dlState=typeof getLessonDownloadState==='function'?getLessonDownloadState(l):'unavailable';
+      const stTxt=dlState==='downloaded'?`${wCount} từ · Đã tải`:(dlState==='available'?'Chưa tải xuống':(l.status==='published'?`${wCount} từ · Đã xuất bản`:'Chưa có dữ liệu sách'));
       return `<div class="lrow ${isNow?'active':''}">
         <span class="lrow-st ${stCls}">${isDone?'✓':(i+1)}</span>
         <div class="lrow-main" data-open-lesson="${escHtml(l.id)}">
           <b>${escHtml(l.code||('Bài '+(i+1)))} · ${escHtml(l.titleVi||l.titleZh||'Chưa đặt tên')}</b>
-          <span>${escHtml(l.titleZh||'')} · ${wCount} từ · ${l.status==='published'?'Đã xuất bản':'Bản nháp'}</span>
+          <span>${escHtml(l.titleZh||'')} · ${stTxt}</span>
         </div>
         <div class="lrow-acts">
+          ${dlState==='available'?`<button type="button" class="btn sm" data-dl-lesson="${escHtml(l.id)}" style="padding:5px 10px;font-size:12px;white-space:nowrap">⬇ Tải</button>`:''}
           <button type="button" class="ico-btn" data-mv-lesson="${escHtml(l.id)}" data-dir="-1" title="Lên">↑</button>
           <button type="button" class="ico-btn" data-mv-lesson="${escHtml(l.id)}" data-dir="1" title="Xuống">↓</button>
           <button type="button" class="ico-btn" data-ed-lesson="${escHtml(l.id)}" title="Sửa">✎</button>

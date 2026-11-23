@@ -126,20 +126,170 @@ function registerVocabWord(w){
 }
 
 
-/* ---------- Khung Giáo trình chuẩn đã đối chiếu (8C) ---------- */
+/* ---------- Khung Giáo trình chuẩn & Bộ nạp bài theo yêu cầu (On-demand) ---------- */
+const SEED_TS=1700000200000;
+const _loadedVolumePacks={};
+const _pendingPackLoads={};
+
 function normMediaName(name){
   return String(name||'').trim().toLowerCase().normalize('NFC').replace(/\s+/g,' ');
 }
 function makeAudioTrack(fileName,section,label){
   return {id:normMediaName(fileName),fileName,section:section||'lesson',label:label||fileName,verified:true};
 }
+function parseHnLessonId(lessonId){
+  const m=/^lesson_hn(\d+)_b(\d+)$/.exec(String(lessonId||''));
+  return m?{vol:Number(m[1]),num:Number(m[2])}:null;
+}
+function getPackManifestForVol(vol){
+  return (typeof LESSON_PACK_MANIFEST!=='undefined'&&LESSON_PACK_MANIFEST[vol])||null;
+}
+function hasPackForLesson(lessonId){
+  const info=parseHnLessonId(lessonId);
+  if(!info)return false;
+  const m=getPackManifestForVol(info.vol);
+  return Boolean(m&&Array.isArray(m.lessons)&&m.lessons.includes(info.num));
+}
+function isLessonContentLoaded(l){
+  return Boolean(l&&((l.wordIds&&l.wordIds.length>0)||(l.dialog&&l.dialog.length>0)||Object.keys(l.grammarPoints||{}).length>0));
+}
+function getLessonDownloadState(l){
+  if(!l)return 'unavailable';
+  if(isLessonContentLoaded(l))return 'downloaded';
+  if(hasPackForLesson(l.id))return 'available';
+  return 'unavailable';
+}
+function getCoursePackStats(courseId){
+  const ls=LESSONS.filter(x=>x.courseId===courseId);
+  let downloaded=0,available=0;
+  ls.forEach(l=>{
+    const st=getLessonDownloadState(l);
+    if(st==='downloaded')downloaded++;
+    else if(st==='available')available++;
+  });
+  return {total:ls.length,downloaded,available};
+}
+function readGlobalPackVar(varName){
+  if(!varName||!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(varName))return null;
+  try{return (new Function('return typeof '+varName+'!=="undefined"?'+varName+':null;'))();}
+  catch(_){return null;}
+}
+async function loadVolumePack(volNum){
+  if(_loadedVolumePacks[volNum])return _loadedVolumePacks[volNum];
+  const meta=getPackManifestForVol(volNum);
+  if(!meta)return null;
+  if(_pendingPackLoads[volNum])return _pendingPackLoads[volNum];
+  _pendingPackLoads[volNum]=(async()=>{
+    const existing=readGlobalPackVar(meta.varName);
+    if(existing){_loadedVolumePacks[volNum]=existing;return existing;}
+    const lazyEl=document.querySelector(`script[type="text/plain"][data-lazy-pack="${meta.src}"]`);
+    if(lazyEl){
+      const code=lazyEl.textContent||'';
+      const data=(new Function(code+'\nreturn typeof '+meta.varName+'!=="undefined"?'+meta.varName+':null;'))();
+      if(data){
+        _loadedVolumePacks[volNum]=data;
+        try{window[meta.varName]=data;}catch(_){}
+      }
+      return data;
+    }
+    const loaded=await new Promise((resolve,reject)=>{
+      const s=document.createElement('script');
+      s.src=meta.src;
+      s.async=true;
+      const timer=setTimeout(()=>{s.remove();reject(new Error('Timeout loading '+meta.src));},8000);
+      s.onload=()=>{
+        clearTimeout(timer);
+        const data=readGlobalPackVar(meta.varName);
+        if(data)resolve(data);
+        else reject(new Error('Missing '+meta.varName+' after loading '+meta.src));
+      };
+      s.onerror=()=>{clearTimeout(timer);s.remove();reject(new Error('Failed loading '+meta.src));};
+      document.body.appendChild(s);
+    });
+    if(loaded)_loadedVolumePacks[volNum]=loaded;
+    return loaded;
+  })().finally(()=>{delete _pendingPackLoads[volNum];});
+  return _pendingPackLoads[volNum];
+}
+function getExtMapForVol(volNum){
+  const map={
+    1:(typeof HN1_EXT_MAP!=='undefined'?HN1_EXT_MAP:null),
+    2:(typeof HN2_EXT_MAP!=='undefined'?HN2_EXT_MAP:null),
+    3:(typeof HN3_EXT_MAP!=='undefined'?HN3_EXT_MAP:null),
+    4:(typeof HN4_EXT_MAP!=='undefined'?HN4_EXT_MAP:null),
+    5:(typeof HN5_EXT_MAP!=='undefined'?HN5_EXT_MAP:null),
+    6:(typeof HN6_EXT_MAP!=='undefined'?HN6_EXT_MAP:null)
+  };
+  return map[volNum]||null;
+}
+function populateLessonFromPackData(l,full,volNum,bNum){
+  const wordIds=[];
+  if(full&&Array.isArray(full.words)){
+    full.words.forEach(w=>{const wid=registerVocabWord(w);if(wid&&!wordIds.includes(wid))wordIds.push(wid);});
+  }
+  const dlg=(full&&Array.isArray(full.dialog))?full.dialog:[];
+  const chars=(full&&Array.isArray(full.chars))?full.chars.map(ch=>({id:'c_'+ch.charCodeAt(0),ch,py:'',vi:'',rad:'',strokes:0})):[];
+  l.wordIds=wordIds;
+  l.dialog=dlg;
+  l.sentences=dlg.map(d=>({zh:d.zh,py:d.py,vi:d.vi}));
+  l.grammarPoints=(full&&full.grammar)?full.grammar:{};
+  l.chars=chars;
+  l.status='published';
+  l.downloaded=true;
+  l.sourceRef={fileName:`GT Hán Ngữ ${volNum}.pdf`,fileHash:'',pageRange:(full&&full.pages)||'—'};
+  l.goals=[`Đối chiếu audio: Quyển ${volNum} Bài ${bNum}.mp3`,'Đã tải từ vựng, bài khóa, ngữ pháp & tập viết'];
+  l.updatedAt=Date.now();
+  const extMap=getExtMapForVol(volNum);
+  const ext=extMap&&(extMap[bNum]||extMap[String(bNum)]);
+  if(ext&&(!l.optionalExtensions||(!(l.optionalExtensions.hackNaoIds||[]).length&&!(l.optionalExtensions.mindMapRootChars||[]).length))){
+    l.optionalExtensions=ext;
+  }
+  return l;
+}
+async function downloadLessonById(lessonId){
+  const l=LESSONS.find(x=>x.id===lessonId);
+  const info=parseHnLessonId(lessonId);
+  if(!l||!info||!hasPackForLesson(lessonId)){
+    toast('Bài học này chưa có dữ liệu để tải');
+    return false;
+  }
+  if(isLessonContentLoaded(l))return true;
+  let volData=null;
+  try{
+    volData=await loadVolumePack(info.vol);
+  }catch(err){
+    console.error('Load pack error:',err);
+    toast('Không thể tải dữ liệu bài học. Hãy kiểm tra thư mục data/.');
+    return false;
+  }
+  const full=volData&&(volData[info.num]||volData[String(info.num)]);
+  if(!full){
+    toast('Không thể tải dữ liệu bài học. Hãy kiểm tra thư mục data/.');
+    return false;
+  }
+  populateLessonFromPackData(l,full,info.vol,info.num);
+  if(!Array.isArray(store.downloadedLessonIds))store.downloadedLessonIds=[];
+  if(!store.downloadedLessonIds.includes(lessonId))store.downloadedLessonIds.push(lessonId);
+  saveStore(store);
+  await HanyuIDB.put('lessons',l);
+  const c=COURSES.find(x=>x.id===l.courseId);
+  if(c)await HanyuIDB.put('courses',c);
+  if(store.activeLessonId===lessonId)applyActiveLesson();
+  renderRoadmap();
+  renderLibrary();
+  if(curView==='course-detail')renderCourseDetail();
+  if(curView==='lesson')renderLessonDetail();
+  if(curView==='textbook-reader')renderTextbookReader();
+  toast(`Đã tải xong ${l.code}: ${l.titleVi||l.titleZh}`);
+  return true;
+}
 
 function buildStandardCatalogSeed(){
-  const now=1700000200000;
+  const now=SEED_TS;
   const courses=[],lessons=[];
   const hnMeta={
-    1:{lvl:'Sơ cấp',range:'15 bài',desc:'Giáo trình Hán ngữ Quyển 1 (15 bài · 15 MP3). Đã nạp đầy đủ nội dung chi tiết cả 15 bài (Từ mới, Bài khóa, Ngữ pháp, Chữ Hán).'},
-    2:{lvl:'Sơ cấp',range:'Bài 16–30',desc:'Giáo trình Hán ngữ Quyển 2 (Bài 16–30 · 15 MP3). Đã nạp sẵn danh mục 15 bài từ sách gốc.'},
+    1:{lvl:'Sơ cấp',range:'15 bài',desc:'Giáo trình Hán ngữ Quyển 1 (15 bài · 15 MP3). Đã nạp sẵn Bài 1–2; các bài khác bấm Tải khi cần học.'},
+    2:{lvl:'Sơ cấp',range:'Bài 16–30',desc:'Giáo trình Hán ngữ Quyển 2 (Bài 16–30 · 15 MP3). Có sẵn gói tải đủ 15 bài trong app.'},
     3:{lvl:'Sơ trung cấp',range:'10 bài',desc:'Giáo trình Hán ngữ Quyển 3 (10 bài · 10 MP3). Đã nạp sẵn danh mục 10 bài từ sách gốc.'},
     4:{lvl:'Trung cấp',range:'Bài 11–20',desc:'Giáo trình Hán ngữ Quyển 4 (Bài 11–20 · 10 MP3). Đã nạp sẵn danh mục 10 bài từ sách gốc.'},
     5:{lvl:'Trung cao cấp',range:'13 bài',desc:'Giáo trình Hán ngữ Quyển 5 (13 bài · 13 MP3). Đã nạp sẵn danh mục 13 bài từ sách gốc.'},
@@ -153,23 +303,23 @@ function buildStandardCatalogSeed(){
     5:(typeof HN5_FULL_DATA!=='undefined'?HN5_FULL_DATA:null),
     6:(typeof HN6_FULL_DATA!=='undefined'?HN6_FULL_DATA:null)
   };
-  const hnExtByVol={
-    1:(typeof HN1_EXT_MAP!=='undefined'?HN1_EXT_MAP:null),
-    2:(typeof HN2_EXT_MAP!=='undefined'?HN2_EXT_MAP:null),
-    3:(typeof HN3_EXT_MAP!=='undefined'?HN3_EXT_MAP:null),
-    4:(typeof HN4_EXT_MAP!=='undefined'?HN4_EXT_MAP:null),
-    5:(typeof HN5_EXT_MAP!=='undefined'?HN5_EXT_MAP:null),
-    6:(typeof HN6_EXT_MAP!=='undefined'?HN6_EXT_MAP:null)
-  };
+  const preloadedSet=new Set([
+    ...((typeof DEFAULT_PRELOADED_LESSON_IDS!=='undefined'&&Array.isArray(DEFAULT_PRELOADED_LESSON_IDS))?DEFAULT_PRELOADED_LESSON_IDS:['lesson_hn1_b1','lesson_hn1_b2']),
+    ...((typeof store!=='undefined'&&store&&Array.isArray(store.downloadedLessonIds))?store.downloadedLessonIds:[])
+  ]);
   [1,2,3,4,5,6].forEach(num=>{
     const cId=`course_hn_${num}`,order=[],list=HN_CATALOG_TITLES[num]||[];
-    const volData=hnFullByVol[num],volExt=hnExtByVol[num];
+    const starterVol=(typeof HN_STARTER_DATA!=='undefined'&&HN_STARTER_DATA[num])?HN_STARTER_DATA[num]:null;
+    const packVol=_loadedVolumePacks[num]||hnFullByVol[num]||null;
+    const volExt=getExtMapForVol(num);
+    const packMeta=getPackManifestForVol(num);
     let loadedCnt=0;
     list.forEach(([b,zhTitle,pyTitle,viTitle])=>{
       const lId=`lesson_hn${num}_b${b}`;
       order.push(lId);
       const mp3=`Quyển ${num} Bài ${b}.mp3`;
-      const full=(volData&&volData[b])?volData[b]:null;
+      const shouldPreload=preloadedSet.has(lId)||!packMeta;
+      const full=shouldPreload?((starterVol&&(starterVol[b]||starterVol[String(b)]))||(packVol&&(packVol[b]||packVol[String(b)]))||null):null;
       if(full)loadedCnt++;
       const wordIds=[];
       if(full&&full.words){
@@ -177,13 +327,15 @@ function buildStandardCatalogSeed(){
       }
       const chars=(full&&full.chars)?full.chars.map(ch=>({id:'c_'+ch.charCodeAt(0),ch,py:'',vi:'',rad:'',strokes:0})):[];
       const dlg=(full&&full.dialog)?full.dialog:[];
+      const hasPack=hasPackForLesson(lId);
       lessons.push({
         id:lId,courseId:cId,code:`Bài ${b}`,titleVi:viTitle,titleZh:zhTitle,py:pyTitle,
-        goals:[`Đối chiếu audio: ${mp3}`,full?'Đã nạp từ vựng, bài khóa, ngữ pháp & tập viết':'Nhập thêm từ vựng/bài khóa từ PDF GT Hán Ngữ '+num],
+        goals:[`Đối chiếu audio: ${mp3}`,full?'Đã tải từ vựng, bài khóa, ngữ pháp & tập viết':(hasPack?'Bấm “Tải bài” để tải từ vựng, bài khóa, ngữ pháp & tập viết':'Nhập thêm từ vựng/bài khóa từ PDF GT Hán Ngữ '+num)],
         status:full?'published':'draft',
+        downloaded:Boolean(full),
         sourceRef:{fileName:`GT Hán Ngữ ${num}.pdf`,fileHash:'',pageRange:full?full.pages:'—'},
         audioTracks:[makeAudioTrack(mp3,'dialog',`Audio bài khóa (${mp3})`)],
-        workbook:null,optionalExtensions:(volExt&&volExt[b])?volExt[b]:{hackNaoIds:[],mindMapRootChars:[]},
+        workbook:null,optionalExtensions:(volExt&&(volExt[b]||volExt[String(b)]))||( {hackNaoIds:[],mindMapRootChars:[]} ),
         originalContent:'',supplementalContent:'',
         wordIds,
         sentences:dlg.map(d=>({zh:d.zh,py:d.py,vi:d.vi})),
@@ -193,11 +345,13 @@ function buildStandardCatalogSeed(){
         grammarQuiz:[],orderBank:[],chars,updatedAt:now
       });
     });
-    const desc=(loadedCnt>0&&loadedCnt===list.length)
-      ?`Giáo trình Hán ngữ Quyển ${num} (${hnMeta[num].range} · ${list.length} MP3). Đã nạp đầy đủ nội dung chi tiết cả ${list.length} bài (Từ mới, Bài khóa, Ngữ pháp, Chữ Hán).`
-      :(loadedCnt>0
-        ?`Giáo trình Hán ngữ Quyển ${num} (${hnMeta[num].range} · ${list.length} MP3). Đã nạp nội dung chi tiết ${loadedCnt}/${list.length} bài.`
-        :hnMeta[num].desc);
+    const desc=packMeta
+      ?`Giáo trình Hán ngữ Quyển ${num} (${hnMeta[num].range} · ${list.length} MP3). Có sẵn gói tải đủ ${list.length} bài trong app (chỉ tải sẵn khi cần để giảm nhẹ bộ nhớ).`
+      :((loadedCnt>0&&loadedCnt===list.length)
+        ?`Giáo trình Hán ngữ Quyển ${num} (${hnMeta[num].range} · ${list.length} MP3). Đã nạp đầy đủ nội dung chi tiết cả ${list.length} bài (Từ mới, Bài khóa, Ngữ pháp, Chữ Hán).`
+        :(loadedCnt>0
+          ?`Giáo trình Hán ngữ Quyển ${num} (${hnMeta[num].range} · ${list.length} MP3). Đã nạp nội dung chi tiết ${loadedCnt}/${list.length} bài.`
+          :hnMeta[num].desc));
     courses.push({
       id:cId,title:`Giáo trình Hán ngữ ${num}`,group:'hanngu',systemTrack:'hanngu',
       versionLabel:`Quyển ${num} (${order.length} bài · ${order.length} MP3)`,
@@ -337,8 +491,14 @@ async function seedStandardCatalog(interactive=true){
       LESSONS.push(l);await HanyuIDB.put('lessons',l);updatedL++;
     }else{
       const ex=LESSONS[idx];
-      if(ex.status==='draft'&&!(ex.wordIds&&ex.wordIds.length)&&!(ex.dialog&&ex.dialog.length)){
-        LESSONS[idx]=l;await HanyuIDB.put('lessons',l);updatedL++;
+      if(ex.status==='draft'&&!isLessonContentLoaded(ex)){
+        if(isLessonContentLoaded(l)){
+          LESSONS[idx]=l;await HanyuIDB.put('lessons',l);updatedL++;
+        }else if(Array.isArray(l.goals)&&JSON.stringify(ex.goals||[])!==JSON.stringify(l.goals)){
+          ex.goals=l.goals.slice();
+          await HanyuIDB.put('lessons',ex);
+          updatedL++;
+        }
       }else if(l.optionalExtensions&&((!ex.optionalExtensions||!(ex.optionalExtensions.hackNaoIds||[]).length)&&((l.optionalExtensions.hackNaoIds||[]).length||(l.optionalExtensions.mindMapRootChars||[]).length))){
         ex.optionalExtensions=l.optionalExtensions;
         await HanyuIDB.put('lessons',ex);
@@ -394,6 +554,61 @@ function buildSampleCurriculum(){
   return {sampleCourse,sampleLesson};
 }
 
+async function pruneLegacyUnstudiedLessons(){
+  if(store.lazyPrunedV1)return;
+  const completedSet=new Set();
+  Object.values(store.courseProgress||{}).forEach(cp=>{
+    if(cp&&Array.isArray(cp.completedLessonIds)){
+      cp.completedLessonIds.forEach(id=>completedSet.add(id));
+    }
+  });
+  const preDefault=(typeof DEFAULT_PRELOADED_LESSON_IDS!=='undefined'&&Array.isArray(DEFAULT_PRELOADED_LESSON_IDS))
+    ?DEFAULT_PRELOADED_LESSON_IDS:['lesson_hn1_b1','lesson_hn1_b2'];
+  const keepLessonIds=new Set(preDefault);
+  for(const l of LESSONS){
+    const info=parseHnLessonId(l.id);
+    if(!info||!hasPackForLesson(l.id))continue;
+    const isPre=preDefault.includes(l.id);
+    const isDone=completedSet.has(l.id);
+    const isCustomEdited=Boolean(l.updatedAt&&l.updatedAt!==SEED_TS);
+    if(isPre||isDone||isCustomEdited){
+      if(isLessonContentLoaded(l))keepLessonIds.add(l.id);
+      continue;
+    }
+    if(isLessonContentLoaded(l)||l.status==='published'){
+      const mp3=`Quyển ${info.vol} Bài ${info.num}.mp3`;
+      l.status='draft';
+      l.downloaded=false;
+      l.wordIds=[];
+      l.sentences=[];
+      l.dialog=[];
+      l.grammarPoints={};
+      l.chars=[];
+      l.sourceRef={fileName:`GT Hán Ngữ ${info.vol}.pdf`,fileHash:'',pageRange:'—'};
+      l.goals=[`Đối chiếu audio: ${mp3}`,'Bấm “Tải bài” để tải từ vựng, bài khóa, ngữ pháp & tập viết'];
+      l.updatedAt=SEED_TS;
+      await HanyuIDB.put('lessons',l);
+    }
+  }
+  const keepWordIds=new Set([
+    ...DEFAULT_WORDS_SNAP.map(w=>w.id),
+    ...Object.keys(store.words||{}),
+    ...(store.difficultIds||[]),
+    ...(store.favoriteIds||[])
+  ]);
+  LESSONS.forEach(l=>{
+    if(Array.isArray(l.wordIds))l.wordIds.forEach(wid=>keepWordIds.add(wid));
+  });
+  if(store.vocabBank&&typeof store.vocabBank==='object'){
+    Object.keys(store.vocabBank).forEach(wid=>{
+      if(!keepWordIds.has(wid))delete store.vocabBank[wid];
+    });
+  }
+  store.downloadedLessonIds=[...keepLessonIds];
+  store.lazyPrunedV1=true;
+  saveStore(store);
+}
+
 async function initCurriculumStore(){
   DEFAULT_WORDS_SNAP.forEach(w=>registerVocabWord(w));
   // Pre-seed synchronously so courses/lessons render immediately even if IndexedDB is slow or blocked
@@ -422,6 +637,7 @@ async function initCurriculumStore(){
   }
   COURSES=cs;
   LESSONS=ls;
+  await pruneLegacyUnstudiedLessons();
   await seedStandardCatalog(false);
   // Recover autosaved editor draft if browser closed unexpectedly
   try{
