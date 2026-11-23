@@ -321,6 +321,10 @@ let curLearnTab='lessons';
 let curLearnRoadmapCourseId=null;
 let _obDraft=null;
 
+function getCourseCoverUrl(courseId){
+  return (typeof COURSE_COVER_MAP!=='undefined'&&courseId&&COURSE_COVER_MAP[courseId])?COURSE_COVER_MAP[courseId]:'';
+}
+
 function getTrackPairInfo(setup){
   const s=setup||(store&&store.learningSetup)||{completed:false,level:1,mode:'hanngu',activeTrack:'hanngu'};
   const lv=Math.min(6,Math.max(1,Number(s.level)||1));
@@ -349,8 +353,12 @@ function renderHomeTrackHub(){
     const mkCard=(cid,covCls,covBig,covSmall,title,st)=>{
       const isOn=actCid===cid;
       const statusTxt=isOn?'Đang chọn':(st.doneCnt===0?'Chưa bắt đầu':'Đang học');
+      const covUrl=getCourseCoverUrl(cid);
+      const covHtml=covUrl
+        ?`<span class="hm-tc-cov has-img"><img src="${covUrl}" alt="${escHtml(title)}"/></span>`
+        :`<span class="hm-tc-cov ${covCls}"><span>${covBig}<br><small>${covSmall}</small></span></span>`;
       return `<button type="button" class="hm-track-card ${isOn?'on':''}" data-switch-course="${escHtml(cid)}">
-        <span class="hm-tc-cov ${covCls}"><span>${covBig}<br><small>${covSmall}</small></span></span>
+        ${covHtml}
         <div class="hm-tc-body">
           <div class="hm-tc-top"><span class="hm-tc-title">${escHtml(title)}</span><span class="hm-tc-pct">${st.pct}%</span></div>
           <div class="hm-tc-sub"><span>Tiến độ: ${st.doneCnt}/${st.total} bài</span><span class="hm-tc-st ${isOn?'':'idle'}">${statusTxt}</span></div>
@@ -374,7 +382,13 @@ function renderHomeTrackHub(){
   const singleId=setup.mode==='hsk30'?hskId:hnId;
   const singleSt=setup.mode==='hsk30'?hskSt:hnSt;
   const singleTitle=setup.mode==='hsk30'?`NEW HSK 3.0 – Cấp ${lv}`:`Giáo trình Hán ngữ – Quyển ${lv}`;
+  const singleCovUrl=getCourseCoverUrl(singleId);
+  const singleCovCls=setup.mode==='hsk30'?'hsk':'hn';
+  const singleCovHtml=singleCovUrl
+    ?`<span class="hm-tc-cov has-img"><img src="${singleCovUrl}" alt="${escHtml(singleTitle)}"/></span>`
+    :`<span class="hm-tc-cov ${singleCovCls}"><span>${setup.mode==='hsk30'?'HSK':'汉语'}<br><small>${setup.mode==='hsk30'?'Cấp '+lv:'Q'+lv}</small></span></span>`;
   box.innerHTML=`<div class="hm-track-card-wrap"><div class="hm-track-single">
+    ${singleCovHtml}
     <div style="min-width:0;flex:1">
       <div class="hm-track-hd-left"><span class="hm-lvl-badge">HSK ${lv}</span><b>${escHtml(singleTitle)}</b></div>
       <div class="small muted" style="margin-top:4px">Tiến độ: <b>${singleSt.doneCnt}/${singleSt.total} bài (${singleSt.pct}%)</b> · Chạm để chuyển sang học song song nếu muốn.</div>
@@ -476,10 +490,17 @@ function openLearningSetupModal(step=1,isFirstRun=false){
     }
 
     const lv=_obDraft.level||1;
+    const hnUrl=getCourseCoverUrl(`course_hn_${lv}`);
+    const hskUrl=getCourseCoverUrl(`course_hsk30_lv${lv}`);
+    const hnThumb=hnUrl?`<img class="ob-cov-img" src="${hnUrl}" alt=""/>`:`<span class="ob-hsk-pill">汉语</span>`;
+    const hskThumb=hskUrl?`<img class="ob-cov-img" src="${hskUrl}" alt=""/>`:`<span class="ob-hsk-pill">HSK</span>`;
+    const pairThumb=(hnUrl&&hskUrl)
+      ?`<span class="ob-cov-pair"><img class="ob-cov-p1" src="${hnUrl}" alt=""/><img class="ob-cov-p2" src="${hskUrl}" alt=""/></span>`
+      :`<span class="ob-hsk-pill">2 hệ</span>`;
     const modes=[
-      ['hanngu',`Giáo trình Hán ngữ · Quyển ${lv}`,`Học tuần tự theo bộ Giáo trình Hán ngữ (Quyển ${lv})`,'汉语',false],
-      ['hsk30',`NEW HSK 3.0 · Cấp ${lv}`,`Học theo chuẩn giáo trình & SBT NEW HSK 3.0 Cấp ${lv}`,'HSK',false],
-      ['parallel','Học song song cả hai',`Theo dõi cả Hán ngữ Quyển ${lv} & NEW HSK 3.0 Cấp ${lv} với tiến độ tách riêng`,'2 hệ',true]
+      ['hanngu',`Giáo trình Hán ngữ · Quyển ${lv}`,`Học tuần tự theo bộ Giáo trình Hán ngữ (Quyển ${lv})`,hnThumb,false],
+      ['hsk30',`NEW HSK 3.0 · Cấp ${lv}`,`Học theo chuẩn giáo trình & SBT NEW HSK 3.0 Cấp ${lv}`,hskThumb,false],
+      ['parallel','Học song song cả hai',`Theo dõi cả Hán ngữ Quyển ${lv} & NEW HSK 3.0 Cấp ${lv} với tiến độ tách riêng`,pairThumb,true]
     ];
     openModal(`
       <div class="ob-head">
@@ -489,8 +510,8 @@ function openLearningSetupModal(step=1,isFirstRun=false){
         <p>Chọn Giáo trình Hán ngữ, NEW HSK 3.0 hoặc học song song</p>
       </div>
       <div class="ob-list">
-        ${modes.map(([m,t,d,cov,rec])=>`<button type="button" class="ob-card ${_obDraft.mode===m?'on':''}" data-ob-mode="${m}">
-          <span class="ob-hsk-pill">${cov}</span>
+        ${modes.map(([m,t,d,covHtml,rec])=>`<button type="button" class="ob-card ${_obDraft.mode===m?'on':''}" data-ob-mode="${m}">
+          ${covHtml}
           <div class="ob-card-txt"><b>${escHtml(t)}${rec?' <span class="ob-rec">Khuyên dùng</span>':''}</b><span>${escHtml(d)}</span></div>
           <span class="ob-radio"></span>
         </button>`).join('')}
@@ -787,8 +808,12 @@ function renderLibrary(){
       const pStats=typeof getCoursePackStats==='function'?getCoursePackStats(c.id):{total:ls.length,downloaded:0,available:0};
       const hasPackCourse=pStats.available>0||(pStats.downloaded>0&&ls.some(l=>typeof hasPackForLesson==='function'&&hasPackForLesson(l.id)));
       const metaPrefix=hasPackCourse?`Đã tải ${pStats.downloaded}/${pStats.total} bài · `:`${ls.length} bài · `;
+      const covUrl=getCourseCoverUrl(c.id);
+      const covHtml=covUrl
+        ?`<span class="cover cover-img"><img src="${covUrl}" alt="${escHtml(c.title)}"/></span>`
+        :`<span class="cover ${c.group==='hsk'?'c2':c.group==='personal'?'c4':c.group==='kouyu'?'c3':'c1'}"><span><big>${c.group==='hsk'?'HSK':c.group==='personal'?'Tôi':c.group==='kouyu'?'口语':'汉语'}</big>${escHtml(c.level||'Cơ bản')}</span></span>`;
       html+=`<div role="button" tabindex="0" class="course-card ${isAct?'active':''}" data-open-course="${escHtml(c.id)}">
-        <span class="cover ${c.group==='hsk'?'c2':c.group==='personal'?'c4':c.group==='kouyu'?'c3':'c1'}"><span><big>${c.group==='hsk'?'HSK':c.group==='personal'?'Tôi':c.group==='kouyu'?'口语':'汉语'}</big>${escHtml(c.level||'Cơ bản')}</span></span>
+        ${covHtml}
         <div class="mid" style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <b>${escHtml(c.title)}</b>
@@ -1035,10 +1060,12 @@ function renderCourseDetail(courseId){
 
   const pStats=typeof getCoursePackStats==='function'?getCoursePackStats(c.id):{total:ls.length,downloaded:0,available:0};
   const hasPackCourse=pStats.available>0||(pStats.downloaded>0&&ls.some(l=>typeof hasPackForLesson==='function'&&hasPackForLesson(l.id)));
+  const cdCovUrl=getCourseCoverUrl(c.id);
 
   $('#cd-summary').innerHTML=`
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
-      <div>
+    <div class="cd-cover-wrap">
+      ${cdCovUrl?`<img class="cd-cover-img" src="${cdCovUrl}" alt="${escHtml(c.title)}"/>`:''}
+      <div style="flex:1;min-width:0">
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">
           <span class="course-badge">${c.group==='hsk'?'HSK':c.group==='personal'?'Cá nhân':'Hán ngữ'}</span>
           <span class="course-badge ${c.status==='published'?'ok':'draft'}">${c.status==='published'?'Đã xuất bản':'Bản nháp'}</span>
