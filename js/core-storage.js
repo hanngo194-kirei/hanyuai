@@ -68,7 +68,7 @@ function fakeRecord(btn,label,done){
 }
 
 /* ---------- Router (hoạt động cả khi WebView chặn hashchange) ---------- */
-const TAB={home:'home',roadmap:'learn',learn:'learn',lesson:'learn',vocab:'learn',exercise:'learn',grammar:'learn',dialog:'learn',listen:'learn',writing:'learn',review:'review',wordbook:'review',speak:'speak',me:'me','course-detail':'learn','lesson-editor':'learn','pdf-import':'learn','textbook-reader':'learn'};
+const TAB={home:'home',roadmap:'learn',learn:'learn',lesson:'learn',vocab:'learn',exercise:'learn',grammar:'learn',dialog:'learn',copy:'learn',trans:'learn',listen:'learn',writing:'learn',review:'review',wordbook:'review',speak:'speak',me:'me','course-detail':'learn','lesson-editor':'learn','pdf-import':'learn','textbook-reader':'learn'};
 let curView='home';
 function route(forced){
   if(window._activeTimeReady&&typeof touchActiveTime==='function')touchActiveTime();
@@ -79,13 +79,17 @@ function route(forced){
   $$('.tabs a').forEach(a=>{const on=a.dataset.tab===TAB[id];a.classList.toggle('on',on);on?a.setAttribute('aria-current','page'):a.removeAttribute('aria-current')});
   const sbTab=(id==='wordbook')?'wordbook':TAB[id];
   $$('.sidebar [data-tab]').forEach(a=>{const on=a.dataset.tab===sbTab;a.classList.toggle('on',on);on?a.setAttribute('aria-current','page'):a.removeAttribute('aria-current')});
-  document.body.classList.toggle('sub',['lesson','vocab','exercise','grammar','dialog','listen','writing','wordbook','course-detail','lesson-editor','pdf-import','textbook-reader'].includes(id));
+  document.body.classList.toggle('sub',['lesson','vocab','exercise','grammar','dialog','copy','trans','listen','writing','wordbook','course-detail','lesson-editor','pdf-import','textbook-reader'].includes(id));
   document.body.classList.toggle('view-roadmap',id==='roadmap');
   document.body.classList.toggle('view-vocab',id==='vocab');
   document.body.classList.toggle('view-lesson',id==='lesson');
+  document.body.classList.toggle('view-dialog',id==='dialog');
+  document.body.classList.toggle('view-copy',id==='copy');
+  document.body.classList.toggle('view-trans',id==='trans');
   try{window.scrollTo(0,0);}catch(_){}
   if(id!=='listen'&&window._stopListen)window._stopListen();
   if(id!=='speak'&&window._stopSpeak)window._stopSpeak();
+  if(id!=='dialog'&&window._stopDialog)window._stopDialog();
   if(id==='writing'&&typeof setupPadForChar==='function'){fitPad();setupPadForChar();}
   if(window._v8Ready&&typeof onViewEntered==='function')onViewEntered(id);
 }
@@ -141,7 +145,10 @@ function defaultStore(){
     events:[],
     downloadedLessonIds:['lesson_hn1_b1','lesson_hn1_b2'],
     lazyPrunedV1:false,
-    lessonSections:{}
+    lessonSections:{},
+    lessonNotes:{},
+    copyDrafts:{},
+    savedLessonIds:[]
   };
 }
 function sanitizeWordRec(r){
@@ -285,6 +292,15 @@ function migrateStore(raw){
   if(typeof raw.lazyPrunedV1==='boolean')base.lazyPrunedV1=raw.lazyPrunedV1;
   if(raw.lessonSections&&typeof raw.lessonSections==='object'&&!Array.isArray(raw.lessonSections)){
     base.lessonSections=raw.lessonSections;
+  }
+  if(raw.lessonNotes&&typeof raw.lessonNotes==='object'&&!Array.isArray(raw.lessonNotes)){
+    base.lessonNotes=raw.lessonNotes;
+  }
+  if(raw.copyDrafts&&typeof raw.copyDrafts==='object'&&!Array.isArray(raw.copyDrafts)){
+    base.copyDrafts=raw.copyDrafts;
+  }
+  if(Array.isArray(raw.savedLessonIds)){
+    base.savedLessonIds=[...new Set(raw.savedLessonIds.filter(x=>typeof x==='string'&&x))];
   }
   if(Array.isArray(raw.events)){
     base.events=raw.events.filter(e=>e&&typeof e==='object'&&e.id&&e.type).slice(-200);

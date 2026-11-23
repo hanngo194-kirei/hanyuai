@@ -386,6 +386,9 @@ function onViewEntered(id){
   if(id==='roadmap'&&typeof renderFullRoadmap==='function')renderFullRoadmap();
   if(id==='lesson')renderLessonDetail();
   if(id==='vocab'&&typeof syncMindMapLines==='function')requestAnimationFrame(syncMindMapLines);
+  if(id==='dialog'&&typeof dialogCtrl!=='undefined')dialogCtrl.enter();
+  if(id==='copy'&&typeof copyCtrl!=='undefined')copyCtrl.enter();
+  if(id==='trans'&&typeof transCtrl!=='undefined')transCtrl.enter();
   if(id==='dialog'&&typeof LISTEN_DIALOG!=='undefined'&&LISTEN_DIALOG.length&&typeof markLessonSectionDone==='function'){
     markLessonSectionDone(store.activeLessonId,'dialog',true);
   }

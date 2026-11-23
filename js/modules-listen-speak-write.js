@@ -311,7 +311,8 @@ try{
 
 /* ---------- Hội thoại ---------- */
 (function(){
-  const root=$('#rep'),f=k=>$(`[data-f="${k}"]`,root);let i=1;
+  const root=$('#rep');if(!root)return;
+  const f=k=>$(`[data-f="${k}"]`,root);let i=1;
   const page=$('[data-view="dialog"]');
   function render(){const s=SENT[i];f('zh').textContent=s.zh;f('vi').textContent=s.vi;f('n').textContent=i+1;
     $('[data-f="count"]',page).textContent=`${i+1} / 5`;$('[data-f="bar"]',page).style.width=((i+1)/5*100)+'%';f('score').textContent='--/100'}

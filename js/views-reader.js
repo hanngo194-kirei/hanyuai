@@ -50,15 +50,7 @@ function refreshModulesForLesson(){
       }
     }
   }catch(_){}
-  try{
-    const dlgPage=$('[data-view="dialog"]');
-    if(dlgPage){
-      const linesEl=dlgPage.querySelector('.dlg-lines')||dlgPage.querySelector('#dlg-lines');
-      if(linesEl&&LISTEN_DIALOG.length){
-        linesEl.innerHTML=LISTEN_DIALOG.map((d,i)=>`<div class="bubble ${i%2?'r':'l'}"><b>${escHtml(d.name||d.speaker)}</b><div class="zh">${escHtml(d.zh)}</div><div class="py">${escHtml(d.py)}</div><div class="vi">${escHtml(d.vi)}</div></div>`).join('');
-      }
-    }
-  }catch(_){}
+  try{if(typeof window.refreshDot2Views==='function')window.refreshDot2Views();}catch(_){}
   try{if(typeof speakCtrl!=='undefined'&&speakCtrl.init)speakCtrl.init();}catch(_){}
   try{if(typeof setupPadForChar==='function'&&CHARS.length)setupPadForChar();}catch(_){}
 }
@@ -301,11 +293,9 @@ function renderLessonDetail(){
   setAct('ls-act-ex', WORDS.length?`Luyện tập tổng hợp · Kiểm tra (${WORDS.length} từ)`:'Cần có ít nhất 2 từ vựng', WORDS.length>=2, prog.doneMap.exercise, 'Chưa làm', false);
 
   setAct('ls-act-dlg', LISTEN_DIALOG.length?`Đọc · Nghe · ${LISTEN_DIALOG.length} câu`:'Đọc · Nghe · Hiểu hội thoại', LISTEN_DIALOG.length>0, prog.doneMap.dialog, '', true);
-  setAct('ls-act-copy', 'Nghe và chép · Chép theo mẫu', true, prog.doneMap.copy, '', true);
-  const copySt=$('#ls-act-copy .st');if(copySt&&!prog.doneMap.copy){copySt.className='st todo soon-st';copySt.textContent='Sắp có';}
+  setAct('ls-act-copy', LISTEN_DIALOG.length?`Chép ${LISTEN_DIALOG.length} câu · Bút / Tẩy`:'Nghe và chép · Chép theo mẫu', (LISTEN_DIALOG.length+SENT.length)>0, prog.doneMap.copy, '', true);
   setAct('ls-act-wri', CHARS.length?`Thứ tự nét · ${CHARS.length} chữ Hán`:'Thứ tự nét · Ô viết chữ Hán', CHARS.length>0, prog.doneMap.writing, '', true);
-  setAct('ls-act-trans', 'Việt – Trung · Trung – Việt', true, prog.doneMap.trans, '', true);
-  const transSt=$('#ls-act-trans .st');if(transSt&&!prog.doneMap.trans){transSt.className='st todo soon-st';transSt.textContent='Sắp có';}
+  setAct('ls-act-trans', (LISTEN_DIALOG.length||SENT.length)?`Việt ↔ Trung · ${(LISTEN_DIALOG.length||SENT.length)} câu`:'Việt – Trung · Trung – Việt', (LISTEN_DIALOG.length+SENT.length)>0, prog.doneMap.trans, '', true);
 
   if(nextBtn){
     const list=(typeof getCourseLessons==='function'&&l.courseId)?getCourseLessons(l.courseId,true):[];
