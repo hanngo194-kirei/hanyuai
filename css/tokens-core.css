@@ -402,7 +402,7 @@ body.sub .bg{background-image:url(data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQA
 
 /* === Responsive Tablet / Desktop === */
 #tb-lesson-content{margin-top:12px}
-body.view-roadmap .top,body.view-vocab .top,body.view-lesson .top{display:none}
+body.view-roadmap .app>.top,body.view-vocab .app>.top,body.view-lesson .app>.top{display:none}
 @media (min-width: 900px){
   body{padding-left:264px;padding-bottom:36px}
   .bg{position:fixed;inset:0;background-size:cover;background-position:center top}
