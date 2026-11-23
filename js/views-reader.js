@@ -353,6 +353,110 @@ function renderRoadmap(){
     return `<a class="node ${cls}" href="javascript:void(0)" data-rm-lid="${escHtml(l.id)}" data-unlocked="${unlocked?'1':'0'}" style="left:${pt.x}px;top:${pt.y-22}px;${unlocked?'':'opacity:.72'}">${dot}${isCurrent?`<span class="nm">${lblHtml}</span>`:lblHtml}</a>`;
   }).join('');
   wrap.innerHTML=svgBg+nodesHtml;
+  if(curView==='roadmap'&&typeof renderFullRoadmap==='function')renderFullRoadmap(curRoadmapCourseId);
+}
+
+let curRoadmapCourseId=null;
+function renderFullRoadmap(courseId){
+  const canvas=$('#rmf-canvas'),sub=$('#rmf-course-sub'),freeBtn=$('#rmf-free-btn');
+  const doneEl=$('#rmf-done-cnt'),pctEl=$('#rmf-pct'),barEl=$('#rmf-bar-fill');
+  const contBtn=$('#rmf-continue-btn'),contTxt=$('#rmf-continue-txt');
+  if(!canvas)return;
+  const c=(courseId&&COURSES.find(x=>x.id===courseId))
+    ||(curRoadmapCourseId&&COURSES.find(x=>x.id===curRoadmapCourseId))
+    ||COURSES.find(x=>x.id===store.activeCourseId&&x.id!=='course_sample_hn1'&&getCourseLessons(x.id,true).length>0)
+    ||COURSES.find(x=>x.id==='course_hn_1')
+    ||COURSES.find(x=>getCourseLessons(x.id,true).length>0)
+    ||COURSES[0];
+  if(freeBtn){
+    freeBtn.classList.toggle('on',Boolean(store.freeExplore));
+    freeBtn.textContent=`Học tự do: ${store.freeExplore?'Bật':'Tắt'}`;
+  }
+  if(!c){
+    curRoadmapCourseId=null;
+    if(sub)sub.textContent='Chưa có giáo trình nào';
+    if(doneEl)doneEl.textContent='0/0';
+    if(pctEl)pctEl.textContent='0%';
+    if(barEl)barEl.style.width='0%';
+    if(contBtn){contBtn.disabled=true;delete contBtn.dataset.lessonId;}
+    if(contTxt)contTxt.textContent='Chưa có bài học';
+    canvas.style.aspectRatio='360 / 180';
+    canvas.innerHTML='<div class="small muted" style="padding:24px;text-align:center">Hãy vào tab <b>Học tập</b> để chọn hoặc tạo giáo trình.</div>';
+    return;
+  }
+  curRoadmapCourseId=c.id;
+  const lessons=getCourseLessons(c.id,true);
+  if(sub)sub.textContent=`${c.title} · ${lessons.length} bài học`;
+  const prog=getCourseProg(c.id);
+  const doneSet=new Set(prog.completedLessonIds||[]);
+  const doneCnt=lessons.filter(l=>doneSet.has(l.id)).length;
+  const pct=lessons.length?Math.round(doneCnt*100/lessons.length):0;
+  if(doneEl)doneEl.textContent=`${doneCnt}/${lessons.length}`;
+  if(pctEl)pctEl.textContent=`${pct}%`;
+  if(barEl)barEl.style.width=pct+'%';
+  if(!lessons.length){
+    if(contBtn){contBtn.disabled=true;delete contBtn.dataset.lessonId;}
+    if(contTxt)contTxt.textContent='Chưa có bài học';
+    canvas.style.aspectRatio='360 / 180';
+    canvas.innerHTML='<div class="small muted" style="padding:24px;text-align:center">Giáo trình chưa có bài học nào.</div>';
+    return;
+  }
+  let activeL=lessons.find(x=>x.id===store.activeLessonId);
+  if(!activeL)activeL=lessons.find(x=>!doneSet.has(x.id))||lessons[0];
+  const activeIdx=Math.max(0,lessons.findIndex(x=>x.id===activeL.id));
+  if(contBtn){contBtn.disabled=false;contBtn.dataset.lessonId=activeL.id;}
+  if(contTxt)contTxt.textContent=`Tiếp tục ${(activeL.code||'bài 1').toLowerCase()}`;
+
+  const W=360,rowH=128,topPad=74,botPad=86;
+  const rows=Math.ceil(lessons.length/3);
+  const totalH=topPad+Math.max(0,rows-1)*rowH+botPad;
+  canvas.style.aspectRatio=`${W} / ${totalH}`;
+  const xs=[68,180,292];
+  const pts=lessons.map((l,idx)=>{
+    const r=Math.floor(idx/3),posInRow=idx%3;
+    const col=(r%2===0)?posInRow:(2-posInRow);
+    const dy=(r%2===0)?(posInRow===1?-10:6):(posInRow===1?8:-6);
+    return {x:xs[col],y:topPad+r*rowH+dy};
+  });
+  let dFull=pts.length?`M ${pts[0].x} ${pts[0].y}`:'';
+  let dDone=(pts.length&&activeIdx>0)?`M ${pts[0].x} ${pts[0].y}`:'';
+  for(let i=0;i<pts.length-1;i++){
+    const p1=pts[i],p2=pts[i+1];
+    const r1=Math.floor(i/3),r2=Math.floor((i+1)/3);
+    let seg='';
+    if(r1===r2){
+      const dcx=p2.x-p1.x;
+      seg=` C ${(p1.x+dcx*0.45).toFixed(1)} ${p1.y}, ${(p1.x+dcx*0.55).toFixed(1)} ${p2.y}, ${p2.x} ${p2.y}`;
+    }else if(p1.x>180){
+      seg=` C 350 ${p1.y+10}, 350 ${p2.y-10}, ${p2.x} ${p2.y}`;
+    }else{
+      seg=` C 10 ${p1.y+10}, 10 ${p2.y-10}, ${p2.x} ${p2.y}`;
+    }
+    dFull+=seg;
+    if(i<activeIdx)dDone+=seg;
+  }
+  const svgHtml=`<svg aria-hidden="true" class="rmf-svg" viewBox="0 0 ${W} ${totalH}">
+    <path d="${dFull}" fill="none" stroke="#EDD4C6" stroke-width="7" stroke-linecap="round"/>
+    ${dDone?`<path d="${dDone}" fill="none" stroke="#D55649" stroke-opacity="0.78" stroke-width="7" stroke-linecap="round"/>`:''}
+  </svg>`;
+  const nodesHtml=lessons.map((l,idx)=>{
+    const isDone=doneSet.has(l.id);
+    const isCurrent=Boolean(activeL&&l.id===activeL.id);
+    const unlocked=Boolean(store.freeExplore||l.status==='published'||isDone||isCurrent||idx===0||(idx>0&&doneSet.has(lessons[idx-1].id)));
+    const stateCls=isCurrent?'now':(isDone?'done':(unlocked?'open':'locked'));
+    const dot=isCurrent
+      ?'<span class="rmf-tag">Đang học</span><span class="rmf-dot"><svg class="ic f"><use href="#i-play"></use></svg></span>'
+      :(isDone
+        ?'<span class="rmf-dot"><svg class="ic"><use href="#i-check"></use></svg></span>'
+        :(unlocked
+          ?'<span class="rmf-dot"></span>'
+          :'<span class="rmf-dot"><svg class="ic"><use href="#i-lock"></use></svg></span>'));
+    const pt=pts[idx];
+    const leftPct=(pt.x/W*100).toFixed(3);
+    const topPct=(pt.y/totalH*100).toFixed(3);
+    return `<a class="rmf-node ${stateCls}" href="javascript:void(0)" data-rm-lid="${escHtml(l.id)}" data-unlocked="${unlocked?'1':'0'}" style="left:${leftPct}%;top:${topPct}%">${dot}<span class="rmf-lbl"><b>${escHtml(l.code||('Bài '+(idx+1)))}</b><span>${escHtml(l.titleVi||l.titleZh||'Chưa đặt tên')}</span></span></a>`;
+  }).join('');
+  canvas.innerHTML=svgHtml+nodesHtml;
 }
 
 /* ---------- Thư viện Giáo trình (#learn) ---------- */

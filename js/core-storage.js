@@ -68,7 +68,7 @@ function fakeRecord(btn,label,done){
 }
 
 /* ---------- Router (hoạt động cả khi WebView chặn hashchange) ---------- */
-const TAB={home:'home',learn:'learn',lesson:'learn',vocab:'learn',exercise:'learn',grammar:'learn',dialog:'learn',listen:'learn',writing:'learn',review:'review',wordbook:'review',speak:'speak',me:'me','course-detail':'learn','lesson-editor':'learn','pdf-import':'learn','textbook-reader':'learn'};
+const TAB={home:'home',roadmap:'learn',learn:'learn',lesson:'learn',vocab:'learn',exercise:'learn',grammar:'learn',dialog:'learn',listen:'learn',writing:'learn',review:'review',wordbook:'review',speak:'speak',me:'me','course-detail':'learn','lesson-editor':'learn','pdf-import':'learn','textbook-reader':'learn'};
 let curView='home';
 function route(forced){
   if(window._activeTimeReady&&typeof touchActiveTime==='function')touchActiveTime();
@@ -80,6 +80,7 @@ function route(forced){
   const sbTab=(id==='wordbook')?'wordbook':TAB[id];
   $$('.sidebar [data-tab]').forEach(a=>{const on=a.dataset.tab===sbTab;a.classList.toggle('on',on);on?a.setAttribute('aria-current','page'):a.removeAttribute('aria-current')});
   document.body.classList.toggle('sub',['lesson','vocab','exercise','grammar','dialog','listen','writing','wordbook','course-detail','lesson-editor','pdf-import','textbook-reader'].includes(id));
+  document.body.classList.toggle('view-roadmap',id==='roadmap');
   try{window.scrollTo(0,0);}catch(_){}
   if(id!=='listen'&&window._stopListen)window._stopListen();
   if(id!=='speak'&&window._stopSpeak)window._stopSpeak();

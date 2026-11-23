@@ -383,6 +383,7 @@ function onViewEntered(id){
   if(id==='course-detail')renderCourseDetail();
   if(id==='pdf-import')refreshPdfCourseSelect();
   if(id==='home')renderRoadmap();
+  if(id==='roadmap'&&typeof renderFullRoadmap==='function')renderFullRoadmap();
   if(id==='lesson')renderLessonDetail();
   if(id==='dialog'&&typeof LISTEN_DIALOG!=='undefined'&&LISTEN_DIALOG.length&&typeof markLessonSectionDone==='function'){
     markLessonSectionDone(store.activeLessonId,'dialog',true);
@@ -407,14 +408,13 @@ document.addEventListener('click',async e=>{
     goView('lesson');
     return;
   }
-  // "Xem toàn bộ lộ trình" -> mở danh sách 15 bài của khóa đang học
+  // "Xem toàn bộ lộ trình" -> mở bản đồ lộ trình 15 bài đường cong chữ S
   const allRm=e.target.closest('#hm-all-roadmap');
   if(allRm){
     e.preventDefault();
     const cid=(store.activeCourseId&&store.activeCourseId!=='course_sample_hn1')?store.activeCourseId:'course_hn_1';
-    curCourseTab='lessons';
-    renderCourseDetail(cid);
-    goView('course-detail');
+    if(typeof renderFullRoadmap==='function')renderFullRoadmap(cid);
+    goView('roadmap');
     return;
   }
   // Mọi nút "Xem giáo trình" (Trang chủ, Thư viện, Thẻ quyển, Chi tiết quyển)
@@ -688,8 +688,28 @@ $('#cd-add-lesson').onclick=()=>openLessonEditor(null,{courseId:curDetailCourseI
 $('#cd-import-pdf').onclick=()=>{refreshPdfCourseSelect();goView('pdf-import');};
 $('#cd-view-textbook').onclick=()=>{openTextbookReader(curDetailCourseId);};
 $('#ls-edit-btn').onclick=()=>{if(store.activeLessonId)openLessonEditor(store.activeLessonId);};
-const _sbLogo=$('#sb-logo-img'),_topLogo=$('.top .logo');
-if(_sbLogo&&_topLogo&&_topLogo.src)_sbLogo.src=_topLogo.src;
+const _sbLogo=$('#sb-logo-img'),_rmfLogo=$('#rmf-logo-img'),_topLogo=$('.top .logo');
+if(_topLogo&&_topLogo.src){
+  if(_sbLogo)_sbLogo.src=_topLogo.src;
+  if(_rmfLogo)_rmfLogo.src=_topLogo.src;
+}
+if($('#rmf-free-btn'))$('#rmf-free-btn').onclick=()=>{
+  store.freeExplore=!store.freeExplore;saveStore(store);
+  renderRoadmap();if(typeof renderFullRoadmap==='function')renderFullRoadmap();
+};
+if($('#rmf-continue-btn'))$('#rmf-continue-btn').onclick=()=>{
+  const btn=$('#rmf-continue-btn');
+  const lid=btn&&btn.dataset.lessonId;
+  const l=LESSONS.find(x=>x.id===lid);
+  if(!l)return;
+  store.activeCourseId=l.courseId;store.activeLessonId=l.id;saveStore(store);applyActiveLesson();renderRoadmap();goView('lesson');
+};
+if($('#rmf-open-course-btn'))$('#rmf-open-course-btn').onclick=()=>{
+  const cid=(typeof curRoadmapCourseId!=='undefined'&&curRoadmapCourseId)?curRoadmapCourseId:((store.activeCourseId&&store.activeCourseId!=='course_sample_hn1')?store.activeCourseId:'course_hn_1');
+  curCourseTab='lessons';
+  renderCourseDetail(cid);
+  goView('course-detail');
+};
 if(typeof syncSidebarThemeLabel==='function')syncSidebarThemeLabel();
 if($('#sb-theme-btn'))$('#sb-theme-btn').onclick=()=>{const tb=$('#themebtn');if(tb)tb.click();if(typeof syncSidebarThemeLabel==='function')syncSidebarThemeLabel();};
 if($('#hdr-bell-btn'))$('#hdr-bell-btn').onclick=()=>{
