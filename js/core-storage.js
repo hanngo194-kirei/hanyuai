@@ -82,6 +82,7 @@ function route(forced){
   document.body.classList.toggle('sub',['lesson','vocab','exercise','grammar','dialog','listen','writing','wordbook','course-detail','lesson-editor','pdf-import','textbook-reader'].includes(id));
   document.body.classList.toggle('view-roadmap',id==='roadmap');
   document.body.classList.toggle('view-vocab',id==='vocab');
+  document.body.classList.toggle('view-lesson',id==='lesson');
   try{window.scrollTo(0,0);}catch(_){}
   if(id!=='listen'&&window._stopListen)window._stopListen();
   if(id!=='speak'&&window._stopSpeak)window._stopSpeak();

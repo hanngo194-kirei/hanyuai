@@ -441,9 +441,14 @@ document.addEventListener('click',async e=>{
     if(dlBtn.disabled)return;
     const orig=dlBtn.innerHTML;
     dlBtn.disabled=true;
-    dlBtn.textContent='Đang tải…';
+    if(dlBtn.id!=='ls-top-dl-btn')dlBtn.textContent='Đang tải…';
     try{await downloadLessonById(dlBtn.dataset.dlLesson);}
-    finally{if(document.body.contains(dlBtn)){dlBtn.disabled=false;dlBtn.innerHTML=orig;}}
+    finally{
+      if(document.body.contains(dlBtn)){
+        dlBtn.disabled=false;
+        if(dlBtn.id==='ls-top-dl-btn'||dlBtn.hasAttribute('data-dl-lesson'))dlBtn.innerHTML=orig;
+      }
+    }
     return;
   }
   const dlStartBtn=e.target.closest('[data-dl-and-start]');
@@ -688,11 +693,19 @@ $('#cd-add-lesson').onclick=()=>openLessonEditor(null,{courseId:curDetailCourseI
 $('#cd-import-pdf').onclick=()=>{refreshPdfCourseSelect();goView('pdf-import');};
 $('#cd-view-textbook').onclick=()=>{openTextbookReader(curDetailCourseId);};
 $('#ls-edit-btn').onclick=()=>{if(store.activeLessonId)openLessonEditor(store.activeLessonId);};
-const _sbLogo=$('#sb-logo-img'),_rmfLogo=$('#rmf-logo-img'),_topLogo=$('.top .logo');
+const _sbLogo=$('#sb-logo-img'),_rmfLogo=$('#rmf-logo-img'),_lsLogo=$('#ls-logo-img'),_topLogo=$('.top .logo');
 if(_topLogo&&_topLogo.src){
-  if(_sbLogo){_sbLogo.src=_topLogo.src;_sbLogo.style.display='';}
-  if(_rmfLogo){_rmfLogo.src=_topLogo.src;_rmfLogo.style.display='';}
+  [_sbLogo,_rmfLogo,_lsLogo].forEach(im=>{if(im){im.src=_topLogo.src;im.style.display='';}});
 }
+[$('#ls-top-dl-btn'),$('#ls-status-pill')].forEach(el=>{
+  if(!el)return;
+  el.addEventListener('click',()=>{
+    if(el.hasAttribute('data-dl-lesson'))return;
+    const l=LESSONS.find(x=>x.id===store.activeLessonId);
+    const st=(l&&typeof getLessonDownloadState==='function')?getLessonDownloadState(l):'downloaded';
+    toast(st==='downloaded'?'Bài học đã được tải về — có thể học offline':'Nội dung bài học này đang được cập nhật');
+  });
+});
 if($('#rmf-free-btn'))$('#rmf-free-btn').onclick=()=>{
   store.freeExplore=!store.freeExplore;saveStore(store);
   renderRoadmap();if(typeof renderFullRoadmap==='function')renderFullRoadmap();

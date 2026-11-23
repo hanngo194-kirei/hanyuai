@@ -9,7 +9,7 @@ function makeDeck(root,opts){
   }
   function applyMask(){
     const card=f('card'),exbox=f('exbox');if(!card)return;
-    const mode=store.settings.flashMode;
+    const mode=opts.fixedMode||store.settings.flashMode;
     const zhEl=f('zh'),pyRow=f('pyrow'),viEl=f('vi'),lp=f('lprompt'),hint=f('hint'),spkBig=f('spkBig');
     const hasWord=queue.length>0&&!session.done;
     card.classList.toggle('masked',!revealed&&hasWord);
@@ -19,7 +19,7 @@ function makeDeck(root,opts){
     if(lp)lp.classList.add('hide');
     if(mode==='zh'){
       viEl.classList.add('is-ans');if(spkBig)spkBig.classList.add('hide');
-      if(hint)hint.textContent=revealed?'Chạm thẻ để ẩn đáp án':'Chạm thẻ để xem nghĩa tiếng Việt';
+      if(hint)hint.textContent=opts.fixedMode==='zh'?(revealed?'Chạm vào từ để ẩn nghĩa':'Chạm vào từ để xem nghĩa'):(revealed?'Chạm thẻ để ẩn đáp án':'Chạm thẻ để xem nghĩa tiếng Việt');
     }else if(mode==='vi'){
       zhEl.classList.add('is-ans');pyRow.classList.add('is-ans');
       viEl.style.visibility='visible';if(spkBig)spkBig.classList.add('hide');
@@ -89,7 +89,7 @@ function makeDeck(root,opts){
   $$('[data-rate]',root).forEach(b=>b.addEventListener('click',()=>{
     if(rateLock)return;const w=cur();if(!w)return;
     rateLock=true;setTimeout(()=>{rateLock=false;},220);
-    const v=+b.dataset.rate;recordWord(w.id,v,store.settings.flashMode);
+    const v=+b.dataset.rate;recordWord(w.id,v,opts.fixedMode||store.settings.flashMode);
     session.reviewed+=1;session['r'+v]+=1;
     if(opts.sessionQueue){
       queue.splice(i,1);if(v===0)queue.push(w);
@@ -101,8 +101,25 @@ function makeDeck(root,opts){
   return {render,refreshMask:applyMask,reset(){buildQueue();render();},openWord(id){buildQueue();const idx=queue.findIndex(w=>w.id===id);if(idx>=0)i=idx;revealed=false;render();}};
 }
 
-let vcExtTab='hacknao',vcExtCharIdx=0,vcCurWord=null;
+let vcExtTab='hacknao',vcExtCharIdx=0,vcMmPage=0,vcCurWord=null;
 const escH=s=>(typeof escHtml==='function')?escHtml(s):String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const RADICAL_MEANING_MAP={
+  'ユ':'số 1','ヰ':'số 14','ㄑ':'nhỏ','ㄥ':'nhỏ','⺀':'hai','丅:215':'tầng','丅:224':'lớn','丅':'tầng',
+  '丨':'gạch dọc','丬':'tường','丶':'ông chủ','丷':'số 8','丿':'phẩy','乂':'chữ X','乚':'là','亅':'nhất quyết',
+  '了':'kết thúc','亠':'đầu','亻':'người','冂':'biên giới','冖':'khăn','匕':'thìa','匚':'tủ đựng','卜':'xem bói',
+  '厂':'sườn núi','囗':'vây quanh','宀':'mái nhà','工':'công nhân','忄':'trái tim','扌':'tay','日':'mặt trời',
+  '氵':'nước','灬':'lửa','犬':'chó','王':'vua','艹':'cỏ','虫':'côn trùng','讠':'lời nói','辶':'đi xa',
+  '酉':'giờ Dậu','𠂇':'số 10','𠂉':'nằm','𠃌':'lớn','𢆉':'tiền'
+};
+function getPartMeaning(p,db){
+  if(!p)return '';
+  const byCode=p.code?RADICAL_MEANING_MAP[p.ch+':'+p.code]:'';
+  if(byCode)return byCode;
+  if(RADICAL_MEANING_MAP[p.ch])return RADICAL_MEANING_MAP[p.ch];
+  const ent=db&&db[p.ch];
+  if(ent&&ent.meaning)return String(ent.meaning).split(',')[0].trim();
+  return '';
+}
 function extractUniqueHanzi(zh){
   const arr=[];
   for(const ch of String(zh||'')){if(/[\u4e00-\u9fff]/.test(ch)&&!arr.includes(ch))arr.push(ch);}
@@ -115,7 +132,6 @@ function renderVocabExtension(w){
   if(!panel)return;
   if(!w){panel.innerHTML='<div class="vc-ext-empty">Chưa chọn từ vựng</div>';return;}
   const chars=extractUniqueHanzi(w.zh);
-  const nextHtml=(len)=>len>1?'<button aria-label="Chữ tiếp theo" class="vc-next-char" data-vext-next="1" type="button">→</button>':'';
   const pillsHtml=(matched)=>matched.length>1?`<div class="vc-char-pills">${matched.map((m,idx)=>`<button class="${idx===vcExtCharIdx?'on':''}" data-vext-char="${idx}" type="button">${escH(m.ch)}</button>`).join('')}</div>`:'';
 
   if(vcExtTab==='hacknao'){
@@ -124,27 +140,28 @@ function renderVocabExtension(w){
     if(!matched.length){panel.innerHTML='<div class="vc-ext-empty">Từ này không có nội dung</div>';return;}
     vcExtCharIdx=vcExtCharIdx%matched.length;
     const curItem=matched[vcExtCharIdx],e=curItem.entry;
-    let eqHtml='';
-    if(chars.length>=2&&matched.length>=2){
-      const boxes=chars.map(ch=>{
+    let eqInner='';
+    if(e.parts&&e.parts.length){
+      const rhs=e.parts.map((p,idx)=>{
+        const sub=getPartMeaning(p,db);
+        return `<div class="vc-hn-term${idx===0?' is-red':''}"><div class="vc-hn-ch">${escH(p.ch)}</div>${sub?`<div class="vc-hn-sub">(${escH(sub)})</div>`:''}</div>`;
+      }).join('<span class="vc-hn-op">+</span>');
+      eqInner=`<div class="vc-hn-term is-main"><div class="vc-hn-ch">${escH(curItem.ch)}</div></div><span class="vc-hn-op">=</span>${rhs}`;
+    }else if(chars.length>=2&&matched.length>=2){
+      const rhs=chars.map((ch,idx)=>{
         const ent=db[ch];
-        const sub=ent?(ent.meaning||ent.hv):'';
-        return `<div class="vc-eq-box"><div class="vc-eq-zh">${escH(ch)}</div><div class="vc-eq-sub">(${escH(sub||'—')})</div></div>`;
-      }).join('<span class="vc-eq-op">+</span>');
-      eqHtml=`<div class="vc-eq">${boxes}<span class="vc-eq-op">=</span><div class="vc-eq-box res"><div class="vc-eq-zh">${escH(w.zh)}</div><div class="vc-eq-sub">(${escH(w.vi||'')})</div></div></div>`;
-    }else if(e.parts&&e.parts.length){
-      const pBoxes=e.parts.map(p=>{
-        const pEnt=db[p.ch];
-        const pSub=pEnt?`(${escH((pEnt.meaning||'').split(',')[0])})`:`(${escH('mã #'+p.code)})`;
-        return `<div class="vc-eq-box"><div class="vc-eq-zh">${escH(p.ch)}</div><div class="vc-eq-sub">${pSub}</div></div>`;
-      }).join('<span class="vc-eq-op">+</span>');
-      eqHtml=`<div class="vc-eq">${pBoxes}<span class="vc-eq-op">=</span><div class="vc-eq-box res"><div class="vc-eq-zh">${escH(curItem.ch)}</div><div class="vc-eq-sub">${escH(e.hv)} · (${escH(e.meaning)})</div></div></div>`;
+        const sub=ent?(String(ent.meaning||ent.hv||'').split(',')[0].trim()):'';
+        return `<div class="vc-hn-term${idx===0?' is-red':''}"><div class="vc-hn-ch">${escH(ch)}</div>${sub?`<div class="vc-hn-sub">(${escH(sub)})</div>`:''}</div>`;
+      }).join('<span class="vc-hn-op">+</span>');
+      eqInner=`<div class="vc-hn-term is-main"><div class="vc-hn-ch">${escH(w.zh)}</div></div><span class="vc-hn-op">=</span>${rhs}`;
     }else{
-      eqHtml=`<div class="vc-eq"><div class="vc-eq-box res"><div class="vc-eq-zh">${escH(curItem.ch)}</div><div class="vc-eq-sub">${escH(e.hv)} · (${escH(e.meaning)})</div></div></div>`;
+      const shortM=String(e.meaning||'').split(',')[0].trim();
+      eqInner=`<div class="vc-hn-term is-main is-red"><div class="vc-hn-ch">${escH(curItem.ch)}</div></div><span class="vc-hn-op">=</span><div class="vc-hn-base"><b>${escH(e.hv||e.py||'')}</b>${shortM?`<span>(${escH(shortM)})</span>`:''}</div>`;
     }
-    const metaParts=[e.book||'',e.code?`Mã #${e.code}`:'',e.hsk||'',e.py||'',e.trad?`Phồn thể: ${e.trad}`:''].filter(Boolean).join(' · ');
+    const brainIc='<span class="vc-ext-ic-brain" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9.5 4.2a3.4 3.4 0 0 0-3.2 4.5 3.1 3.1 0 0 0-1.6 2.8 3.1 3.1 0 0 0 1.2 2.4A3.1 3.1 0 0 0 9.1 19h2.2V4.2z" fill="#E36252"/><path d="M14.5 4.2a3.4 3.4 0 0 1 3.2 4.5 3.1 3.1 0 0 1 1.6 2.8 3.1 3.1 0 0 1-1.2 2.4A3.1 3.1 0 0 1 14.9 19h-2.2V4.2z" fill="#C73F33"/><path d="M8 9.2c.8.5 1.4 1.3 1.4 2.2M7.5 14c1-.3 1.8-.9 2-1.7M16 9.2c-.8.5-1.4 1.3-1.4 2.2M16.5 14c-1-.3-1.8-.9-2-1.7" fill="none" stroke="#FFF8F3" stroke-width="1.3" stroke-linecap="round"/></svg></span>';
+    const nextBtn=matched.length>1?'<button aria-label="Chữ tiếp theo" class="vc-next-char" data-vext-next="1" type="button">→</button>':'';
     const comps=(e.compounds||[]).map(cp=>`<button class="vc-comp-chip" data-say="${escH(cp.zh)}" type="button"><b>${escH(cp.zh)}</b><span>${escH(cp.py)} · ${escH(cp.vi)}</span></button>`).join('');
-    panel.innerHTML=`<div class="vc-ext-top"><div class="vc-ribbon"><svg class="ic" viewBox="0 0 24 24"><path d="M9.5 4a3.5 3.5 0 0 0-3.3 4.7A3.2 3.2 0 0 0 4.5 11.5a3.2 3.2 0 0 0 1.2 2.5A3.2 3.2 0 0 0 9 19h2.5V4H9.5z"/><path d="M14.5 4a3.5 3.5 0 0 1 3.3 4.7 3.2 3.2 0 0 1 1.7 2.8 3.2 3.2 0 0 1-1.2 2.5A3.2 3.2 0 0 1 15 19h-2.5V4h2z"/></svg><span>Hack não 3000 chữ Hán</span></div>${pillsHtml(matched)}</div>${eqHtml}<div class="vc-submeta">${escH(metaParts)}</div><div class="vc-tip-row"><div class="vc-tip"><span aria-hidden="true">💡</span><div><b>Mẹo nhớ:</b> ${escH(e.mnemonic||'')}</div></div>${nextHtml(matched.length)}</div>${comps?`<div class="vc-comp-list">${comps}</div>`:''}`;
+    panel.innerHTML=`<div class="vc-ext-head"><div class="vc-ext-head-l">${brainIc}<span class="vc-ext-title">Hack não 3000 chữ Hán</span></div>${pillsHtml(matched)}</div><div class="vc-hn-eqbox">${eqInner}</div><div class="vc-hn-tiprow"><span class="vc-bulb" aria-hidden="true">💡</span><div class="vc-hn-tip"><b>Mẹo nhớ:</b><p>${escH(e.mnemonic||'')}</p></div>${nextBtn}</div>${comps?`<div class="vc-comp-list">${comps}</div>`:''}`;
     return;
   }
 
@@ -153,26 +170,49 @@ function renderVocabExtension(w){
   if(!matched.length){panel.innerHTML='<div class="vc-ext-empty">Từ này không có nội dung</div>';return;}
   vcExtCharIdx=vcExtCharIdx%matched.length;
   const curItem=matched[vcExtCharIdx],e=curItem.entry;
+  const allItems=[];
+  (e.groups||[]).forEach(g=>(g.items||[]).forEach(it=>{if(it&&it.zh)allItems.push(it);}));
+  const pageSize=6,totalPages=Math.max(1,Math.ceil(allItems.length/pageSize));
+  vcMmPage=vcMmPage%totalPages;
+  const pageItems=allItems.slice(vcMmPage*pageSize,(vcMmPage+1)*pageSize);
+  const leftCount=Math.ceil(pageItems.length/2);
+  const leftItems=pageItems.slice(0,leftCount),rightItems=pageItems.slice(leftCount);
+  const ySlots=n=>n<=1?[110]:n===2?[54,166]:[35,110,185];
+  const lYs=ySlots(leftItems.length),rYs=ySlots(rightItems.length);
+  const linesSvg=[
+    ...leftItems.map((_,idx)=>`<line x1="170" y1="110" x2="72" y2="${lYs[idx]}" stroke="#C7463B" stroke-width="2" stroke-linecap="round"/>`),
+    ...rightItems.map((_,idx)=>`<line x1="170" y1="110" x2="268" y2="${rYs[idx]}" stroke="#C7463B" stroke-width="2" stroke-linecap="round"/>`)
+  ].join('');
+  const renderPill=it=>`<button class="vc-mm-pill" data-say="${escH(it.zh)}" title="${escH(it.py||'')}" type="button"><b>${escH(it.zh)}</b><span>${escH(it.vi||'')}</span></button>`;
+  const shortVi=String(e.meaning||'').split(/[;,]/)[0].trim();
+  const mmIc='<span class="vc-ext-ic-mm" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 12L5.8 6.2M12 12l6.2-5.8M12 12l-6.2 5.8M12 12l6.2 5.8" stroke="#C7463B" stroke-width="2.2" stroke-linecap="round"/><circle cx="5.5" cy="6" r="2.7" fill="#C73F33"/><circle cx="18.5" cy="6" r="2.7" fill="#C73F33"/><circle cx="5.5" cy="18" r="2.7" fill="#C73F33"/><circle cx="18.5" cy="18" r="2.7" fill="#C73F33"/><circle cx="12" cy="12" r="3.4" fill="#9E2A22"/></svg></span>';
+  const hasNext=totalPages>1||matched.length>1;
+  const mmNextBtn=hasNext?`<button aria-label="Xem nhánh tiếp theo" class="vc-next-char vc-mm-next" data-chars="${matched.length}" data-pages="${totalPages}" data-vext-mm-next="1" type="button">→</button>`:'';
+  const pgBadge=totalPages>1?`<span class="vc-mm-pg">${vcMmPage+1}/${totalPages}</span>`:'';
   const partsHtml=(e.parts&&e.parts.length)?`<div class="vc-mm-parts">${e.parts.map(p=>`<span class="vc-part-pill"><b>${escH(p.rad)}</b><span>${escH(p.hv)}${p.meaning?' · '+escH(p.meaning):''}</span></span>`).join('')}</div>`:'';
   const exHtml=(e.example&&e.example.zh)?`<button class="vc-mm-ex" data-say="${escH(e.example.zh)}" type="button"><div><div class="zh">${escH(e.example.zh)}</div><div class="sub">${escH(e.example.py)} · ${escH(e.example.vi)}</div></div><svg class="ic" style="color:var(--accent);flex-shrink:0"><use href="#i-vol"></use></svg></button>`:'';
-  const groupsHtml=(e.groups||[]).map(g=>{
-    const itemsHtml=(g.items||[]).map(it=>`<button class="vc-mm-node" data-say="${escH(it.zh)}" type="button"><b>${escH(it.zh)}</b><span class="py">${escH(it.py)}</span><span class="vi">${escH(it.vi)}</span></button>`).join('');
-    return `${g.label?`<div class="vc-mm-gtitle">${escH(g.label)}</div>`:''}<div class="vc-mm-grid">${itemsHtml}</div>`;
-  }).join('');
-  panel.innerHTML=`<div class="vc-ext-top"><div class="vc-ribbon"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.8"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M9.8 10.2L6.6 7.4M14.2 10.2l3.2-2.8M9.8 13.8l-3.2 2.8M14.2 13.8l3.2 2.8"/></svg><span>Sơ đồ tư duy 3300 chữ Hán</span></div>${pillsHtml(matched)}</div>${partsHtml}<div class="vc-tip-row"><div class="vc-tip"><span aria-hidden="true">💡</span><div><b>Câu chuyện nhớ (${escH(curItem.ch)} · ${escH(e.py)} · ${escH(e.hv)}):</b> ${escH(e.story||'')}</div></div>${nextHtml(matched.length)}</div>${exHtml}<div class="vc-mm-tree"><button class="vc-mm-hub" data-say="${escH(curItem.ch)}" type="button">${escH(curItem.ch)}</button>${groupsHtml}</div>`;
+  const moreHtml=`<details class="vc-mm-more"><summary>Chi tiết chữ ${escH(curItem.ch)} (${escH(e.py||'')}) · Câu chuyện &amp; ví dụ</summary><div class="vc-mm-more-body">${partsHtml}${e.story?`<div class="vc-mm-story"><b>Câu chuyện nhớ:</b> ${escH(e.story)}</div>`:''}${exHtml}</div></details>`;
+  panel.innerHTML=`<div class="vc-ext-head"><div class="vc-ext-head-l">${mmIc}<span class="vc-ext-title">Sơ đồ tư duy 3300 chữ Hán</span></div><div class="vc-ext-head-r">${pillsHtml(matched)}${pgBadge}</div></div><div class="vc-mm-wrap${hasNext?' has-next':''}"><div class="vc-mm-radial"><svg aria-hidden="true" class="vc-mm-svg" preserveaspectratio="none" viewbox="0 0 340 220">${linesSvg}</svg><div class="vc-mm-col left">${leftItems.map(renderPill).join('')}</div><button class="vc-mm-center" data-say="${escH(curItem.ch)}" title="${escH(e.py||'')}" type="button"><b>${escH(curItem.ch)}</b><span>${escH(shortVi)}</span></button><div class="vc-mm-col right">${rightItems.map(renderPill).join('')}</div></div>${mmNextBtn}</div>${moreHtml}`;
 }
 if($('#vc-ext-tabs'))$('#vc-ext-tabs').addEventListener('click',e=>{
   const b=e.target.closest('button[data-vext]');if(!b)return;
-  vcExtTab=b.dataset.vext;vcExtCharIdx=0;renderVocabExtension(vcCurWord);
+  vcExtTab=b.dataset.vext;vcExtCharIdx=0;vcMmPage=0;renderVocabExtension(vcCurWord);
 });
 if($('#vc-ext-panel'))$('#vc-ext-panel').addEventListener('click',e=>{
   const cb=e.target.closest('[data-vext-char]');
-  if(cb){vcExtCharIdx=+cb.dataset.vextChar||0;renderVocabExtension(vcCurWord);return;}
+  if(cb){vcExtCharIdx=+cb.dataset.vextChar||0;vcMmPage=0;renderVocabExtension(vcCurWord);return;}
   const nb=e.target.closest('[data-vext-next]');
-  if(nb){vcExtCharIdx+=1;renderVocabExtension(vcCurWord);}
+  if(nb){vcExtCharIdx+=1;vcMmPage=0;renderVocabExtension(vcCurWord);return;}
+  const mb=e.target.closest('[data-vext-mm-next]');
+  if(mb){
+    const pages=Math.max(1,+mb.dataset.pages||1),chars=Math.max(1,+mb.dataset.chars||1);
+    if(vcMmPage+1<pages)vcMmPage+=1;
+    else{vcMmPage=0;if(chars>1)vcExtCharIdx+=1;}
+    renderVocabExtension(vcCurWord);
+  }
 });
 
-const vocab=makeDeck($('#vocab'),{listFn:()=>WORDS,sessionQueue:false,onRender(w){vcCurWord=w;vcExtCharIdx=0;renderVocabExtension(w);},onMutate(){vocab.render();renderReviewDash();renderWordbook();}});
+const vocab=makeDeck($('#vocab'),{fixedMode:'zh',listFn:()=>WORDS,sessionQueue:false,onRender(w){vcCurWord=w;vcExtCharIdx=0;vcMmPage=0;renderVocabExtension(w);},onMutate(){vocab.render();renderReviewDash();renderWordbook();}});
 window.renderFlash=()=>{vocab.reset();try{renderReviewDash();renderWordbook();}catch(_){}};
 
 /* ---------- Màn 2: Ôn tập theo lịch ---------- */
