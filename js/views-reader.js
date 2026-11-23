@@ -61,7 +61,7 @@ const LS_EXT_KEYS=['dialog','copy','writing','trans'];
 function getLessonSectionProgress(l){
   const sec=(store.lessonSections&&l&&l.id&&store.lessonSections[l.id])||{};
   const wList=((l&&l.wordIds)||[]).map(id=>store.vocabBank[id]).filter(Boolean);
-  const allWordsStudied=wList.length>0&&wList.every(w=>store.words&&store.words[w.id]&&store.words[w.id].status!=='new');
+  const allWordsStudied=Boolean(l&&l.id==='lesson_sample_b4')&&wList.length>0&&wList.every(w=>store.words&&store.words[w.id]&&store.words[w.id].status!=='new');
   const doneMap={
     vocab:!!(sec.vocab||allWordsStudied),
     grammar:!!sec.grammar,
@@ -164,13 +164,14 @@ function renderLessonDetail(){
   const gList=Object.values(l.grammarPoints||{});
   const cList=l.chars||[];
   if(heroZh){
-    const rawZh=(l.titleZh||l.code||'你好').replace(/[。？！?!\s]+$/,'').slice(0,4);
+    const rawZh=(l.titleZh||'你好').replace(/[。？！?!\s]+$/,'').slice(0,4);
     heroZh.textContent=(rawZh||'你好')+'!';
   }
   if(hero){
     const c=(typeof COURSES!=='undefined')?COURSES.find(x=>x.id===l.courseId):null;
-    const courseLabel=c?(c.title||'Giáo trình').replace(/\s+(\d+)$/,' · Quyển $1'):'Giáo trình Hán ngữ';
-    const fullTitle=`${l.code?l.code+' · ':''}${l.titleVi||'Chưa đặt tên'}`;
+    const courseLabel=c?(c.group==='hanngu'?(c.title||'Giáo trình').replace(/\s+(\d+)$/,' · Quyển $1'):(c.title||'Giáo trình')):'Giáo trình Hán ngữ';
+    const baseVi=l.titleVi||'Chưa đặt tên';
+    const fullTitle=(l.code&&!baseVi.includes(l.code))?`${l.code} · ${baseVi}`:baseVi;
     hero.innerHTML=`<span class="ls-course-pill">${escHtml(courseLabel)}</span><h1>${escHtml(fullTitle)}</h1><div class="ls-stats-row"><span class="ls-stat-pill"><svg class="ic" style="width:12px;height:12px"><use href="#i-book"></use></svg>${wList.length} từ mới</span><span class="ls-stat-pill"><svg class="ic" style="width:12px;height:12px"><use href="#i-bolt"></use></svg>${gList.length} ngữ pháp</span><span class="ls-stat-pill"><svg class="ic" style="width:12px;height:12px"><use href="#i-brush"></use></svg>${cList.length} chữ Hán</span></div>`;
   }
   if(dlCard){
@@ -315,8 +316,233 @@ function renderLessonDetail(){
   }
 }
 
+/* ---------- Hub Song Song trên #home & Lộ trình học ---------- */
+let curLearnTab='lessons';
+let curLearnRoadmapCourseId=null;
+let _obDraft=null;
+
+function getTrackPairInfo(setup){
+  const s=setup||(store&&store.learningSetup)||{completed:false,level:1,mode:'hanngu',activeTrack:'hanngu'};
+  const lv=Math.min(6,Math.max(1,Number(s.level)||1));
+  const hnId=typeof getCourseIdForTrack==='function'?getCourseIdForTrack(lv,'hanngu'):`course_hn_${lv}`;
+  const hskId=typeof getCourseIdForTrack==='function'?getCourseIdForTrack(lv,'hsk30'):`course_hsk30_lv${lv}`;
+  const hnC=COURSES.find(x=>x.id===hnId)||null;
+  const hskC=COURSES.find(x=>x.id===hskId)||null;
+  const hnSt=hnC&&typeof getCourseProgressStats==='function'?getCourseProgressStats(hnId):{doneCnt:0,total:15,pct:0};
+  const hskSt=hskC&&typeof getCourseProgressStats==='function'?getCourseProgressStats(hskId):{doneCnt:0,total:15,pct:0};
+  return {setup:s,lv,hnId,hskId,hnC,hskC,hnSt,hskSt};
+}
+
+function renderHomeTrackHub(){
+  const box=$('#hm-track-hub');
+  if(!box)return;
+  const {setup,lv,hnId,hskId,hnC,hskC,hnSt,hskSt}=getTrackPairInfo();
+  if(!setup.completed){
+    box.innerHTML=`<div class="hm-track-card-wrap"><div class="hm-track-single">
+      <div><b>Chưa chọn trình độ HSK &amp; hệ giáo trình</b><div class="small muted" style="margin-top:2px">Chọn cấp độ HSK 1–6 và giáo trình Hán ngữ, NEW HSK 3.0 hoặc học song song.</div></div>
+      <button type="button" class="btn sm" data-open-setup="1" style="white-space:nowrap">Thiết lập ngay ›</button>
+    </div></div>`;
+    return;
+  }
+  if(setup.mode==='parallel'){
+    const actCid=store.activeCourseId;
+    const mkCard=(cid,covCls,covBig,covSmall,title,st)=>{
+      const isOn=actCid===cid;
+      const statusTxt=isOn?'Đang chọn':(st.doneCnt===0?'Chưa bắt đầu':'Đang học');
+      return `<button type="button" class="hm-track-card ${isOn?'on':''}" data-switch-course="${escHtml(cid)}">
+        <span class="hm-tc-cov ${covCls}"><span>${covBig}<br><small>${covSmall}</small></span></span>
+        <div class="hm-tc-body">
+          <div class="hm-tc-top"><span class="hm-tc-title">${escHtml(title)}</span><span class="hm-tc-pct">${st.pct}%</span></div>
+          <div class="hm-tc-sub"><span>Tiến độ: ${st.doneCnt}/${st.total} bài</span><span class="hm-tc-st ${isOn?'':'idle'}">${statusTxt}</span></div>
+          <div class="hm-tc-bar"><i style="width:${st.pct}%"></i></div>
+        </div>
+      </button>`;
+    };
+    box.innerHTML=`<div class="hm-track-card-wrap">
+      <div class="hm-track-hd">
+        <div class="hm-track-hd-left"><span class="hm-lvl-badge">HSK ${lv}</span><b>Học song song</b></div>
+        <button type="button" class="free-pill" data-open-setup="1">Đổi trình độ / giáo trình</button>
+      </div>
+      <div class="hm-track-grid">
+        ${mkCard(hnId,'hn','汉语','Q'+lv,`Giáo trình Hán ngữ – Quyển ${lv}`,hnSt)}
+        ${mkCard(hskId,'hsk','HSK','Cấp '+lv,`NEW HSK 3.0 – Cấp ${lv}`,hskSt)}
+      </div>
+      <div class="hm-track-note">Lưu ý: Giáo trình Hán ngữ và NEW HSK 3.0 là 2 hệ thống độc lập, tiến độ tách riêng 100% và không ảnh hưởng lẫn nhau.</div>
+    </div>`;
+    return;
+  }
+  const singleId=setup.mode==='hsk30'?hskId:hnId;
+  const singleSt=setup.mode==='hsk30'?hskSt:hnSt;
+  const singleTitle=setup.mode==='hsk30'?`NEW HSK 3.0 – Cấp ${lv}`:`Giáo trình Hán ngữ – Quyển ${lv}`;
+  box.innerHTML=`<div class="hm-track-card-wrap"><div class="hm-track-single">
+    <div style="min-width:0;flex:1">
+      <div class="hm-track-hd-left"><span class="hm-lvl-badge">HSK ${lv}</span><b>${escHtml(singleTitle)}</b></div>
+      <div class="small muted" style="margin-top:4px">Tiến độ: <b>${singleSt.doneCnt}/${singleSt.total} bài (${singleSt.pct}%)</b> · Chạm để chuyển sang học song song nếu muốn.</div>
+    </div>
+    <button type="button" class="free-pill" data-open-setup="1">Đổi trình độ / giáo trình</button>
+  </div></div>`;
+}
+
+function setLearnTab(tab){
+  curLearnTab=(tab==='books')?'books':'lessons';
+  const tabs=$$('#learn-mode-tabs button[data-learntab]');
+  tabs.forEach(b=>b.classList.toggle('on',b.dataset.learntab===curLearnTab));
+  const pLessons=$('#learn-pane-lessons'),pBooks=$('#learn-pane-books');
+  if(pLessons)pLessons.classList.toggle('hide',curLearnTab!=='lessons');
+  if(pBooks)pBooks.classList.toggle('hide',curLearnTab!=='books');
+  if(curLearnTab==='lessons')renderLearnRoadmap();
+  else renderLibrary();
+}
+
+function renderLearnTrackSwitcher(){
+  const box=$('#learn-track-switcher');
+  if(!box)return;
+  const {setup,lv,hnId,hskId,hnSt,hskSt}=getTrackPairInfo();
+  const actC=COURSES.find(x=>x.id===store.activeCourseId);
+  if(setup.mode==='parallel'){
+    box.innerHTML=`<div class="learn-track-bar">
+      <div class="learn-track-tabs">
+        <button type="button" class="learn-track-pill ${store.activeCourseId===hnId?'on':''}" data-switch-course="${escHtml(hnId)}">
+          <span>Hán ngữ Q${lv}</span><span class="lt-pct">${hnSt.doneCnt}/${hnSt.total} · ${hnSt.pct}%</span>
+        </button>
+        <button type="button" class="learn-track-pill ${store.activeCourseId===hskId?'on':''}" data-switch-course="${escHtml(hskId)}">
+          <span>HSK 3.0 Cấp ${lv}</span><span class="lt-pct">${hskSt.doneCnt}/${hskSt.total} · ${hskSt.pct}%</span>
+        </button>
+      </div>
+      <button type="button" class="free-pill" data-open-setup="1">Đổi trình độ</button>
+    </div>`;
+    return;
+  }
+  const st=actC&&typeof getCourseProgressStats==='function'?getCourseProgressStats(actC.id):{doneCnt:0,total:0,pct:0};
+  box.innerHTML=`<div class="learn-track-bar">
+    <div class="small"><b>HSK ${lv}</b> · ${escHtml(actC?actC.title:'Lộ trình hiện tại')} <span class="muted">(${st.doneCnt}/${st.total} · ${st.pct}%)</span></div>
+    <button type="button" class="free-pill" data-open-setup="1">Đổi trình độ / giáo trình</button>
+  </div>`;
+}
+
+function openLearningSetupModal(step=1,isFirstRun=false){
+  const cur=store.learningSetup||{completed:false,level:1,mode:'hanngu',activeTrack:'hanngu'};
+  if(!_obDraft||step===1&&!isFirstRun&&arguments.length>=2){
+    _obDraft={level:cur.level||1,mode:cur.completed?(cur.mode||'hanngu'):'parallel'};
+  }
+  if(!_obDraft)_obDraft={level:cur.level||1,mode:cur.completed?(cur.mode||'hanngu'):'parallel'};
+
+  const renderStep=()=>{
+    const hskLevels=[
+      [1,'HSK 1','Mới học · Làm quen tiếng Trung'],
+      [2,'HSK 2','Sơ cấp · Giao tiếp cơ bản'],
+      [3,'HSK 3','Trung cấp nền tảng'],
+      [4,'HSK 4','Trung cấp'],
+      [5,'HSK 5','Trung cấp nâng cao'],
+      [6,'HSK 6','Cao cấp']
+    ];
+    if(step===1){
+      openModal(`
+        <div class="ob-head">
+          <div class="ob-step-tag">Bước 1 / 2</div>
+          <h2>Chọn cấp độ học</h2>
+          <p>Xác định trình độ phù hợp để bắt đầu lộ trình Hanyu AI</p>
+        </div>
+        <div class="ob-list">
+          ${hskLevels.map(([lv,lbl,desc])=>`<button type="button" class="ob-card ${_obDraft.level===lv?'on':''}" data-ob-lvl="${lv}">
+            <span class="ob-hsk-pill">HSK ${lv}</span>
+            <div class="ob-card-txt"><b>${lbl}</b><span>${desc}</span></div>
+            <span class="ob-radio"></span>
+          </button>`).join('')}
+        </div>
+        <div class="ob-foot">
+          <button type="button" class="btn ghost sm" id="ob-skip-btn">${cur.completed?'Hủy':'Để sau'}</button>
+          <button type="button" class="btn sm" id="ob-next-btn">Tiếp tục ›</button>
+        </div>
+      `);
+      $$('#hanyu-modal-box [data-ob-lvl]').forEach(btn=>{
+        btn.onclick=()=>{
+          _obDraft.level=Number(btn.dataset.obLvl)||1;
+          $$('#hanyu-modal-box [data-ob-lvl]').forEach(x=>x.classList.toggle('on',x===btn));
+        };
+      });
+      const skip=$('#ob-skip-btn');
+      if(skip)skip.onclick=()=>{
+        if(!store.learningSetup||!store.learningSetup.completed){
+          store.learningSetup=Object.assign({},cur,{completed:true,updatedAt:Date.now()});
+          saveStore(store);
+          renderHomeTrackHub();
+        }
+        closeModal();
+      };
+      const next=$('#ob-next-btn');
+      if(next)next.onclick=()=>{step=2;renderStep();};
+      return;
+    }
+
+    const lv=_obDraft.level||1;
+    const modes=[
+      ['hanngu',`Giáo trình Hán ngữ · Quyển ${lv}`,`Học tuần tự theo bộ Giáo trình Hán ngữ (Quyển ${lv})`,'汉语',false],
+      ['hsk30',`NEW HSK 3.0 · Cấp ${lv}`,`Học theo chuẩn giáo trình & SBT NEW HSK 3.0 Cấp ${lv}`,'HSK',false],
+      ['parallel','Học song song cả hai',`Theo dõi cả Hán ngữ Quyển ${lv} & NEW HSK 3.0 Cấp ${lv} với tiến độ tách riêng`,'2 hệ',true]
+    ];
+    openModal(`
+      <div class="ob-head">
+        <button type="button" class="ob-back-link" id="ob-back-btn">‹ Chọn lại cấp độ</button>
+        <div class="ob-step-tag">Bước 2 / 2 · HSK ${lv}</div>
+        <h2>Chọn giáo trình muốn học</h2>
+        <p>Chọn Giáo trình Hán ngữ, NEW HSK 3.0 hoặc học song song</p>
+      </div>
+      <div class="ob-list">
+        ${modes.map(([m,t,d,cov,rec])=>`<button type="button" class="ob-card ${_obDraft.mode===m?'on':''}" data-ob-mode="${m}">
+          <span class="ob-hsk-pill">${cov}</span>
+          <div class="ob-card-txt"><b>${escHtml(t)}${rec?' <span class="ob-rec">Khuyên dùng</span>':''}</b><span>${escHtml(d)}</span></div>
+          <span class="ob-radio"></span>
+        </button>`).join('')}
+      </div>
+      <div class="ob-note-box">
+        <span style="font-weight:800;flex-shrink:0">ⓘ</span>
+        <span><b>Lưu ý:</b> Hai giáo trình có cấu trúc và nội dung bài học khác nhau, tiến độ mỗi bên được lưu riêng biệt và không ảnh hưởng lẫn nhau.</span>
+      </div>
+      <div class="ob-foot">
+        <button type="button" class="btn ghost sm" id="ob-back2-btn">‹ Quay lại</button>
+        <button type="button" class="btn sm" id="ob-confirm-btn">Xác nhận</button>
+      </div>
+    `);
+    $$('#hanyu-modal-box [data-ob-mode]').forEach(btn=>{
+      btn.onclick=()=>{
+        _obDraft.mode=btn.dataset.obMode||'hanngu';
+        $$('#hanyu-modal-box [data-ob-mode]').forEach(x=>x.classList.toggle('on',x===btn));
+      };
+    });
+    const back1=$('#ob-back-btn'),back2=$('#ob-back2-btn');
+    if(back1)back1.onclick=()=>{step=1;renderStep();};
+    if(back2)back2.onclick=()=>{step=1;renderStep();};
+    const conf=$('#ob-confirm-btn');
+    if(conf)conf.onclick=()=>{
+      const chosenMode=['hanngu','hsk30','parallel'].includes(_obDraft.mode)?_obDraft.mode:'hanngu';
+      const chosenTrack=(chosenMode==='hsk30')?'hsk30':((chosenMode==='hanngu')?'hanngu':(cur.activeTrack==='hsk30'?'hsk30':'hanngu'));
+      store.learningSetup={
+        completed:true,
+        level:lv,
+        mode:chosenMode,
+        activeTrack:chosenTrack,
+        updatedAt:Date.now()
+      };
+      const targetCid=typeof getCourseIdForTrack==='function'?getCourseIdForTrack(lv,chosenTrack):`course_hn_${lv}`;
+      _obDraft=null;
+      closeModal();
+      if(typeof switchToCourse==='function')switchToCourse(targetCid);
+      else{
+        store.activeCourseId=targetCid;
+        saveStore(store);
+        renderRoadmap();
+      }
+      const modeLbl=chosenMode==='parallel'?'Học song song Hán ngữ & HSK 3.0':(chosenMode==='hsk30'?'NEW HSK 3.0':'Giáo trình Hán ngữ');
+      toast(`Đã chọn HSK ${lv} · ${modeLbl}`);
+    };
+  };
+  renderStep();
+}
+
 /* ---------- Lộ trình học ngang trên #home ---------- */
 function renderRoadmap(){
+  renderHomeTrackHub();
   const wrap=$('#hm-road-in'),lbl=$('#hm-course-lbl'),freeBtn=$('#hm-free-btn');
   if(!wrap)return;
   const c=COURSES.find(x=>x.id===store.activeCourseId)||COURSES[0];
@@ -348,7 +574,6 @@ function renderRoadmap(){
   const stepX=94, padL=52;
   const totalW=Math.max(340, padL*2 + (lessons.length-1)*stepX);
   wrap.style.width=totalW+'px';
-  // Gentle scenic rising wave curve (matching demo)
   const waveY=idx=>{
     const pattern=[86,70,58,48,54,66,78,66,52,46,56,70,80,66,54];
     return pattern[idx % pattern.length];
@@ -392,16 +617,17 @@ function renderRoadmap(){
   }).join('');
   wrap.innerHTML=svgBg+nodesHtml;
   if(curView==='roadmap'&&typeof renderFullRoadmap==='function')renderFullRoadmap(curRoadmapCourseId);
+  if(curView==='learn'&&curLearnTab==='lessons'&&typeof renderLearnRoadmap==='function')renderLearnRoadmap();
 }
 
 let curRoadmapCourseId=null;
-function renderFullRoadmap(courseId){
-  const canvas=$('#rmf-canvas'),sub=$('#rmf-course-sub'),freeBtn=$('#rmf-free-btn');
-  const doneEl=$('#rmf-done-cnt'),pctEl=$('#rmf-pct'),barEl=$('#rmf-bar-fill');
-  const contBtn=$('#rmf-continue-btn'),contTxt=$('#rmf-continue-txt');
-  if(!canvas)return;
+function renderRoadmapInto(cfg,courseId){
+  const canvas=$(cfg.canvasSel),sub=$(cfg.subSel),freeBtn=$(cfg.freeSel);
+  const doneEl=$(cfg.doneSel),pctEl=$(cfg.pctSel),barEl=$(cfg.barSel);
+  const contBtn=$(cfg.contSel),contTxt=$(cfg.contTxtSel),openBtn=$(cfg.openCourseSel);
+  if(!canvas)return null;
   const c=(courseId&&COURSES.find(x=>x.id===courseId))
-    ||(curRoadmapCourseId&&COURSES.find(x=>x.id===curRoadmapCourseId))
+    ||(cfg.isFull&&curRoadmapCourseId&&COURSES.find(x=>x.id===curRoadmapCourseId))
     ||COURSES.find(x=>x.id===store.activeCourseId&&x.id!=='course_sample_hn1'&&getCourseLessons(x.id,true).length>0)
     ||COURSES.find(x=>x.id==='course_hn_1')
     ||COURSES.find(x=>getCourseLessons(x.id,true).length>0)
@@ -411,7 +637,8 @@ function renderFullRoadmap(courseId){
     freeBtn.textContent=`Học tự do: ${store.freeExplore?'Bật':'Tắt'}`;
   }
   if(!c){
-    curRoadmapCourseId=null;
+    if(cfg.isFull)curRoadmapCourseId=null;
+    else curLearnRoadmapCourseId=null;
     if(sub)sub.textContent='Chưa có giáo trình nào';
     if(doneEl)doneEl.textContent='0/0';
     if(pctEl)pctEl.textContent='0%';
@@ -419,27 +646,32 @@ function renderFullRoadmap(courseId){
     if(contBtn){contBtn.disabled=true;delete contBtn.dataset.lessonId;}
     if(contTxt)contTxt.textContent='Chưa có bài học';
     canvas.style.aspectRatio='360 / 180';
-    canvas.innerHTML='<div class="small muted" style="padding:24px;text-align:center">Hãy vào tab <b>Học tập</b> để chọn hoặc tạo giáo trình.</div>';
-    return;
+    canvas.innerHTML='<div class="small muted" style="padding:24px;text-align:center">Hãy vào tab <b>Giáo trình</b> để chọn hoặc tạo giáo trình.</div>';
+    return null;
   }
-  curRoadmapCourseId=c.id;
+  if(cfg.isFull)curRoadmapCourseId=c.id;
+  else curLearnRoadmapCourseId=c.id;
+  if(openBtn)openBtn.dataset.courseId=c.id;
+
   const lessons=getCourseLessons(c.id,true);
-  if(sub)sub.textContent=`${c.title} · ${lessons.length} bài học`;
-  const prog=getCourseProg(c.id);
-  const doneSet=new Set(prog.completedLessonIds||[]);
-  const doneCnt=lessons.filter(l=>doneSet.has(l.id)).length;
-  const pct=lessons.length?Math.round(doneCnt*100/lessons.length):0;
-  if(doneEl)doneEl.textContent=`${doneCnt}/${lessons.length}`;
-  if(pctEl)pctEl.textContent=`${pct}%`;
-  if(barEl)barEl.style.width=pct+'%';
+  const stats=typeof getCourseProgressStats==='function'?getCourseProgressStats(c.id):{doneCnt:0,total:lessons.length,pct:0,doneSet:new Set()};
+  const doneSet=stats.doneSet;
+  if(sub)sub.textContent=`${c.title} · ${stats.total} bài học`;
+  if(doneEl)doneEl.textContent=`${stats.doneCnt}/${stats.total}`;
+  if(pctEl)pctEl.textContent=`${stats.pct}%`;
+  if(barEl)barEl.style.width=stats.pct+'%';
   if(!lessons.length){
     if(contBtn){contBtn.disabled=true;delete contBtn.dataset.lessonId;}
     if(contTxt)contTxt.textContent='Chưa có bài học';
     canvas.style.aspectRatio='360 / 180';
     canvas.innerHTML='<div class="small muted" style="padding:24px;text-align:center">Giáo trình chưa có bài học nào.</div>';
-    return;
+    return c.id;
   }
-  let activeL=lessons.find(x=>x.id===store.activeLessonId);
+  let activeL=(c.id===store.activeCourseId)?lessons.find(x=>x.id===store.activeLessonId):null;
+  if(!activeL){
+    const cp=getCourseProg(c.id);
+    if(cp.currentLessonId)activeL=lessons.find(x=>x.id===cp.currentLessonId);
+  }
   if(!activeL)activeL=lessons.find(x=>!doneSet.has(x.id))||lessons[0];
   const activeIdx=Math.max(0,lessons.findIndex(x=>x.id===activeL.id));
   if(contBtn){contBtn.disabled=false;contBtn.dataset.lessonId=activeL.id;}
@@ -497,6 +729,24 @@ function renderFullRoadmap(courseId){
     return `<a class="rmf-node ${stateCls}" href="javascript:void(0)" data-rm-lid="${escHtml(l.id)}" data-unlocked="${unlocked?'1':'0'}" style="left:${leftPct}%;top:${topPct}%">${dot}<span class="rmf-lbl"><b>${escHtml(l.code||('Bài '+(idx+1)))}</b><span>${escHtml(l.titleVi||l.titleZh||'Chưa đặt tên')}</span></span></a>`;
   }).join('');
   canvas.innerHTML=svgHtml+nodesHtml;
+  return c.id;
+}
+
+function renderFullRoadmap(courseId){
+  return renderRoadmapInto({
+    canvasSel:'#rmf-canvas',subSel:'#rmf-course-sub',freeSel:'#rmf-free-btn',
+    doneSel:'#rmf-done-cnt',pctSel:'#rmf-pct',barSel:'#rmf-bar-fill',
+    contSel:'#rmf-continue-btn',contTxtSel:'#rmf-continue-txt',openCourseSel:'#rmf-open-course-btn',isFull:true
+  },courseId);
+}
+
+function renderLearnRoadmap(courseId){
+  renderLearnTrackSwitcher();
+  return renderRoadmapInto({
+    canvasSel:'#learn-rm-canvas',subSel:'#learn-rm-sub',freeSel:'#learn-rm-free-btn',
+    doneSel:'#learn-rm-done-cnt',pctSel:'#learn-rm-pct',barSel:'#learn-rm-bar-fill',
+    contSel:'#learn-rm-continue-btn',contTxtSel:'#learn-rm-continue-txt',openCourseSel:'#learn-rm-open-course-btn',isFull:false
+  },courseId);
 }
 
 /* ---------- Thư viện Giáo trình (#learn) ---------- */
@@ -531,9 +781,8 @@ function renderLibrary(){
     html+=`<div style="margin-top:14px"><div class="h2"><h2>${g.title}</h2><span class="small muted">${items.length} bộ</span></div><div class="list" style="margin-top:8px">`;
     items.forEach(c=>{
       const ls=getCourseLessons(c.id,true);
-      const prog=getCourseProg(c.id);
-      const doneCnt=(prog.completedLessonIds||[]).filter(id=>ls.some(l=>l.id===id)).length;
-      const pct=ls.length?Math.round(doneCnt/ls.length*100):0;
+      const cStats=typeof getCourseProgressStats==='function'?getCourseProgressStats(c.id):{doneCnt:0,total:ls.length,pct:0};
+      const doneCnt=cStats.doneCnt,pct=cStats.pct;
       const isAct=c.id===store.activeCourseId;
       const pStats=typeof getCoursePackStats==='function'?getCoursePackStats(c.id):{total:ls.length,downloaded:0,available:0};
       const hasPackCourse=pStats.available>0||(pStats.downloaded>0&&ls.some(l=>typeof hasPackForLesson==='function'&&hasPackForLesson(l.id)));
@@ -762,7 +1011,11 @@ document.addEventListener('click', e=>{
   const stBtn = e.target.closest('[data-tb-study]');
   if(stBtn){
     const l = LESSONS.find(x=>x.id===stBtn.dataset.tbStudy);
-    if(l){ store.activeCourseId=l.courseId; store.activeLessonId=l.id; saveStore(store); applyActiveLesson(); renderRoadmap(); goView('lesson'); }
+    if(l){
+      if(typeof switchToCourse==='function') switchToCourse(l.courseId, l.id);
+      else{ store.activeCourseId=l.courseId; store.activeLessonId=l.id; saveStore(store); applyActiveLesson(); renderRoadmap(); }
+      goView('lesson');
+    }
   }
 });
 
@@ -775,8 +1028,9 @@ function renderCourseDetail(courseId){
   const ls=getCourseLessons(c.id,true);
   const prog=getCourseProg(c.id);
   const doneSet=new Set(prog.completedLessonIds||[]);
-  const doneCnt=ls.filter(l=>doneSet.has(l.id)).length;
-  const pct=ls.length?Math.round(doneCnt/ls.length*100):0;
+  const cStats=typeof getCourseProgressStats==='function'?getCourseProgressStats(c.id):{doneCnt:ls.filter(l=>doneSet.has(l.id)).length,total:ls.length,pct:ls.length?Math.round(ls.filter(l=>doneSet.has(l.id)).length/ls.length*100):0};
+  const doneCnt=cStats.doneCnt;
+  const pct=cStats.pct;
   const isAct=c.id===store.activeCourseId;
 
   const pStats=typeof getCoursePackStats==='function'?getCoursePackStats(c.id):{total:ls.length,downloaded:0,available:0};
@@ -795,7 +1049,7 @@ function renderCourseDetail(courseId){
         ${c.source?`<p class="small muted" style="margin:2px 0">Nguồn: ${escHtml(c.source)}</p>`:''}
       </div>
     </div>
-    <div class="barrow" style="margin-top:8px"><div class="bar"><i style="width:${pct}%"></i></div><span class="small">${doneCnt} / ${ls.length} bài (${pct}%)</span></div>
+    <div class="barrow" style="margin-top:8px"><div class="bar"><i style="width:${pct}%"></i></div><span class="small">${doneCnt} / ${cStats.total} bài (${pct}%)</span></div>
     <div class="lib-bar" style="margin-top:10px">
       <button type="button" class="btn sm" id="cd-select-active" ${isAct?'disabled':''}>${isAct?'✓ Đang học khóa này':'Chọn làm khóa đang học'}</button>
       ${c.group==='personal'?`<button type="button" class="btn ghost sm" id="cd-dup-course">Nhân bản</button>`:''}

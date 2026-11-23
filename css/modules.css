@@ -867,3 +867,138 @@ button,a{touch-action:manipulation}
 :root[data-theme="dark"] .vc-mm-pill b{color:var(--ink)}
 :root[data-theme="dark"] .vc-mm-pill span,
 :root[data-theme="dark"] .vc-hn-sub{color:var(--muted)}
+
+/* === Học tập 2 tab (Bài học / Giáo trình) · Song song Hán ngữ & HSK 3.0 · Onboarding === */
+.learn-seg{
+  display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:999px;
+  background:var(--card-bg,var(--surface));border:1px solid var(--line);box-shadow:var(--shadow);
+  margin-top:12px
+}
+.learn-seg button{
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  padding:9px 12px;border-radius:999px;font-weight:700;font-size:14px;
+  color:var(--muted);transition:background .15s,color .15s
+}
+.learn-seg button.on{
+  background:linear-gradient(180deg,var(--btn-a),var(--btn-b));
+  color:#fff;box-shadow:0 3px 10px rgba(159,49,40,.22)
+}
+.learn-seg button .ic{width:17px;height:17px}
+#learn-pane-lessons>*+*,#learn-pane-books>*+*{margin-top:12px}
+
+.learn-track-bar{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+  padding:10px 12px;border-radius:16px;background:var(--card-bg,var(--surface));
+  border:1px solid var(--line);box-shadow:var(--shadow)
+}
+.learn-track-tabs{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0}
+.learn-track-pill{
+  display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;
+  border:1px solid var(--line);background:var(--surface2);color:var(--ink);
+  font-size:12.5px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap
+}
+.learn-track-pill.on{
+  background:linear-gradient(135deg,var(--btn-a),var(--btn-b));
+  border-color:transparent;color:#fff;box-shadow:0 3px 10px rgba(159,49,40,.2)
+}
+.learn-track-pill .lt-pct{
+  font-size:11px;padding:1px 7px;border-radius:999px;
+  background:rgba(255,255,255,.85);color:#7B2219;font-weight:800
+}
+.learn-track-pill.on .lt-pct{background:rgba(255,255,255,.22);color:#fff}
+
+.hm-track-hub{margin-top:14px}
+.hm-track-card-wrap{
+  background:var(--card-bg,var(--surface));border:1px solid var(--line);
+  border-radius:18px;padding:12px 14px;box-shadow:var(--shadow)
+}
+.hm-track-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.hm-track-hd-left{display:flex;align-items:center;gap:8px;min-width:0}
+.hm-lvl-badge{
+  display:inline-flex;align-items:center;justify-content:center;
+  padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;
+  background:linear-gradient(135deg,var(--btn-a),var(--btn-b));color:#fff
+}
+.hm-track-hd b{font-size:14.5px;color:var(--ink)}
+.hm-track-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:520px){.hm-track-grid{grid-template-columns:1fr}}
+.hm-track-card{
+  display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  padding:10px 11px;border-radius:14px;border:1.5px solid var(--line);
+  background:var(--surface);cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .12s
+}
+.hm-track-card:hover{border-color:var(--accent-2);transform:translateY(-1px)}
+.hm-track-card.on{border-color:var(--accent);background:#FFF6F1;box-shadow:0 4px 12px rgba(199,70,59,.12)}
+.hm-tc-cov{
+  width:42px;height:52px;border-radius:9px;display:grid;place-items:center;
+  font-weight:800;font-size:12px;color:#fff;flex-shrink:0;text-align:center;line-height:1.15
+}
+.hm-tc-cov.hn{background:linear-gradient(160deg,#D96846,#9F3128)}
+.hm-tc-cov.hsk{background:linear-gradient(160deg,#C7463B,#78221B)}
+.hm-tc-body{flex:1;min-width:0}
+.hm-tc-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.hm-tc-title{font-size:13.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hm-tc-pct{font-size:12.5px;font-weight:800;color:var(--accent);flex-shrink:0}
+.hm-tc-sub{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:3px;font-size:11.5px;color:var(--muted)}
+.hm-tc-st{font-weight:700;color:var(--accent)}
+.hm-tc-st.idle{color:var(--muted);font-weight:600}
+.hm-tc-bar{height:6px;border-radius:999px;background:var(--surface2);overflow:hidden;margin-top:6px}
+.hm-tc-bar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent-2),var(--accent))}
+.hm-track-note{font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.4}
+.hm-track-single{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+
+/* Modal Onboarding 2 bước */
+.ob-head{
+  background:linear-gradient(135deg,var(--brand-dark,#8B2E2E),var(--accent,#C7463B));
+  color:#fff;margin:-16px -16px 14px;padding:16px 18px 14px;border-radius:17px 17px 0 0;
+  position:relative
+}
+.ob-step-tag{
+  display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;
+  background:rgba(255,255,255,.18);font-size:11px;font-weight:700;margin-bottom:6px
+}
+.ob-head h2{font-size:19px;font-weight:800;margin:0;color:#fff}
+.ob-head p{font-size:12.5px;opacity:.92;margin:3px 0 0;color:#FFF5EF}
+.ob-list{display:grid;gap:8px}
+.ob-card{
+  display:flex;align-items:center;gap:11px;width:100%;text-align:left;
+  padding:11px 12px;border-radius:14px;border:1.5px solid var(--line);
+  background:var(--surface);cursor:pointer;transition:all .15s
+}
+.ob-card:hover{border-color:var(--accent-2)}
+.ob-card.on{border-color:var(--accent);background:#FFF5EE;box-shadow:0 3px 12px rgba(199,70,59,.14)}
+.ob-hsk-pill{
+  width:46px;height:36px;border-radius:10px;display:grid;place-items:center;
+  font-size:12px;font-weight:800;flex-shrink:0;background:var(--surface2);color:var(--accent);border:1px solid var(--line)
+}
+.ob-card.on .ob-hsk-pill{background:linear-gradient(135deg,var(--btn-a),var(--btn-b));color:#fff;border-color:transparent}
+.ob-card-txt{flex:1;min-width:0}
+.ob-card-txt b{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14px;color:var(--ink)}
+.ob-card-txt span{display:block;font-size:12px;color:var(--muted);margin-top:2px;line-height:1.35}
+.ob-rec{
+  font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;
+  background:#FCE4D6;color:#9F3128
+}
+.ob-radio{
+  width:20px;height:20px;border-radius:50%;border:2px solid #D9BDB0;flex-shrink:0;
+  display:grid;place-items:center;background:#fff
+}
+.ob-card.on .ob-radio{border-color:var(--accent);background:var(--accent)}
+.ob-card.on .ob-radio::after{content:"";width:7px;height:7px;border-radius:50%;background:#fff}
+.ob-note-box{
+  display:flex;gap:8px;align-items:flex-start;margin-top:10px;padding:9px 11px;
+  border-radius:12px;background:#FDF2EB;border:1px solid #F0D2C2;font-size:12px;color:#6E342A;line-height:1.4
+}
+.ob-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:14px}
+.ob-back-link{font-size:12.5px;font-weight:700;color:#FFE7DC;display:inline-flex;align-items:center;gap:4px;margin-bottom:6px;cursor:pointer}
+
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .hm-track-card.on,
+  :root:not([data-theme="light"]) .ob-card.on{background:var(--surface2)}
+  :root:not([data-theme="light"]) .ob-note-box{background:var(--surface2);border-color:var(--line);color:var(--ink)}
+  :root:not([data-theme="light"]) .learn-track-pill .lt-pct{background:rgba(0,0,0,.35);color:var(--ink)}
+}
+:root[data-theme="dark"] .hm-track-card.on,
+:root[data-theme="dark"] .ob-card.on{background:var(--surface2)}
+:root[data-theme="dark"] .ob-note-box{background:var(--surface2);border-color:var(--line);color:var(--ink)}
+:root[data-theme="dark"] .learn-track-pill .lt-pct{background:rgba(0,0,0,.35);color:var(--ink)}

@@ -417,6 +417,28 @@ function buildStandardCatalogSeed(){
       status:'published',lessonOrder:order,createdAt:now,updatedAt:now
     });
   });
+  [4,5,6].forEach(lvl=>{
+    const cId=`course_hsk30_lv${lvl}`,order=[];
+    for(let b=1;b<=15;b++){
+      const lId=`lesson_hsk30_${lvl}_b${b}`;
+      order.push(lId);
+      lessons.push({
+        id:lId,courseId:cId,code:`Bài ${b}`,titleVi:`HSK ${lvl} (3.0) · Bài ${b}`,titleZh:'',py:'',
+        goals:[`Chờ nạp nội dung & audio chuẩn HSK ${lvl} (3.0)`],
+        status:'draft',
+        sourceRef:{fileName:`HSK${lvl} - Tiếng Việt (3.0).pdf`,fileHash:'',pageRange:'—'},
+        audioTracks:[],workbook:null,optionalExtensions:{hackNaoIds:[],mindMapRootChars:[]},
+        originalContent:'',supplementalContent:'',wordIds:[],sentences:[],dialog:[],dialogQuestions:[],grammarPoints:{},grammarQuiz:[],orderBank:[],chars:[],updatedAt:now
+      });
+    }
+    courses.push({
+      id:cId,title:`NEW HSK 3.0 · Cấp ${lvl}`,group:'hsk',systemTrack:'hsk30',
+      versionLabel:`HSK 3.0 · 15 bài (Chờ nạp PDF)`,
+      source:`HSK${lvl} - Tiếng Việt (3.0).pdf`,level:`HSK ${lvl} (3.0)`,
+      desc:`Khung hệ thống NEW HSK 3.0 Cấp ${lvl} độc lập (${order.length} bài). Độc lập tiến độ với Giáo trình Hán ngữ.`,
+      status:'published',lessonOrder:order,createdAt:now,updatedAt:now
+    });
+  });
 
   // Nhóm B: Khẩu ngữ bổ trợ (độc lập)
   courses.push({
@@ -609,14 +631,69 @@ async function pruneLegacyUnstudiedLessons(){
   saveStore(store);
 }
 
+function getCourseIdForTrack(level,track){
+  const lv=Math.min(6,Math.max(1,Number(level)||1));
+  return track==='hsk30'?`course_hsk30_lv${lv}`:`course_hn_${lv}`;
+}
+
+function getCourseProgressStats(courseId){
+  const allLs=getCourseLessons(courseId,true);
+  const regularLs=allLs.filter(l=>!/^lesson_hsk30_\d+_mock$/.test(l.id));
+  const baseLs=regularLs.length?regularLs:allLs;
+  const prog=getCourseProg(courseId);
+  const doneSet=new Set(prog.completedLessonIds||[]);
+  const doneCnt=baseLs.filter(l=>doneSet.has(l.id)).length;
+  const total=baseLs.length;
+  const pct=total?Math.round(doneCnt*100/total):0;
+  return {doneCnt,total,pct,doneSet,lessons:allLs,baseLessons:baseLs};
+}
+
+function switchToCourse(courseId,lessonId){
+  if(store.activeCourseId&&store.activeLessonId){
+    const prevC=COURSES.find(x=>x.id===store.activeCourseId);
+    if(prevC&&getCourseLessons(prevC.id,true).some(l=>l.id===store.activeLessonId)){
+      getCourseProg(prevC.id).currentLessonId=store.activeLessonId;
+    }
+  }
+  const c=COURSES.find(x=>x.id===courseId);
+  if(!c)return;
+  const ls=getCourseLessons(c.id,true);
+  const prog=getCourseProg(c.id);
+  const doneSet=new Set(prog.completedLessonIds||[]);
+  let targetLid=null;
+  if(lessonId&&ls.some(l=>l.id===lessonId))targetLid=lessonId;
+  else if(prog.currentLessonId&&ls.some(l=>l.id===prog.currentLessonId))targetLid=prog.currentLessonId;
+  else{
+    const nextL=ls.find(l=>!doneSet.has(l.id))||ls[0];
+    targetLid=nextL?nextL.id:null;
+  }
+  store.activeCourseId=c.id;
+  store.activeLessonId=targetLid;
+  prog.currentLessonId=targetLid;
+  if(!store.learningSetup||typeof store.learningSetup!=='object'){
+    store.learningSetup={completed:false,level:1,mode:'hanngu',activeTrack:'hanngu',updatedAt:null};
+  }
+  if(c.group==='hsk')store.learningSetup.activeTrack='hsk30';
+  else if(c.group==='hanngu')store.learningSetup.activeTrack='hanngu';
+  saveStore(store);
+  applyActiveLesson();
+  if(typeof refreshDashboards==='function')refreshDashboards();
+  renderRoadmap();
+  renderLibrary();
+  if(typeof renderLearnRoadmap==='function')renderLearnRoadmap(c.id);
+}
+
 async function initCurriculumStore(){
   DEFAULT_WORDS_SNAP.forEach(w=>registerVocabWord(w));
+  const prefCid=(store.learningSetup&&store.learningSetup.completed)
+    ?getCourseIdForTrack(store.learningSetup.level,store.learningSetup.mode==='hsk30'?'hsk30':(store.learningSetup.activeTrack||'hanngu'))
+    :'course_hn_1';
   // Pre-seed synchronously so courses/lessons render immediately even if IndexedDB is slow or blocked
   try{
     const seed0=buildStandardCatalogSeed();
     if(!COURSES.length)COURSES=seed0.courses.slice();
     if(!LESSONS.length)LESSONS=seed0.lessons.slice();
-    if(!store.activeCourseId||store.activeCourseId==='course_sample_hn1'||!COURSES.some(c=>c.id===store.activeCourseId)){store.activeCourseId=(COURSES.find(c=>c.id==='course_hn_1')||COURSES[0]).id;}
+    if(!store.activeCourseId||store.activeCourseId==='course_sample_hn1'||!COURSES.some(c=>c.id===store.activeCourseId)){store.activeCourseId=(COURSES.find(c=>c.id===prefCid)||COURSES.find(c=>c.id==='course_hn_1')||COURSES[0]).id;}
     const actC0=COURSES.find(c=>c.id===store.activeCourseId)||COURSES[0];
     if(actC0){
       const cl0=getCourseLessons(actC0.id);
@@ -651,7 +728,7 @@ async function initCurriculumStore(){
     }
   }catch(_){}
   if(!store.activeCourseId||store.activeCourseId==='course_sample_hn1'||!COURSES.some(c=>c.id===store.activeCourseId)){
-    store.activeCourseId=(COURSES.find(c=>c.id==='course_hn_1')||COURSES[0]).id;
+    store.activeCourseId=(COURSES.find(c=>c.id===prefCid)||COURSES.find(c=>c.id==='course_hn_1')||COURSES[0]).id;
   }
   const activeC=COURSES.find(c=>c.id===store.activeCourseId);
   const cLessons=getCourseLessons(activeC.id);
@@ -660,8 +737,17 @@ async function initCurriculumStore(){
   }
   saveStore(store);
   applyActiveLesson();
+  if(typeof refreshDashboards==='function')refreshDashboards();
   renderLibrary();
   renderRoadmap();
+  if((!store.learningSetup||!store.learningSetup.completed)&&curView==='home'&&typeof openLearningSetupModal==='function'){
+    setTimeout(()=>{
+      const mb=$('#hanyu-modal');
+      if((!store.learningSetup||!store.learningSetup.completed)&&curView==='home'&&mb&&mb.classList.contains('hide')){
+        openLearningSetupModal(1,true);
+      }
+    },180);
+  }
 }
 
 function getCourseLessons(courseId,includeDraft=true){
@@ -688,7 +774,9 @@ function markLessonCompleted(lessonId){
   const p=getCourseProg(l.courseId);
   if(!p.completedLessonIds.includes(lessonId))p.completedLessonIds.push(lessonId);
   saveStore(store);
+  if(typeof refreshDashboards==='function')refreshDashboards();
   renderRoadmap();
   renderLibrary();
+  if(typeof renderLearnRoadmap==='function')renderLearnRoadmap();
 }
 

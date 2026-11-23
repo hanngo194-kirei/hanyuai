@@ -379,7 +379,10 @@ function refreshPdfCourseSelect(){
 
 /* ---------- Gắn sự kiện UI Công đoạn 8 ---------- */
 function onViewEntered(id){
-  if(id==='learn')renderLibrary();
+  if(id==='learn'){
+    if(typeof setLearnTab==='function')setLearnTab(curLearnTab||'lessons');
+    else renderLibrary();
+  }
   if(id==='course-detail')renderCourseDetail();
   if(id==='pdf-import')refreshPdfCourseSelect();
   if(id==='home')renderRoadmap();
@@ -398,7 +401,32 @@ function onViewEntered(id){
 }
 
 document.addEventListener('click',async e=>{
-  // Home roadmap click
+  // Learn mode tabs (Bài học / Giáo trình)
+  const lTab=e.target.closest('#learn-mode-tabs [data-learntab]');
+  if(lTab&&typeof setLearnTab==='function'){
+    e.preventDefault();
+    setLearnTab(lTab.dataset.learntab);
+    return;
+  }
+  // Switch track / course in parallel or single mode
+  const swBtn=e.target.closest('[data-switch-course]');
+  if(swBtn&&typeof switchToCourse==='function'){
+    e.preventDefault();
+    switchToCourse(swBtn.dataset.switchCourse);
+    if(swBtn.dataset.openLearn==='1'){
+      if(typeof curLearnTab!=='undefined')curLearnTab='lessons';
+      goView('learn');
+    }
+    return;
+  }
+  // Open onboarding / learning setup modal
+  const setupBtn=e.target.closest('[data-open-setup]');
+  if(setupBtn&&typeof openLearningSetupModal==='function'){
+    e.preventDefault();
+    openLearningSetupModal(1,false);
+    return;
+  }
+  // Home & Learn roadmap click
   const rm=e.target.closest('[data-rm-lid]');
   if(rm){
     const lid=rm.dataset.rmLid;
@@ -406,9 +434,16 @@ document.addEventListener('click',async e=>{
       toast('Hãy hoàn thành bài trước hoặc bật “Học tự do” để mở bài này');
       return;
     }
-    store.activeLessonId=lid;
-    saveStore(store);
-    applyActiveLesson();
+    const l=LESSONS.find(x=>x.id===lid);
+    if(l&&l.courseId&&l.courseId!==store.activeCourseId&&typeof switchToCourse==='function'){
+      switchToCourse(l.courseId,l.id);
+    }else{
+      store.activeLessonId=lid;
+      if(l&&l.courseId)getCourseProg(l.courseId).currentLessonId=lid;
+      saveStore(store);
+      applyActiveLesson();
+      if(typeof refreshDashboards==='function')refreshDashboards();
+    }
     goView('lesson');
     return;
   }
@@ -477,7 +512,11 @@ document.addEventListener('click',async e=>{
   const ol=e.target.closest('[data-open-lesson]');
   if(ol){
     const l=LESSONS.find(x=>x.id===ol.dataset.openLesson);
-    if(l){store.activeCourseId=l.courseId;store.activeLessonId=l.id;saveStore(store);applyActiveLesson();renderRoadmap();goView('lesson');}
+    if(l){
+      if(typeof switchToCourse==='function')switchToCourse(l.courseId,l.id);
+      else{store.activeCourseId=l.courseId;store.activeLessonId=l.id;saveStore(store);applyActiveLesson();renderRoadmap();}
+      goView('lesson');
+    }
     return;
   }
   // Edit lesson
@@ -521,10 +560,14 @@ document.addEventListener('click',async e=>{
   if(ctab){curCourseTab=ctab.dataset.ctab;renderCourseDetail();return;}
   // Select active course
   if(e.target.id==='cd-select-active'){
-    store.activeCourseId=curDetailCourseId;
-    const ls=getCourseLessons(curDetailCourseId,true);
-    store.activeLessonId=ls[0]?ls[0].id:null;
-    saveStore(store);applyActiveLesson();renderRoadmap();renderCourseDetail();renderLibrary();
+    if(typeof switchToCourse==='function')switchToCourse(curDetailCourseId);
+    else{
+      store.activeCourseId=curDetailCourseId;
+      const ls=getCourseLessons(curDetailCourseId,true);
+      store.activeLessonId=ls[0]?ls[0].id:null;
+      saveStore(store);applyActiveLesson();renderRoadmap();renderLibrary();
+    }
+    renderCourseDetail();
     toast('Đã chuyển sang giáo trình này');
     return;
   }
@@ -719,10 +762,33 @@ if($('#rmf-continue-btn'))$('#rmf-continue-btn').onclick=()=>{
   const lid=btn&&btn.dataset.lessonId;
   const l=LESSONS.find(x=>x.id===lid);
   if(!l)return;
-  store.activeCourseId=l.courseId;store.activeLessonId=l.id;saveStore(store);applyActiveLesson();renderRoadmap();goView('lesson');
+  if(typeof switchToCourse==='function')switchToCourse(l.courseId,l.id);
+  else{store.activeCourseId=l.courseId;store.activeLessonId=l.id;saveStore(store);applyActiveLesson();renderRoadmap();}
+  goView('lesson');
 };
 if($('#rmf-open-course-btn'))$('#rmf-open-course-btn').onclick=()=>{
   const cid=(typeof curRoadmapCourseId!=='undefined'&&curRoadmapCourseId)?curRoadmapCourseId:((store.activeCourseId&&store.activeCourseId!=='course_sample_hn1')?store.activeCourseId:'course_hn_1');
+  curCourseTab='lessons';
+  renderCourseDetail(cid);
+  goView('course-detail');
+};
+if($('#learn-rm-free-btn'))$('#learn-rm-free-btn').onclick=()=>{
+  store.freeExplore=!store.freeExplore;saveStore(store);
+  renderRoadmap();if(typeof renderFullRoadmap==='function')renderFullRoadmap();
+  if(typeof renderLearnRoadmap==='function')renderLearnRoadmap();
+};
+if($('#learn-rm-continue-btn'))$('#learn-rm-continue-btn').onclick=()=>{
+  const btn=$('#learn-rm-continue-btn');
+  const lid=btn&&btn.dataset.lessonId;
+  const l=LESSONS.find(x=>x.id===lid);
+  if(!l)return;
+  if(typeof switchToCourse==='function')switchToCourse(l.courseId,l.id);
+  else{store.activeCourseId=l.courseId;store.activeLessonId=l.id;saveStore(store);applyActiveLesson();renderRoadmap();}
+  goView('lesson');
+};
+if($('#learn-rm-open-course-btn'))$('#learn-rm-open-course-btn').onclick=()=>{
+  const btn=$('#learn-rm-open-course-btn');
+  const cid=(btn&&btn.dataset.courseId)||((typeof curLearnRoadmapCourseId!=='undefined'&&curLearnRoadmapCourseId)?curLearnRoadmapCourseId:(store.activeCourseId||'course_hn_1'));
   curCourseTab='lessons';
   renderCourseDetail(cid);
   goView('course-detail');

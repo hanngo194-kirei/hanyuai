@@ -102,6 +102,7 @@ document.addEventListener('click',e=>{
   const navLink=e.target.closest('[data-go]');
   if(navLink&&!navLink.hasAttribute('data-gosk')){
     e.preventDefault();
+    if(navLink.dataset.learntabJump&&typeof curLearnTab!=='undefined')curLearnTab=navLink.dataset.learntabJump;
     goView(navLink.dataset.go);
     return;
   }
@@ -148,7 +149,8 @@ function defaultStore(){
     lessonSections:{},
     lessonNotes:{},
     copyDrafts:{},
-    savedLessonIds:[]
+    savedLessonIds:[],
+    learningSetup:{completed:false,level:1,mode:'hanngu',activeTrack:'hanngu',updatedAt:null}
   };
 }
 function sanitizeWordRec(r){
@@ -301,6 +303,19 @@ function migrateStore(raw){
   }
   if(Array.isArray(raw.savedLessonIds)){
     base.savedLessonIds=[...new Set(raw.savedLessonIds.filter(x=>typeof x==='string'&&x))];
+  }
+  if(raw.learningSetup&&typeof raw.learningSetup==='object'){
+    const ls=raw.learningSetup;
+    const lv=Number(ls.level);
+    const mode=['hanngu','hsk30','parallel'].includes(ls.mode)?ls.mode:'hanngu';
+    const actTrack=['hanngu','hsk30'].includes(ls.activeTrack)?ls.activeTrack:(mode==='hsk30'?'hsk30':'hanngu');
+    base.learningSetup={
+      completed:Boolean(ls.completed),
+      level:(Number.isInteger(lv)&&lv>=1&&lv<=6)?lv:1,
+      mode,
+      activeTrack:actTrack,
+      updatedAt:Number.isFinite(ls.updatedAt)?ls.updatedAt:null
+    };
   }
   if(Array.isArray(raw.events)){
     base.events=raw.events.filter(e=>e&&typeof e==='object'&&e.id&&e.type).slice(-200);

@@ -1218,9 +1218,19 @@ function refreshDashboards(){
   if(taskLis[1])taskLis[1].classList.toggle('done',(st.td.reviews||0)>=g.reviews);
   if(taskLis[2])taskLis[2].classList.toggle('done',(st.td.speak||0)>=g.speak);
 
-  if($('#hm-prog-bar'))$('#hm-prog-bar').style.width=st.lessonPct+'%';
-  if($('#hm-prog-pct'))$('#hm-prog-pct').textContent=st.lessonPct+'%';
-  if($('#hm-lessons'))$('#hm-lessons').textContent=`${st.lessonDone}/${st.lessonTotal}`;
+  let cPct=st.lessonPct,cDoneStr=`${st.lessonDone}/${st.lessonTotal}`,cDoneLbl='hoạt động';
+  if(typeof getCourseProgressStats==='function'&&store.activeCourseId){
+    const cp=getCourseProgressStats(store.activeCourseId);
+    if(cp&&cp.total>0){
+      cPct=cp.pct;
+      cDoneStr=`${cp.doneCnt}/${cp.total}`;
+      cDoneLbl='bài đã học';
+    }
+  }
+  if($('#hm-prog-bar'))$('#hm-prog-bar').style.width=cPct+'%';
+  if($('#hm-prog-pct'))$('#hm-prog-pct').textContent=cPct+'%';
+  if($('#hm-lessons'))$('#hm-lessons').textContent=cDoneStr;
+  if($('#hm-lessons-lbl'))$('#hm-lessons-lbl').textContent=cDoneLbl;
   if($('#hm-words'))$('#hm-words').textContent=st.learnedWords;
   if($('#hm-ret'))$('#hm-ret').textContent=st.retentionPct!==null?st.retentionPct+'%':'—';
 
