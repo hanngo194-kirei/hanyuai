@@ -690,8 +690,8 @@ $('#cd-view-textbook').onclick=()=>{openTextbookReader(curDetailCourseId);};
 $('#ls-edit-btn').onclick=()=>{if(store.activeLessonId)openLessonEditor(store.activeLessonId);};
 const _sbLogo=$('#sb-logo-img'),_rmfLogo=$('#rmf-logo-img'),_topLogo=$('.top .logo');
 if(_topLogo&&_topLogo.src){
-  if(_sbLogo)_sbLogo.src=_topLogo.src;
-  if(_rmfLogo)_rmfLogo.src=_topLogo.src;
+  if(_sbLogo){_sbLogo.src=_topLogo.src;_sbLogo.style.display='';}
+  if(_rmfLogo){_rmfLogo.src=_topLogo.src;_rmfLogo.style.display='';}
 }
 if($('#rmf-free-btn'))$('#rmf-free-btn').onclick=()=>{
   store.freeExplore=!store.freeExplore;saveStore(store);

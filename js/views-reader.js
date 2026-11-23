@@ -29,6 +29,11 @@ function applyActiveLesson(){
 
 function refreshModulesForLesson(){
   // Safe refresh of existing modules without rebuilding them
+  try{
+    const l=LESSONS.find(x=>x.id===store.activeLessonId);
+    const vSub=$('#vocab [data-f="subtitle"]');
+    if(vSub&&l)vSub.textContent=`${l.code||'Bài học'} · ${l.titleVi||l.titleZh||''}`;
+  }catch(_){}
   try{if(typeof renderFlash==='function')renderFlash();}catch(_){}
   try{
     const gKeys=Object.keys(GRAMMAR_POINTS||{});
@@ -407,7 +412,7 @@ function renderFullRoadmap(courseId){
   if(contBtn){contBtn.disabled=false;contBtn.dataset.lessonId=activeL.id;}
   if(contTxt)contTxt.textContent=`Tiếp tục ${(activeL.code||'bài 1').toLowerCase()}`;
 
-  const W=360,rowH=128,topPad=74,botPad=86;
+  const W=360,rowH=152,topPad=76,botPad=92;
   const rows=Math.ceil(lessons.length/3);
   const totalH=topPad+Math.max(0,rows-1)*rowH+botPad;
   canvas.style.aspectRatio=`${W} / ${totalH}`;
@@ -436,9 +441,11 @@ function renderFullRoadmap(courseId){
     if(i<activeIdx)dDone+=seg;
   }
   const svgHtml=`<svg aria-hidden="true" class="rmf-svg" viewBox="0 0 ${W} ${totalH}">
-    <path d="${dFull}" fill="none" stroke="#EDD4C6" stroke-width="7" stroke-linecap="round"/>
-    ${dDone?`<path d="${dDone}" fill="none" stroke="#D55649" stroke-opacity="0.78" stroke-width="7" stroke-linecap="round"/>`:''}
+    <path d="${dFull}" fill="none" stroke="#FFF8F2" stroke-opacity="0.9" stroke-width="11" stroke-linecap="round"/>
+    <path d="${dFull}" fill="none" stroke="#ECC2B4" stroke-width="6.5" stroke-linecap="round"/>
+    ${dDone?`<path d="${dDone}" fill="none" stroke="#D55649" stroke-opacity="0.88" stroke-width="6.5" stroke-linecap="round"/>`:''}
   </svg>`;
+  const lockSvg='<svg aria-hidden="true" class="ic rmf-lock-ic" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M17 10h-1V8a4 4 0 0 0-8 0v2H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2zm-7-2a2 2 0 0 1 4 0v2h-4V8z"/></svg>';
   const nodesHtml=lessons.map((l,idx)=>{
     const isDone=doneSet.has(l.id);
     const isCurrent=Boolean(activeL&&l.id===activeL.id);
@@ -450,7 +457,7 @@ function renderFullRoadmap(courseId){
         ?'<span class="rmf-dot"><svg class="ic"><use href="#i-check"></use></svg></span>'
         :(unlocked
           ?'<span class="rmf-dot"></span>'
-          :'<span class="rmf-dot"><svg class="ic"><use href="#i-lock"></use></svg></span>'));
+          :`<span class="rmf-dot">${lockSvg}</span>`));
     const pt=pts[idx];
     const leftPct=(pt.x/W*100).toFixed(3);
     const topPct=(pt.y/totalH*100).toFixed(3);

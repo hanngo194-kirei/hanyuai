@@ -32,6 +32,7 @@
 ## Nâng cấp Giao diện & Chức năng (4 Đợt · theo bộ 22 ảnh thiết kế)
 *(Thực hiện trước khi trích xuất Quyển 3–6 & NEW HSK 3.0)*
 - [x] **Đợt 1:** Brand Kit đỏ gốm – kem (`#8B2E2E`, `#C7463B`, `#E9967A`, `#F8E8DE`, `#FFF9F4`), Responsive Tablet/PC (`>= 900px` Sidebar 6 mục + 2 cột; Mobile 5 tab `Trang chủ · Học tập · Ôn luyện · Luyện nói · Cá nhân`), tile lối tắt pastel trên `#home`, và cấu trúc bài học 9 phần (5 bắt buộc để mở khóa `Qua bài tiếp theo →` + 4 mở rộng 2×2 tính vào 100%)
+- [x] **Tinh chỉnh sau Đợt 1:** Màn `#roadmap-view` 15 bài đường cong chữ S (logo app, nền thủy mặc hoa đào – đình – trường thành, 4 trạng thái nút 3D viền vàng) & layout mới cho tab `#vocab` kèm khối mở rộng đối chiếu dữ liệu thật từ sách *Hack não 3000 chữ Hán* + *Sơ đồ tư duy 3300 chữ Hán* (`data/hanzi-ext-db.js`, bước đầu nạp cho Bài 1–2)
 - [ ] **Đợt 2:** Module *Chép bài khóa*, *Luyện dịch (Việt ↔ Trung)*, trình phát hội thoại & bố cục ghi chú 3 cột trên Tablet
 - [ ] **Đợt 3:** Nâng cấp các module học tập (*Phân biệt thanh điệu*, *Hướng dẫn sửa lỗi phát âm*, khung so sánh chữ Hán 2 ô, chồng thẻ SRS `Ôn tập hôm nay`)
 - [ ] **Đợt 4:** Hub lộ trình song song Hán ngữ 1–6 / HSK 1–6 & 4 tab thống kê `#me` (XP/Streak cục bộ)

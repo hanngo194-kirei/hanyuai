@@ -81,6 +81,7 @@ function route(forced){
   $$('.sidebar [data-tab]').forEach(a=>{const on=a.dataset.tab===sbTab;a.classList.toggle('on',on);on?a.setAttribute('aria-current','page'):a.removeAttribute('aria-current')});
   document.body.classList.toggle('sub',['lesson','vocab','exercise','grammar','dialog','listen','writing','wordbook','course-detail','lesson-editor','pdf-import','textbook-reader'].includes(id));
   document.body.classList.toggle('view-roadmap',id==='roadmap');
+  document.body.classList.toggle('view-vocab',id==='vocab');
   try{window.scrollTo(0,0);}catch(_){}
   if(id!=='listen'&&window._stopListen)window._stopListen();
   if(id!=='speak'&&window._stopSpeak)window._stopSpeak();
