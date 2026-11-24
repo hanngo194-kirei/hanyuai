@@ -75,6 +75,17 @@ function refreshModulesForLesson(){
 /* ---------- Chi tiết bài học #lesson ---------- */
 const LS_REQ_KEYS=['vocab','grammar','listen','speak','exercise'];
 const LS_EXT_KEYS=['dialog','copy','writing','trans'];
+const LS_ALL_SECTIONS=[
+  {key:'vocab',label:'Từ vựng',req:true,unit:'từ',icon:'#i-book'},
+  {key:'grammar',label:'Ngữ pháp',req:true,unit:'câu',icon:'#i-layers'},
+  {key:'listen',label:'Luyện nghe',req:true,unit:'câu',icon:'#i-head'},
+  {key:'speak',label:'Luyện nói',req:true,unit:'câu',icon:'#i-mic'},
+  {key:'exercise',label:'Bài tập & Kiểm tra',req:true,unit:'câu',icon:'#i-check'},
+  {key:'dialog',label:'Bài khóa',req:false,unit:'câu',icon:'#i-book'},
+  {key:'copy',label:'Chép bài khóa',req:false,unit:'dòng',icon:'#i-pencil'},
+  {key:'writing',label:'Luyện viết',req:false,unit:'chữ',icon:'#i-brush'},
+  {key:'trans',label:'Luyện dịch',req:false,unit:'câu',icon:'#i-lang'}
+];
 function getLessonSectionProgress(l){
   const sec=(store.lessonSections&&l&&l.id&&store.lessonSections[l.id])||{};
   const wList=((l&&l.wordIds)||[]).map(id=>store.vocabBank[id]).filter(Boolean);
@@ -95,6 +106,255 @@ function getLessonSectionProgress(l){
   const totalDone=reqDone+extDone;
   return {doneMap,reqDone,extDone,totalDone,pct:Math.round(totalDone*100/9)};
 }
+function saveLessonSectionStats(lessonId,key,stats){
+  const lid=lessonId||store.activeLessonId;
+  if(!lid||!key)return null;
+  if(!store.lessonSectionStats||typeof store.lessonSectionStats!=='object')store.lessonSectionStats={};
+  if(!store.lessonSectionStats[lid]||typeof store.lessonSectionStats[lid]!=='object')store.lessonSectionStats[lid]={};
+  const meta=LS_ALL_SECTIONS.find(s=>s.key===key)||{label:key,unit:'mục'};
+  const totalCount=Math.max(1,Number(stats&&stats.totalCount)||Number(stats&&stats.doneCount)||1);
+  const doneCount=Math.max(0,Math.min(totalCount,Number(stats&&stats.doneCount!==undefined?stats.doneCount:totalCount)||0));
+  const errors=Math.max(0,Number(stats&&stats.errors)||0);
+  let acc=stats&&stats.accuracy!==undefined&&Number.isFinite(Number(stats.accuracy))?Math.round(Number(stats.accuracy)):null;
+  if(acc===null){
+    const denom=Math.max(1,doneCount+errors);
+    acc=Math.max(0,Math.min(100,Math.round(doneCount*100/denom)));
+  }
+  const dur=(stats&&Number(stats.durationSec)>0)?Math.round(Number(stats.durationSec)):((typeof getSectionElapsedSec==='function')?getSectionElapsedSec(key):15);
+  const rawWrong=Array.isArray(stats&&stats.wrongItems)?stats.wrongItems:[];
+  const wrongItems=rawWrong.slice(0,15).map(w=>({
+    zh:String((w&&w.zh)||'').trim(),
+    py:String((w&&w.py)||'').trim(),
+    vi:String((w&&w.vi)||'').trim(),
+    note:String((w&&w.note)||'').trim()
+  })).filter(w=>w.zh||w.vi||w.note);
+  const saved={
+    key,
+    label:meta.label,
+    unit:String((stats&&stats.unit)||meta.unit||'mục'),
+    doneCount,
+    totalCount,
+    errors,
+    accuracy:Math.max(0,Math.min(100,acc)),
+    durationSec:dur,
+    scoreLabel:stats&&stats.scoreLabel?String(stats.scoreLabel):'',
+    wrongItems,
+    updatedAt:Date.now()
+  };
+  store.lessonSectionStats[lid][key]=saved;
+  markLessonSectionDone(lid,key,true);
+  saveStore(store);
+  return saved;
+}
+window.saveLessonSectionStats=saveLessonSectionStats;
+
+function _fmtHsumDur(sec){
+  const s=Math.max(0,Math.round(Number(sec)||0));
+  if(!s||s<60)return '< 1 phút';
+  return `${Math.round(s/60)} phút`;
+}
+function _hsumTrophySvg(){
+  return '<svg class="hsum-trophy" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="hsum-gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFE082"/><stop offset="55%" stop-color="#F6B22E"/><stop offset="100%" stop-color="#C97A12"/></linearGradient></defs><path d="M18 14h28v13c0 8.8-6.3 16-14 16s-14-7.2-14-16V14z" fill="url(#hsum-gold)" stroke="#B5680A" stroke-width="2"/><path d="M18 18H10c0 8.5 3.6 13.5 9.5 14.5M46 18h8c0 8.5-3.6 13.5-9.5 14.5" fill="none" stroke="#DF8E1B" stroke-width="3" stroke-linecap="round"/><rect x="29" y="42" width="6" height="8" rx="2" fill="#D48417"/><rect x="20" y="50" width="24" height="5" rx="2.5" fill="#9A3B23"/><polygon points="32,20 34.4,25.2 40,26 35.8,29.8 36.9,35.4 32,32.6 27.1,35.4 28.2,29.8 24,26 29.6,25.2" fill="#FFF8DC"/></svg>';
+}
+function _hsumRingSvg(pct,bigTxt,subTxt){
+  const p=Math.max(0,Math.min(100,Math.round(Number(pct)||0)));
+  const r=34,c=2*Math.PI*r,off=c*(1-p/100);
+  return `<div class="hsum-ring"><svg viewBox="0 0 88 88"><circle class="hr-bg" cx="44" cy="44" r="${r}"/><circle class="hr-fg" cx="44" cy="44" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/></svg><div class="hr-in"><b>${bigTxt}</b><span>${subTxt}</span></div></div>`;
+}
+function _hsumFeedback(acc,errors){
+  if(acc>=95&&errors===0)return 'Xuất sắc! Bạn đã nắm rất chắc toàn bộ nội dung của phần học này.';
+  if(acc>=80)return `Bạn nắm vững phần lớn nội dung của mục học, chỉ còn ${errors} lỗi nhỏ cần xem lại để nhớ thật chắc nhé!`;
+  if(acc>=60)return `Bạn đã hoàn thành phần học khá tốt! Mình gợi ý bạn ôn lại ${errors||'các'} nội dung chưa chắc để tự tin hơn nhé.`;
+  return 'Bạn đã cố gắng hoàn thành phần học! Hãy chạm "Ôn lại" để xem kỹ lại các phần còn nhầm và luyện thêm cùng mình nhé.';
+}
+function showSectionSummary(secKey,rawStats,opts){
+  const options=opts||{};
+  const lid=options.lessonId||store.activeLessonId;
+  const l=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===lid):null;
+  const prevProg=getLessonSectionProgress(l||{id:lid});
+  const wasFull=prevProg.totalDone>=9;
+  const saved=saveLessonSectionStats(lid,secKey,rawStats||{});
+  const meta=LS_ALL_SECTIONS.find(s=>s.key===secKey)||{key:secKey,label:secKey,unit:'mục'};
+  const prog=getLessonSectionProgress(l||{id:lid});
+  if(prog.totalDone>=9&&!wasFull){
+    showLessonSummary(lid);
+    return;
+  }
+  const s=saved||{doneCount:1,totalCount:1,unit:meta.unit,errors:0,accuracy:100,durationSec:15,wrongItems:[]};
+  const lessonTitle=l?((l.code?l.code+' · ':'')+(l.titleVi||l.titleZh||'Bài học')):'Bài học hiện tại';
+  const secIdx=LS_ALL_SECTIONS.findIndex(x=>x.key===secKey);
+  const nextSec=LS_ALL_SECTIONS.find((s,i)=>i>secIdx&&!prog.doneMap[s.key])||LS_ALL_SECTIONS.find(s=>!prog.doneMap[s.key])||null;
+  const wrongList=s.wrongItems||[];
+  const wrongHtml=wrongList.length
+    ? wrongList.map(w=>`<div class="hsum-wrow"><span class="hsum-wzh">${escHtml(w.zh||'—')}</span><span class="hsum-wpy">${escHtml(w.py||'')}</span><span class="hsum-wvi">${escHtml(w.vi||'')}</span><span class="hsum-wtag">✕ ${escHtml(w.note||'Bạn đã trả lời sai')}</span></div>`).join('')
+    : '<div class="hsum-ok-note">✓ Bạn đã hoàn thành chính xác phần này, chưa ghi nhận lỗi cần sửa!</div>';
+  const retryLabel=wrongList.length&&options.onRetryWrong?'Ôn lại phần sai':'Làm lại phần này';
+  const showNextBtn=!nextSec;
+  const primaryTxt=showNextBtn?'Xem tổng kết bài học →':`Tiếp tục: ${nextSec.label} →`;
+
+  if(typeof playSfx==='function')playSfx('done');
+  if(typeof openModal==='function'){
+    openModal(`
+      <div class="hsum-wrap">
+        <div class="hsum-top-pill">${escHtml(lessonTitle)}</div>
+        <div class="hsum-hero">
+          ${_hsumTrophySvg()}
+          <div class="hsum-hero-txt">
+            <h3>Bạn đã hoàn thành ${escHtml(meta.label)} của bài học “${escHtml(lessonTitle)}”!</h3>
+            <p>Đây là kết quả của riêng phần học này.</p>
+          </div>
+        </div>
+        <div class="hsum-stats4">
+          <div class="hsum-st"><span>Tiến độ</span><b>${s.doneCount}/${s.totalCount} ${escHtml(s.unit)}</b></div>
+          <div class="hsum-st"><span>Thời gian</span><b>${_fmtHsumDur(s.durationSec)}</b></div>
+          <div class="hsum-st"><span>Số lỗi</span><b>${s.errors}</b></div>
+          <div class="hsum-st"><span>Độ chính xác</span><b>${s.accuracy}%</b></div>
+        </div>
+        <div class="hsum-eval-card">
+          ${_hsumRingSvg(s.accuracy,`${s.accuracy}<small>/100</small>`,'điểm')}
+          <div class="hsum-eval-txt">
+            <b>Đánh giá</b>
+            <p>${escHtml(_hsumFeedback(s.accuracy,s.errors))}</p>
+          </div>
+        </div>
+        <div class="hsum-wrong-card">
+          <div class="hsum-whead"><b>Cần ôn lại</b><span class="hsum-cnt-pill">${wrongList.length} ${escHtml(s.unit)}</span></div>
+          <div class="hsum-wlist">${wrongHtml}</div>
+        </div>
+        <div class="hsum-btns">
+          <div class="hsum-btn-pair">
+            <button type="button" class="btn ghost sm" id="hsum-retry-btn"><svg class="ic"><use href="#i-refresh"/></svg>${retryLabel}</button>
+            <button type="button" class="btn ghost sm" id="hsum-lesson-btn"><svg class="ic"><use href="#i-book"/></svg>Chi tiết bài học</button>
+          </div>
+          ${prog.reqDone>=5?`<button type="button" class="btn ghost sm" id="hsum-lesson-sum-btn">🏆 Xem tổng kết cả bài (${prog.totalDone}/9)</button>`:''}
+          <button type="button" class="btn sm" id="hsum-next-btn">${escHtml(primaryTxt)}</button>
+        </div>
+      </div>
+    `);
+    const rb=$('#hsum-retry-btn');
+    if(rb)rb.onclick=()=>{
+      if(typeof closeModal==='function')closeModal();
+      if(wrongList.length&&typeof options.onRetryWrong==='function')options.onRetryWrong();
+      else if(typeof options.onRetryAll==='function')options.onRetryAll();
+    };
+    const lb=$('#hsum-lesson-btn');
+    if(lb)lb.onclick=()=>{if(typeof closeModal==='function')closeModal();goView('lesson');};
+    const lsb=$('#hsum-lesson-sum-btn');
+    if(lsb)lsb.onclick=()=>showLessonSummary(lid);
+    const nb=$('#hsum-next-btn');
+    if(nb)nb.onclick=()=>{
+      if(typeof closeModal==='function')closeModal();
+      if(showNextBtn){showLessonSummary(lid);return;}
+      if(nextSec&&typeof goView==='function')goView(nextSec.key);
+    };
+  }
+}
+window.showSectionSummary=showSectionSummary;
+
+function showLessonSummary(lessonId){
+  const lid=lessonId||store.activeLessonId;
+  const l=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===lid):null;
+  if(!l)return;
+  const prog=getLessonSectionProgress(l);
+  const statsMap=(store.lessonSectionStats&&store.lessonSectionStats[lid])||{};
+  const showSections=LS_ALL_SECTIONS.filter(s=>s.req||prog.doneMap[s.key]||statsMap[s.key]);
+  let totalDur=0,totalErr=0,scoreSum=0,scoreCnt=0;
+  const allWrong=[];
+  const rowsHtml=showSections.map(s=>{
+    const st=statsMap[s.key];
+    const isDone=!!prog.doneMap[s.key];
+    if(st){
+      totalDur+=(Number(st.durationSec)||0);
+      totalErr+=(Number(st.errors)||0);
+      scoreSum+=(Number(st.accuracy)||0);
+      scoreCnt++;
+      if(Array.isArray(st.wrongItems)&&st.wrongItems.length){
+        allWrong.push({label:s.label,items:st.wrongItems});
+      }
+    }
+    const leftTxt=st?`${st.doneCount}/${st.totalCount} ${s.unit}`:(isDone?'Đã hoàn thành':'Chưa học');
+    const rightTxt=st?(st.scoreLabel?`${st.scoreLabel} · Sai ${st.errors} lỗi`:`Sai ${st.errors} lỗi (Độ chính xác: ${st.accuracy}%)`):(isDone?'Đã hoàn thành (100%)':'Chưa có thống kê');
+    const barW=st?st.accuracy:(isDone?100:0);
+    return `<div class="hls-row ${isDone?'done':''}">
+      <span class="hls-ic"><svg class="ic"><use href="${s.icon}"/></svg></span>
+      <div class="hls-mid">
+        <div class="hls-top"><b>${escHtml(s.label)}</b><span>${escHtml(leftTxt)}</span><span class="hls-err">${escHtml(rightTxt)}</span></div>
+        <div class="bar hls-bar"><i style="width:${barW}%"></i></div>
+      </div>
+      <span class="hls-chk ${isDone?'done':''}">${isDone?'✓':'○'}</span>
+    </div>`;
+  }).join('');
+
+  const avgScore=scoreCnt?Math.round(scoreSum/scoreCnt):(prog.reqDone>=5?100:prog.pct);
+  const overallMsg=prog.reqDone>=5
+    ?`Tốt! Bạn đã nắm vững nội dung bài học.${totalErr>0?` Hãy ôn lại ${totalErr} lỗi nhỏ để ghi nhớ chắc hơn nhé.`:' Mình chúc mừng bạn đã đạt kết quả rất ấn tượng!'}`
+    :`Bạn đã hoàn thành ${prog.reqDone}/5 mục bắt buộc (${prog.totalDone}/9 mục toàn bài). Hãy học nốt các mục còn lại để mở khóa bài tiếp theo nhé.`;
+  const wrongGroupsHtml=allWrong.length
+    ? `<div class="hls-wrong-grid">${allWrong.slice(0,4).map(g=>`<div class="hls-wg"><b>${escHtml(g.label)} (${g.items.length})</b><span>${g.items.slice(0,3).map(w=>escHtml(w.zh||w.vi||w.note)).join(', ')}</span></div>`).join('')}</div>`
+    : '<div class="hsum-ok-note">✓ Bạn chưa có lỗi cần ôn lại trong bài học này!</div>';
+
+  const list=(typeof getCourseLessons==='function'&&l.courseId)?getCourseLessons(l.courseId,true):[];
+  const idx=list.findIndex(x=>x.id===l.id);
+  const nextL=(idx>=0&&idx+1<list.length)?list[idx+1]:null;
+
+  if(typeof playSfx==='function')playSfx('done');
+  if(typeof openModal==='function'){
+    openModal(`
+      <div class="hsum-wrap hls-wrap">
+        <div class="hls-banner">
+          ${_hsumTrophySvg()}
+          <div>
+            <span class="hls-badge">Tổng kết bài học</span>
+            <h3>${escHtml(l.code||'Bài học')}${l.titleZh?': '+escHtml(l.titleZh):''}</h3>
+            <p>${escHtml(l.titleVi||'')}</p>
+          </div>
+        </div>
+        <div class="hls-status-card">
+          <div class="hls-st-l">
+            <b>${prog.reqDone>=5?'✓ Hoàn thành bài học!':'Tiến độ bài học'}</b>
+            <span>Bạn đã hoàn thành ${prog.reqDone}/5 mục bắt buộc (${prog.totalDone}/9 toàn bài)${prog.reqDone>=5?' và có thể chuyển sang bài tiếp theo.':'.'}</span>
+          </div>
+          ${_hsumRingSvg(prog.pct,`${prog.pct}<small>%</small>`,'Tiến độ')}
+        </div>
+        <div class="hls-detail-card">
+          <div class="hsum-whead"><b>Kết quả chi tiết</b><span class="hsum-cnt-pill">Thời gian học: ${_fmtHsumDur(totalDur)}</span></div>
+          <div class="hls-rows">${rowsHtml}</div>
+        </div>
+        <div class="hls-pair">
+          <div class="hls-score-box"><span>Điểm tổng kết bài</span><b>${avgScore}<small> / 100</small></b></div>
+          <div class="hls-eval-box"><b>Đánh giá chung</b><p>${escHtml(overallMsg)}</p></div>
+        </div>
+        <div class="hsum-wrong-card">
+          <div class="hsum-whead"><b>Những nội dung cần ôn lại</b><span class="hsum-cnt-pill">${totalErr} lỗi</span></div>
+          ${wrongGroupsHtml}
+        </div>
+        <div class="hsum-btns">
+          <div class="hsum-btn-pair">
+            <button type="button" class="btn ghost sm" id="hls-review-btn"><svg class="ic"><use href="#i-refresh"/></svg>Ôn lại bài học</button>
+            <button type="button" class="btn ghost sm" id="hls-close-btn">Đóng</button>
+          </div>
+          ${nextL?`<button type="button" class="btn sm" id="hls-next-btn">Học bài tiếp theo: ${escHtml(nextL.code||nextL.titleVi||'Bài mới')} →</button>`:''}
+        </div>
+      </div>
+    `);
+    const rb=$('#hls-review-btn');
+    if(rb)rb.onclick=()=>{if(typeof closeModal==='function')closeModal();goView('lesson');};
+    const cb=$('#hls-close-btn');
+    if(cb)cb.onclick=()=>{if(typeof closeModal==='function')closeModal();};
+    const nb=$('#hls-next-btn');
+    if(nb&&nextL){
+      nb.onclick=async ()=>{
+        if(typeof closeModal==='function')closeModal();
+        if(typeof getLessonDownloadState==='function'&&getLessonDownloadState(nextL)==='available'&&typeof downloadLessonOnDemand==='function'){
+          await downloadLessonOnDemand(nextL.id);
+        }
+        if(typeof setActiveLesson==='function')setActiveLesson(nextL.id);
+        if(typeof goView==='function')goView('lesson');
+      };
+    }
+  }
+}
+window.showLessonSummary=showLessonSummary;
 function markLessonSectionDone(lessonId,key,silent){
   const lid=lessonId||store.activeLessonId;
   if(!lid||!key)return;
@@ -291,13 +551,12 @@ function renderLessonDetail(){
     el.classList.toggle('done',!!isDone);
     const st=el.querySelector('.st');
     if(st){
-      if(isExt){
-        if(isDone){st.className='st done';st.innerHTML='<span class="ls-ok-dot">✓</span>';}
-        else{st.className='st todo';st.textContent='';}
+      if(isDone){
+        st.className='st done';st.innerHTML='<span class="ls-ok-dot">✓</span><b>Đã hoàn thành</b>';
+      }else if(isExt){
+        st.className='st todo';st.textContent='Chưa học';
       }else if(!hasData){
         st.className='st todo';st.innerHTML='<span class="ring"></span>Chưa có dữ liệu';
-      }else if(isDone){
-        st.className='st done';st.innerHTML='<span class="ls-ok-dot">✓</span><b>100%</b>';
       }else{
         st.className='st todo';st.innerHTML='<span class="ring"></span>'+(todoLabel||'Chưa học');
       }
@@ -331,6 +590,11 @@ function renderLessonDetail(){
       if(startCta)startCta.classList.remove('hide');
       delete nextBtn.dataset.nextLesson;
     }
+  }
+  const sumCta=$('#ls-summary-cta');
+  if(sumCta){
+    sumCta.classList.toggle('hide',prog.totalDone<1);
+    sumCta.onclick=()=>showLessonSummary(l.id);
   }
 }
 

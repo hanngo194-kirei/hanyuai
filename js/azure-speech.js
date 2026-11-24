@@ -206,6 +206,7 @@
       }
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'zh-CN';
+      u.volume = 1.0;
       u.rate = Math.min(2, Math.max(0.5, Number(rate) || 0.9));
       const voices = speechSynthesis.getVoices() || [];
       const best = pickBestZhVoice();
@@ -254,10 +255,10 @@
     const prosodyRate = calcProsodyRate(rate);
     const voice = cfg.voice || DEFAULT_CFG.voice;
     const region = cfg.region || DEFAULT_CFG.region;
-    const cacheKey = `${region}|${voice}|${prosodyRate}|${text}`;
+    const cacheKey = `v35|${region}|${voice}|${prosodyRate}|${text}`;
     if(ttsCache.has(cacheKey)) return ttsCache.get(cacheKey);
 
-    const ssml = `<speak version="1.0" xml:lang="zh-CN"><voice xml:lang="zh-CN" name="${escXml(voice)}"><prosody rate="${prosodyRate}">${escXml(text)}</prosody></voice></speak>`;
+    const ssml = `<speak version="1.0" xml:lang="zh-CN"><voice xml:lang="zh-CN" name="${escXml(voice)}"><prosody rate="${prosodyRate}" volume="+35%">${escXml(text)}</prosody></voice></speak>`;
     const endpoint = `https://${encodeURIComponent(region)}.tts.speech.microsoft.com/cognitiveservices/v1`;
     const res = await fetch(endpoint, {
       method: 'POST',
@@ -319,6 +320,8 @@
       audio.onended = finishOk;
       audio.onerror = finishErr;
       audio.src = url;
+      audio.volume = 1.0;
+      if(typeof boostAudioEl === 'function') boostAudioEl(audio, 1.75);
       const p = audio.play();
       if(p && typeof p.catch === 'function'){
         p.catch(finishErr);
@@ -1055,24 +1058,51 @@
     for(let i = 0; i < content.length; i++){
       const part = content[i];
       if(part && part.text){
-        const clean = String(part.text).replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+        const rawText = String(part.text);
+        const clean = rawText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
         try{ return JSON.parse(clean); }catch(_){}
+        const firstBrace = rawText.indexOf('{');
+        const lastBrace = rawText.lastIndexOf('}');
+        if(firstBrace !== -1 && lastBrace > firstBrace){
+          try{ return JSON.parse(rawText.slice(firstBrace, lastBrace + 1)); }catch(_){}
+        }
       }
     }
     throw new Error('INVALID_CHIVOX_RESPONSE');
   }
 
+  function unwrapChivoxPayload(parsed){
+    let cur = parsed && typeof parsed === 'object' ? parsed : {};
+    for(let depth = 0; depth < 3; depth++){
+      if(cur.overall !== undefined || cur.overall_score !== undefined || cur.total_score !== undefined || Array.isArray(cur.details) || Array.isArray(cur.words)){
+        return cur;
+      }
+      const next = cur.result || cur.data || cur.evaluation || cur.eval || cur.response;
+      if(next && typeof next === 'object') cur = next;
+      else break;
+    }
+    return cur;
+  }
+
   function buildChivoxFeedback(out){
     const parts = [];
     const words = out.wordResults || [];
+    if(!words.length && out.overallScore === null){
+      return 'Chivox chưa trả về điểm từng chữ cho đoạn ghi âm này — đã bật phân tích chi tiết bổ sung.';
+    }
     const omitted = words.filter(w => w.errorType === 'Omission').map(w => w.word);
     const bad = words.filter(w => w.errorType === 'Mispronunciation' || (w.accuracyScore !== null && w.accuracyScore < 75));
+    const mid = words.filter(w => !bad.includes(w) && w.errorType !== 'Omission' && w.accuracyScore !== null && w.accuracyScore < 85);
     if(omitted.length) parts.push(`Đọc thiếu chữ: ${omitted.join(', ')}.`);
     if(bad.length){
       const list = bad.slice(0, 4).map(w => `${w.word} (${w.accuracyScore !== null ? w.accuracyScore + 'đ' : 'sai'}${w.note ? ' — ' + w.note : ''})`);
       parts.push(`Cần sửa phát âm / thanh điệu: ${list.join('; ')}.`);
     }
-    if(!omitted.length && !bad.length){
+    if(mid.length && !bad.length){
+      const list = mid.slice(0, 3).map(w => `${w.word} (${w.accuracyScore}đ)`);
+      parts.push(`Có thể đọc rõ hơn ở: ${list.join(', ')}.`);
+    }
+    if(!omitted.length && !bad.length && !mid.length){
       parts.push('Chivox đánh giá phát âm và thanh điệu rất chuẩn! Chạm vào từng thẻ chữ để nghe đối chiếu thêm nếu muốn.');
     }
     return parts.join(' ');
@@ -1137,12 +1167,18 @@
       }
     }
     const num = v => (v !== null && v !== undefined && Number.isFinite(Number(v))) ? Math.round(Number(v)) : null;
+    const root = unwrapChivoxPayload(parsed);
 
-    const details = Array.isArray(parsed.details) ? parsed.details : [];
+    const details = Array.isArray(root.details) ? root.details
+      : Array.isArray(root.words) ? root.words
+      : Array.isArray(root.word_details) ? root.word_details
+      : Array.isArray(root.chars) ? root.chars
+      : Array.isArray(root.char_details) ? root.char_details
+      : Array.isArray(root.syllables) ? root.syllables : [];
     const wordResults = details.map(d => {
-      const word = String((d && (d.char || d.word || d.text)) || '').trim();
-      const score = num(d && d.score);
-      const dp = String((d && d.dp_type) || 'normal').toLowerCase();
+      const word = String((d && (d.char || d.word || d.text || d.hanzi)) || '').trim();
+      const score = num(d && (d.score !== undefined ? d.score : (d.overall !== undefined ? d.overall : d.accuracy)));
+      const dp = String((d && (d.dp_type || d.error_type)) || 'normal').toLowerCase();
       let errorType = 'None';
       if(dp === 'omission') errorType = 'Omission';
       else if(dp === 'insertion') errorType = 'Insertion';
@@ -1169,17 +1205,18 @@
       };
     }).filter(w => w.word);
 
+    const flObj = root.fluency && typeof root.fluency === 'object' ? root.fluency.overall : root.fluency;
     const out = {
       provider: 'chivox',
       assessedAt: Date.now(),
       referenceText: refZh,
       referencePinyin: String(referencePinyin || '').trim(),
-      recognizedText: '',
-      overallScore: num(parsed.overall),
-      accuracyScore: num(parsed.accuracy !== undefined ? parsed.accuracy : parsed.pron),
-      fluencyScore: num(parsed.fluency && typeof parsed.fluency === 'object' ? parsed.fluency.overall : parsed.fluency),
-      completenessScore: num(parsed.integrity),
-      prosodyScore: num(parsed.pron),
+      recognizedText: String(root.recognized_text || root.transcript || '').trim(),
+      overallScore: num(root.overall !== undefined ? root.overall : (root.overall_score !== undefined ? root.overall_score : (root.total_score !== undefined ? root.total_score : root.score))),
+      accuracyScore: num(root.accuracy !== undefined ? root.accuracy : (root.accuracy_score !== undefined ? root.accuracy_score : (root.pron !== undefined ? root.pron : root.pron_score))),
+      fluencyScore: num(flObj !== undefined ? flObj : (root.fluency_score !== undefined ? root.fluency_score : root.rhythm)),
+      completenessScore: num(root.integrity !== undefined ? root.integrity : (root.completeness !== undefined ? root.completeness : root.completeness_score)),
+      prosodyScore: num(root.prosody !== undefined ? root.prosody : (root.tone !== undefined ? root.tone : (root.tone_score !== undefined ? root.tone_score : root.pron))),
       wordResults,
       status: 'assessed'
     };

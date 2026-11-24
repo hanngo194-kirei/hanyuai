@@ -634,3 +634,71 @@ body.view-writing .app>.top{display:none}
 .sp-pitch-details[open] summary{margin-bottom:8px}
 .sp-pitch-details .sp-pitch-card{padding:4px 0 0;border:none;background:transparent}
 @media (min-width:520px){.sp-metrics-grid.sp-metrics-2{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+summary.sp-guide-hd{cursor:pointer;list-style:none}
+summary.sp-guide-hd::-webkit-details-marker{display:none}
+.sp-guide-card[open] summary.sp-guide-hd{margin-bottom:8px}
+
+/* === Tối ưu màn hình điện thoại cho Nghe, Viết & Nói === */
+@media (max-width: 759px){
+  /* Luyện nghe: gọn 1 hàng 4 tab + loa ngang để hiện đủ Câu tiếp theo trên màn hình 390×660 */
+  #listen .segs.segs4{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;padding:3px;border-radius:14px}
+  #listen .segs.segs4 button{padding:6px 2px;font-size:11.5px;border-radius:10px}
+  #listen .segs.segs4 button .ic{display:none}
+  #listen .listen-hero{
+    display:grid;
+    grid-template-columns:46px minmax(0,1fr);
+    grid-template-rows:auto auto;
+    align-items:center;
+    gap:4px 10px;
+    padding:8px 10px;
+    margin-top:6px!important;
+    text-align:left;
+  }
+  #listen .spk-big{grid-row:1/3;width:46px;height:46px;margin:0;box-shadow:0 0 0 5px rgba(199,70,59,.12),0 6px 14px rgba(166,58,38,.25)}
+  #listen .spk-big .ic{width:22px;height:22px}
+  #listen #wave{width:100%!important;height:18px;justify-self:stretch}
+  #listen .ln-audio-hint,#listen .sample,#listen > .btnrow{display:none}
+  #listen .spd-row{justify-self:start;margin:0}
+  #listen .spd-btn{padding:3px 9px;font-size:11.5px}
+  #listen #ln-stage{margin-top:6px!important}
+  #listen #ln-stage h3{font-size:14.5px;margin-bottom:5px!important}
+  #listen #ln-fb{margin-top:6px!important;padding:6px 10px;font-size:12.5px}
+  #listen .d3-tone-grid{gap:6px}
+  #listen .d3-tone-opt{padding:7px 8px}
+
+  /* Luyện viết */
+  #writing .w-info{padding:8px 10px;gap:10px}
+  #writing .charbox{width:60px;height:60px;font-size:42px;border-radius:14px}
+  #writing .charcard .py{font-size:18px}
+  #writing .w-modes button{padding:5px 4px;font-size:12px}
+  #writing .w-stylus-bar{font-size:11px;display:none}
+  #writing .pad{width:min(100%,242px)}
+  #writing .tools button{padding:7px 4px;font-size:12px}
+  #writing .w-fb{font-size:12px}
+
+  /* Luyện nói & Phát âm */
+  #speak .title-row{gap:8px}
+  #speak #sp-pane-practice{gap:6px!important}
+  #speak .sp-top-tabs{padding:3px}
+  #speak .sp-top-tabs button{padding:5px 8px;font-size:12.5px}
+  #speak .segs button{padding:5px 4px;font-size:12.5px}
+  #speak .sp-prompt-card{padding:8px 10px}
+  #speak .sp-prompt-card>*+*{margin-top:4px}
+  #speak .sp-zh{font-size:22px;line-height:1.15}
+  #speak .sp-py{font-size:13.5px}
+  #speak .sp-vi{font-size:12.5px}
+  #speak .sp-audio-row .btn.sm{padding:6px 10px;font-size:12.5px}
+  #speak .sp-rec-card{padding:8px 10px}
+  #speak .sp-rec-card>*+*{margin-top:5px}
+  #speak #sp-mic{width:48px!important;height:48px!important}
+  #speak #sp-mic .ic{width:22px;height:22px}
+  #speak .micwrap.big{margin-top:2px!important}
+  #speak .rec-timer{font-size:12px}
+  #speak .rec-meter{height:12px}
+  #speak .sp-self-wrap{padding:6px 8px}
+  #speak .sp-self-btn{padding:6px 8px;font-size:12px}
+  #speak #sp-api-banner{padding:5px 8px;font-size:11.5px;margin-top:4px!important}
+  #speak .sp-guide-card{padding:8px 10px}
+  #speak .sp-pitch-svg{max-height:110px}
+}

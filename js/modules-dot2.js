@@ -409,6 +409,8 @@
           const audio = new Audio(url);
           activeAudioEl = audio;
           audio.playbackRate = speed;
+          audio.volume = 1.0;
+          if(typeof boostAudioEl === 'function') boostAudioEl(audio, 1.75);
           const seek = $('#bk-seek'), tEl = $('#bk-time');
           audio.ontimeupdate = () => {
             if(myToken !== playSeqToken) return;
@@ -418,7 +420,10 @@
           };
           audio.onended = () => {
             URL.revokeObjectURL(url);
-            if(myToken === playSeqToken) stopPlayback();
+            if(myToken === playSeqToken){
+              stopPlayback();
+              openDialogSummary();
+            }
           };
           audio.onerror = () => {
             URL.revokeObjectURL(url);
@@ -440,7 +445,11 @@
       let idx = startIdx;
       const step = () => {
         if(myToken !== playSeqToken || idx >= dlgs.length){
-          if(myToken === playSeqToken) stopPlayback();
+          if(myToken === playSeqToken){
+            const finished = idx >= dlgs.length && dlgs.length > 0;
+            stopPlayback();
+            if(finished) openDialogSummary();
+          }
           return;
         }
         curLineIdx = idx;
@@ -471,6 +480,7 @@
           try{
             const u = new SpeechSynthesisUtterance(line.zh);
             u.lang = 'zh-CN';
+            u.volume = 1.0;
             u.rate = effSpeed;
             const vs = speechSynthesis.getVoices() || [];
             const v = vs.find(x => x.lang && x.lang.toLowerCase().startsWith('zh'));
@@ -648,6 +658,24 @@
       }
       syncPlayerUI();
     };
+    function openDialogSummary(){
+      const lid = store.activeLessonId;
+      const dlgs = LISTEN_DIALOG && LISTEN_DIALOG.length ? LISTEN_DIALOG : SENT;
+      if(typeof showSectionSummary === 'function'){
+        showSectionSummary('dialog', {
+          doneCount: dlgs.length || 1,
+          totalCount: dlgs.length || 1,
+          unit: 'câu',
+          errors: 0,
+          accuracy: 100,
+          wrongItems: []
+        }, { lessonId: lid, onRetryAll: () => render() });
+      }else if(typeof markLessonSectionDone === 'function' && lid){
+        markLessonSectionDone(lid, 'dialog', false);
+        toast('Đã hoàn thành Bài khóa!');
+      }
+    }
+    if($('#bk-done-btn')) $('#bk-done-btn').onclick = openDialogSummary;
 
     window._stopDialog = stopPlayback;
     return {
@@ -666,10 +694,36 @@
     let activeRow = 0;
     let curTool = 'pen';
     let showGuide = true;
+    let autoSumDone = false;
+    let autoSumTimer = null;
 
     function getLines(){
       const src = (LISTEN_DIALOG && LISTEN_DIALOG.length) ? LISTEN_DIALOG : SENT;
       return (src || []).filter(x => x && x.zh);
+    }
+    function openCopySummary(){
+      clearTimeout(autoSumTimer);
+      persistDrafts(true);
+      const lid = store.activeLessonId;
+      const lines = getLines();
+      const total = lines.length || 1;
+      const filled = rowPads.filter(p => p && p.hasInk()).length;
+      if(typeof recordLearningEvent === 'function'){
+        recordLearningEvent({type:'write', skill:'write', title:'Chép bài khóa', result:`${filled}/${lines.length} dòng`, view:'copy'});
+      }
+      if(typeof showSectionSummary === 'function'){
+        showSectionSummary('copy', {
+          doneCount: filled || total,
+          totalCount: total,
+          unit: 'dòng',
+          errors: 0,
+          accuracy: filled ? Math.min(100, Math.round(filled * 100 / total)) : 100,
+          wrongItems: []
+        }, { lessonId: lid, onRetryAll: () => render() });
+      }else if(typeof markLessonSectionDone === 'function' && lid){
+        markLessonSectionDone(lid, 'copy', false);
+        toast('Đã hoàn thành Chép bài khóa!');
+      }
     }
     function updateProg(){
       const lines = getLines();
@@ -678,6 +732,13 @@
       const bar = $('#cp-bar'), cnt = $('#cp-cnt');
       if(bar) bar.style.width = total ? Math.round(filled / total * 100) + '%' : '0%';
       if(cnt) cnt.textContent = `${filled} / ${total} dòng`;
+      if(total > 0 && filled >= total && !autoSumDone){
+        autoSumDone = true;
+        clearTimeout(autoSumTimer);
+        autoSumTimer = setTimeout(() => {
+          if(typeof curView === 'undefined' || curView === 'copy') openCopySummary();
+        }, 1200);
+      }
     }
     function persistDrafts(silent){
       const lid = store.activeLessonId;
@@ -719,6 +780,8 @@
       const box = $('#cp-rows');
       if(!box) return;
       const lines = getLines();
+      clearTimeout(autoSumTimer);
+      autoSumDone = false;
       rowPads = [];
       activeRow = 0;
       if(!lines.length){
@@ -797,19 +860,7 @@
     };
     if($('#cp-tool-save')) $('#cp-tool-save').onclick = () => persistDrafts(false);
     if($('#cp-info-btn')) $('#cp-info-btn').onclick = () => toast('Khung viết hỗ trợ Apple Pencil / S Pen (lực nhấn & chống chạm lòng bàn tay)');
-    if($('#cp-done-btn')) $('#cp-done-btn').onclick = () => {
-      persistDrafts(true);
-      const lid = store.activeLessonId;
-      const lines = getLines();
-      const filled = rowPads.filter(p => p && p.hasInk()).length;
-      if(typeof markLessonSectionDone === 'function' && lid){
-        markLessonSectionDone(lid, 'copy', false);
-      }
-      if(typeof recordLearningEvent === 'function'){
-        recordLearningEvent({type:'write', skill:'write', title:'Chép bài khóa', result:`${filled}/${lines.length} dòng`, view:'copy'});
-      }
-      toast('Đã hoàn thành Chép bài khóa!');
-    };
+    if($('#cp-done-btn')) $('#cp-done-btn').onclick = openCopySummary;
     window.addEventListener('resize', () => {
       if(typeof curView !== 'undefined' && curView === 'copy') requestAnimationFrame(resizeAll);
     });
@@ -860,6 +911,24 @@
         onChange(){ syncWatermark(); }
       });
     }
+    let transErrors = 0;
+    const transWrongItems = [];
+    function openTransSummary(){
+      const itemsNow = getItems();
+      const total = itemsNow.length || 1;
+      const doneCnt = doneSet.size || total;
+      const acc = Math.max(0, Math.min(100, Math.round((doneCnt) * 100 / Math.max(1, doneCnt + transErrors))));
+      if(typeof showSectionSummary === 'function'){
+        showSectionSummary('trans', {
+          doneCount: doneCnt,
+          totalCount: total,
+          unit: 'câu',
+          errors: transErrors,
+          accuracy: acc,
+          wrongItems: transWrongItems
+        }, { lessonId: store.activeLessonId, onRetryAll: () => { qi = 0; doneSet.clear(); transErrors = 0; transWrongItems.length = 0; if(pad) pad.clear(); if($('#tr-textarea')) $('#tr-textarea').value = ''; render(); } });
+      }
+    }
     function markTransComplete(){
       const lid = store.activeLessonId;
       const items = getItems();
@@ -898,10 +967,12 @@
         if(ansPy) ansPy.textContent = '';
         return;
       }
-      if(qi >= items.length) qi = 0;
-      if(qi < 0) qi = items.length - 1;
+      if(qi >= items.length) qi = items.length - 1;
+      if(qi < 0) qi = 0;
       const cur = items[qi];
       if(cnt) cnt.textContent = `${qi + 1} / ${items.length}`;
+      if($('#tr-prev')) $('#tr-prev').disabled = (qi <= 0);
+      if($('#tr-next')) $('#tr-next').title = (qi + 1 >= items.length) ? 'Hoàn thành & xem tổng kết' : 'Câu sau';
       const lblSpan = lbl && lbl.querySelector('span:last-child');
       if(dir === 'vi2zh'){
         if(lblSpan) lblSpan.textContent = 'Dịch sang tiếng Trung:';
@@ -972,11 +1043,20 @@
           detail = `<div class="small" style="margin-top:4px">Đáp án mẫu: <b>${esc(cur.vi)}</b></div>`;
         }
         fb.className = 'tr-fb-box ' + (ok ? 'ok' : 'no');
+        if(typeof playSfx === 'function') playSfx(ok ? 'ok' : 'no');
         fb.innerHTML = `<b>${ok ? '✓ Chính xác!' : 'Gần đúng — đối chiếu lại với đáp án nhé:'}</b>${detail}`;
         fb.classList.remove('hide');
         if(ok){
           doneSet.add(qi);
           markTransComplete();
+          if(qi + 1 >= items.length || doneSet.size >= items.length){
+            setTimeout(() => openTransSummary(), 350);
+          }
+        }else{
+          transErrors++;
+          if(!transWrongItems.some(x => x.zh === cur.zh)){
+            transWrongItems.push({zh: cur.zh || '', py: cur.py || '', vi: cur.vi || '', note: 'Dịch chưa chính xác'});
+          }
         }
         return;
       }
@@ -987,18 +1067,26 @@
       fb.innerHTML = `<div class="tr-self-txt"><b>Đối chiếu với đáp án tham khảo bên dưới</b><span class="small muted">App chạy offline nên không tự chấm điểm chữ viết tay.</span></div>
         <div class="tr-self-btns">
           <button class="btn ghost sm" id="tr-self-retry" type="button">Viết lại</button>
-          <button class="btn sm" id="tr-self-ok" type="button">Tôi viết đúng · Câu tiếp ›</button>
+          <button class="btn sm" id="tr-self-ok" type="button">${qi + 1 >= items.length ? 'Mình viết đúng · Xem kết quả ›' : 'Mình viết đúng · Câu tiếp ›'}</button>
         </div>`;
       fb.classList.remove('hide');
-      $('#tr-self-retry').onclick = () => { if(pad) pad.clear(); fb.classList.add('hide'); };
+      $('#tr-self-retry').onclick = () => {
+        if(typeof playSfx === 'function') playSfx('no');
+        transErrors++;
+        if(!transWrongItems.some(x => x.zh === cur.zh)){
+          transWrongItems.push({zh: cur.zh || '', py: cur.py || '', vi: cur.vi || '', note: 'Cần viết lại'});
+        }
+        if(pad) pad.clear();
+        fb.classList.add('hide');
+      };
       $('#tr-self-ok').onclick = () => {
+        if(typeof playSfx === 'function') playSfx('ok');
         doneSet.add(qi);
         markTransComplete();
         const itemsNow = getItems();
-        if(qi + 1 < itemsNow.length) qi += 1;
-        else { qi = 0; toast('Bạn đã hoàn thành đủ các câu luyện dịch của bài!'); }
         if(pad) pad.clear();
-        render();
+        if(qi + 1 < itemsNow.length){ qi += 1; render(); }
+        else { openTransSummary(); }
       };
     }
 
@@ -1017,8 +1105,19 @@
       render();
       if(inputMode === 'draw') requestAnimationFrame(() => { initPad(); if(pad) pad.resize(); });
     });
-    if($('#tr-prev')) $('#tr-prev').onclick = () => { qi--; if(pad) pad.clear(); if($('#tr-textarea')) $('#tr-textarea').value = ''; render(); };
-    if($('#tr-next')) $('#tr-next').onclick = () => { qi++; if(pad) pad.clear(); if($('#tr-textarea')) $('#tr-textarea').value = ''; render(); };
+    if($('#tr-prev')) $('#tr-prev').onclick = () => { if(qi <= 0) return; qi--; if(pad) pad.clear(); if($('#tr-textarea')) $('#tr-textarea').value = ''; render(); };
+    if($('#tr-next')) $('#tr-next').onclick = () => {
+      const items = getItems();
+      if(!items.length) return;
+      if(qi + 1 < items.length){
+        qi++;
+        if(pad) pad.clear();
+        if($('#tr-textarea')) $('#tr-textarea').value = '';
+        render();
+      }else{
+        openTransSummary();
+      }
+    };
     if($('#tr-prompt-spk')) $('#tr-prompt-spk').onclick = () => { const cur = getItems()[qi]; if(cur && typeof speak === 'function') speak(cur.zh, 0.9); };
     if($('#tr-ans-spk')) $('#tr-ans-spk').onclick = () => { const cur = getItems()[qi]; if(cur && typeof speak === 'function') speak(cur.zh, 0.9); };
     if($('#tr-tool-pen')) $('#tr-tool-pen').onclick = () => { tool = 'pen'; if(pad) pad.setTool('pen'); render(); };

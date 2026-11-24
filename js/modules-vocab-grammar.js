@@ -59,12 +59,35 @@ window.resolveWordExample=resolveWordExample;
 
 /* ---------- Flashcard dùng chung ---------- */
 function makeDeck(root,opts){
-  let queue=[],i=0,revealed=false,rateLock=false,session={reviewed:0,r0:0,r1:0,r2:0,done:false};
+  let queue=[],i=0,revealed=false,rateLock=false,session={reviewed:0,r0:0,r1:0,r2:0,done:false,studiedSet:new Set(),wrongSet:new Set(),summaryShown:false};
   const f=k=>$(`[data-f="${k}"]`,root);
   const audioRate=()=>store.settings.slowAudio?.6:.9;
 
   function buildQueue(){
-    queue=opts.listFn().slice();i=0;revealed=false;session={reviewed:0,r0:0,r1:0,r2:0,done:false};
+    queue=opts.listFn().slice();i=0;revealed=false;session={reviewed:0,r0:0,r1:0,r2:0,done:false,studiedSet:new Set(),wrongSet:new Set(),summaryShown:false};
+  }
+  function openVocabSummary(manual){
+    if(typeof showSectionSummary!=='function')return;
+    const total=queue.length||1;
+    const wrongArr=queue.filter(w=>session.wrongSet.has(w.id));
+    const err=wrongArr.length;
+    const doneCnt=manual?(session.studiedSet.size||total):total;
+    const denom=Math.max(1,doneCnt);
+    const acc=Math.max(0,Math.min(100,Math.round((denom-err)*100/denom)));
+    showSectionSummary('vocab',{
+      doneCount:doneCnt,
+      totalCount:total,
+      unit:'từ',
+      errors:err,
+      accuracy:acc,
+      wrongItems:wrongArr.map(w=>({zh:w.zh,py:w.py,vi:w.vi,note:'Bạn đánh dấu chưa nhớ'}))
+    },{
+      onRetryWrong:wrongArr.length?()=>{
+        const idx=queue.findIndex(x=>x.id===wrongArr[0].id);
+        if(idx>=0){i=idx;revealed=false;render();}
+      }:null,
+      onRetryAll:()=>{buildQueue();render();}
+    });
   }
   function applyMask(){
     const card=f('card'),exbox=f('exbox');if(!card)return;
@@ -75,17 +98,17 @@ function makeDeck(root,opts){
     card.classList.toggle('masked',!revealed&&hasWord);
     if(exbox)exbox.classList.toggle('masked',!revealed&&hasWord);
     if(!hasWord)return;
-    zhEl.classList.remove('is-ans');pyRow.classList.remove('is-ans');viEl.classList.remove('is-ans');
+    if(zhEl)zhEl.classList.remove('is-ans');if(pyRow)pyRow.classList.remove('is-ans');if(viEl)viEl.classList.remove('is-ans');
     if(lp)lp.classList.add('hide');
     if(mode==='zh'){
-      viEl.classList.add('is-ans');if(spkBig)spkBig.classList.add('hide');
+      if(viEl)viEl.classList.add('is-ans');if(spkBig)spkBig.classList.add('hide');
       if(hint)hint.textContent=opts.fixedMode==='zh'?(revealed?'Chạm vào từ để ẩn nghĩa':'Chạm vào từ để xem nghĩa'):(revealed?'Chạm thẻ để ẩn đáp án':'Chạm thẻ để xem nghĩa tiếng Việt');
     }else if(mode==='vi'){
-      zhEl.classList.add('is-ans');pyRow.classList.add('is-ans');
-      viEl.style.visibility='visible';if(spkBig)spkBig.classList.add('hide');
+      if(zhEl)zhEl.classList.add('is-ans');if(pyRow)pyRow.classList.add('is-ans');
+      if(viEl)viEl.style.visibility='visible';if(spkBig)spkBig.classList.add('hide');
       if(hint)hint.textContent=revealed?'Chạm thẻ để ẩn đáp án':'Chạm thẻ để xem chữ Hán & Pinyin';
     }else{
-      zhEl.classList.add('is-ans');pyRow.classList.add('is-ans');viEl.classList.add('is-ans');
+      if(zhEl)zhEl.classList.add('is-ans');if(pyRow)pyRow.classList.add('is-ans');if(viEl)viEl.classList.add('is-ans');
       if(lp)lp.classList.toggle('hide',revealed);if(spkBig)spkBig.classList.remove('hide');
       if(hint)hint.textContent=revealed?'Chạm thẻ để ẩn đáp án':'Nghe phát âm rồi chạm thẻ để kiểm tra';
     }
@@ -130,6 +153,7 @@ function makeDeck(root,opts){
   const on=(k,fn)=>{const el=f(k);if(el)el.addEventListener('click',e=>{e.stopPropagation();fn(e);});};
   on('next',()=>go(1));on('prev',()=>go(-1));
   on('spk',()=>cur()&&speak(cur().zh,audioRate()));
+  on('spk-slow',()=>cur()&&speak(cur().zh,0.55));
   on('spkBig',()=>cur()&&speak(cur().zh,audioRate()));
   on('exSpk',()=>{const w=cur();if(!w)return;const exData=resolveExample(w);if(exData.ex)speak(exData.ex,audioRate());});
   on('vc-repeat',()=>{const w=cur();if(!w)return;speak(w.zh,audioRate());toast(`Đọc theo: ${w.zh}${w.py?' ('+w.py+')':''}`);});
@@ -154,18 +178,32 @@ function makeDeck(root,opts){
     if(rateLock)return;const w=cur();if(!w)return;
     rateLock=true;setTimeout(()=>{rateLock=false;},220);
     const v=+b.dataset.rate;recordWord(w.id,v,opts.fixedMode||store.settings.flashMode);
+    if(typeof playSfx==='function'){if(v===2)playSfx('ok');else if(v===0)playSfx('no');}
     session.reviewed+=1;session['r'+v]+=1;
+    session.studiedSet.add(w.id);
+    if(v===0)session.wrongSet.add(w.id);
     if(opts.sessionQueue){
       queue.splice(i,1);if(v===0)queue.push(w);
       if(!queue.length){session.done=true;render();return;}
       if(i>=queue.length)i=0;revealed=false;render();
-    }else go(1);
+    }else{
+      if(root&&root.id==='vocab'&&queue.length&&session.studiedSet.size>=queue.length&&!session.summaryShown){
+        session.summaryShown=true;
+        if(typeof saveLessonSectionStats==='function'){
+          const wrongArr=queue.filter(x=>session.wrongSet.has(x.id));
+          const acc=Math.max(0,Math.min(100,Math.round((queue.length-wrongArr.length)*100/Math.max(1,queue.length))));
+          saveLessonSectionStats(store.activeLessonId,'vocab',{doneCount:queue.length,totalCount:queue.length,unit:'từ',errors:wrongArr.length,accuracy:acc,wrongItems:wrongArr.map(x=>({zh:x.zh,py:x.py,vi:x.vi,note:'Bạn đánh dấu chưa nhớ'}))});
+        }
+        setTimeout(()=>openVocabSummary(false),180);
+      }else go(1);
+    }
   }));
   buildQueue();
   return {
     render,
     refreshMask:applyMask,
     reset(){buildQueue();render();},
+    openSummary(manual){openVocabSummary(manual);},
     getQueueIds(){return queue.map(w=>w.id).join(',');},
     isSessionDone(){return session.done;},
     openWord(id){buildQueue();const idx=queue.findIndex(w=>w.id===id);if(idx>=0)i=idx;revealed=false;render();}
@@ -331,7 +369,195 @@ if($('#vc-ext-panel'))$('#vc-ext-panel').addEventListener('click',e=>{
   }
 });
 
-const vocab=makeDeck($('#vocab'),{fixedMode:'zh',listFn:()=>WORDS,sessionQueue:false,onRender(w){vcCurWord=w;vcExtCharIdx=0;vcMmPage=0;renderVocabExtension(w);},onMutate(){vocab.render();renderReviewDash();renderWordbook();}});
+function makeVocabQuiz(root,opts){
+  let queue=[],i=0,session={studiedSet:new Set(),wrongMap:new Map(),answers:{},choices:{},done:false,summaryShown:false};
+  const f=k=>$(`[data-f="${k}"]`,root);
+  const audioRate=()=>store.settings.slowAudio?.6:.9;
+  const ABC=['A','B','C','D'];
+
+  function buildQueue(customList){
+    queue=Array.isArray(customList)?customList.slice():opts.listFn().slice();
+    i=0;
+    session={studiedSet:new Set(),wrongMap:new Map(),answers:{},choices:{},done:false,summaryShown:false};
+    if(typeof resetSectionTimer==='function')resetSectionTimer('vocab');
+  }
+
+  function buildChoices(w){
+    if(session.choices[w.id])return session.choices[w.id];
+    const targetVi=String(w.vi||'—').trim();
+    const seenVi=new Set([targetVi.toLowerCase()]);
+    const pickFrom=pool=>{
+      const res=[];
+      for(const x of shuffle(pool)){
+        if(!x||x.id===w.id||!x.vi)continue;
+        const v=String(x.vi).trim();
+        if(!v||seenVi.has(v.toLowerCase()))continue;
+        seenVi.add(v.toLowerCase());
+        res.push({id:x.id,label:v,ok:false});
+        if(res.length>=3)break;
+      }
+      return res;
+    };
+    let dist=pickFrom(WORDS||[]);
+    if(dist.length<3&&store&&store.vocabBank){
+      dist=dist.concat(pickFrom(Object.values(store.vocabBank))).slice(0,3);
+    }
+    const choices=shuffle([{id:w.id,label:targetVi,ok:true},...dist]);
+    session.choices[w.id]=choices;
+    return choices;
+  }
+
+  function openVocabSummary(manual){
+    if(typeof showSectionSummary!=='function')return;
+    const total=queue.length||1;
+    const wrongArr=queue.filter(w=>session.wrongMap.has(w.id));
+    const err=wrongArr.length;
+    const doneCnt=manual?(session.studiedSet.size||total):total;
+    const denom=Math.max(1,doneCnt);
+    const acc=Math.max(0,Math.min(100,Math.round((denom-err)*100/denom)));
+    session.done=true;
+    showSectionSummary('vocab',{
+      doneCount:doneCnt,
+      totalCount:total,
+      unit:'từ',
+      errors:err,
+      accuracy:acc,
+      wrongItems:wrongArr.map(w=>{
+        const rec=session.wrongMap.get(w.id);
+        return {zh:w.zh,py:w.py,vi:w.vi,note:(rec&&rec.note)||'Bạn đã chọn sai nghĩa'};
+      })
+    },{
+      onRetryWrong:wrongArr.length?()=>{buildQueue(wrongArr);render();}:null,
+      onRetryAll:()=>{buildQueue();render();}
+    });
+  }
+
+  function updateSaveBtn(w){
+    const st=f('star');if(!st||!w)return;
+    const on=isFavorite(w.id);
+    st.classList.toggle('on',on);
+    st.setAttribute('aria-pressed',String(on));
+    const sp=st.querySelector('span');
+    if(sp)sp.textContent=on?'Đã lưu':'Lưu từ';
+  }
+
+  function applyRevealState(w){
+    const ans=w?session.answers[w.id]:null;
+    const revealed=Boolean(ans);
+    const exData=w?resolveWordExample(w):{ex:''};
+    const exBox=f('exbox');if(exBox)exBox.classList.toggle('hide',!revealed||!exData.ex);
+    const extSec=$('#vc-ext-sec');if(extSec)extSec.classList.toggle('hide',!revealed);
+    const act=$('#vc-actions');
+    if(act){
+      act.classList.toggle('hide',!revealed);
+      const prevBtn=$('#vc-prev-btn');if(prevBtn)prevBtn.classList.toggle('hide',i<=0);
+      const nextBtn=$('#vc-next-btn');if(nextBtn)nextBtn.textContent=(i+1>=queue.length)?'Xem kết quả →':'Từ tiếp theo →';
+    }
+    if(revealed&&w&&opts.onRender){
+      opts.onRender(w);
+      requestAnimationFrame(()=>{if(typeof syncMindMapLines==='function')syncMindMapLines();});
+    }
+  }
+
+  function render(){
+    if(i>=queue.length&&queue.length>0)i=0;
+    const w=queue[i];
+    if(f('count'))f('count').textContent=queue.length?`${i+1} / ${queue.length} từ`:'0 / 0 từ';
+    const bar=f('bar');if(bar)bar.style.width=queue.length?((i+1)/queue.length*100)+'%':'0%';
+    const optsEl=$('#vc-opts');
+    if(!w){
+      if(f('zh'))f('zh').textContent='—';
+      if(f('py'))f('py').textContent='';
+      if(optsEl)optsEl.innerHTML='<p class="muted small" style="padding:10px 0">Bài học này chưa có danh sách từ mới.</p>';
+      applyRevealState(null);
+      updateGlobalCounts();
+      if(opts.onRender)opts.onRender(null);
+      return;
+    }
+    const zhEl=f('zh');zhEl.textContent=w.zh;zhEl.classList.toggle('long',(w.zh||'').length>=3);
+    f('py').textContent=w.py||'';
+    const exData=resolveWordExample(w);
+    f('ex').innerHTML=highlightText(exData.ex,w.zh);
+    f('exPy').innerHTML=highlightText(exData.exPy,w.py);
+    f('exVi').textContent=exData.exVi;
+    const srsEl=f('srs');if(srsEl)srsEl.textContent=formatSrsBadge(w.id);
+    updateSaveBtn(w);
+
+    const choices=buildChoices(w);
+    const savedAns=session.answers[w.id]||null;
+    if(optsEl){
+      optsEl.innerHTML=choices.map((c,idx)=>{
+        let cls='',ic='';
+        if(savedAns){
+          if(c.ok){cls=' ok';ic='✓';}
+          else if(idx===savedAns.pickedIdx){cls=' no';ic='✕';}
+        }
+        return `<button type="button" class="opt${cls}" data-idx="${idx}"><i>${ABC[idx]||idx+1}</i><span>${escH(c.label)}</span><span class="st-ic">${ic}</span></button>`;
+      }).join('');
+      $$('.opt',optsEl).forEach(btn=>btn.onclick=()=>{
+        if(session.answers[w.id])return;
+        const idx=+btn.dataset.idx,picked=choices[idx],isOk=Boolean(picked&&picked.ok);
+        session.answers[w.id]={pickedIdx:idx,ok:isOk,pickedVi:picked?picked.label:''};
+        session.studiedSet.add(w.id);
+        if(!isOk)session.wrongMap.set(w.id,{zh:w.zh,py:w.py,vi:w.vi,note:'Chọn nhầm: '+(picked?picked.label:'')});
+        btn.classList.add(isOk?'ok':'no');
+        const stEl=$('.st-ic',btn);if(stEl)stEl.textContent=isOk?'✓':'✕';
+        if(!isOk){
+          const oi=choices.findIndex(x=>x.ok);
+          if(oi>=0){const ob=$$('.opt',optsEl)[oi];if(ob){ob.classList.add('ok');const ost=$('.st-ic',ob);if(ost)ost.textContent='✓';}}
+        }
+        if(typeof playSfx==='function')playSfx(isOk?'ok':'no');
+        if(typeof speak==='function')setTimeout(()=>speak(w.zh,0.95),240);
+        recordWord(w.id,isOk?2:0,'zh');
+        updateGlobalCounts();
+        applyRevealState(w);
+      });
+    }
+    applyRevealState(w);
+    updateGlobalCounts();
+    if(opts.onRender)opts.onRender(w);
+  }
+
+  const cur=()=>queue[i]||null;
+  const on=(k,fn)=>{const el=f(k);if(el)el.addEventListener('click',e=>{e.stopPropagation();fn(e);});};
+  on('spk',()=>cur()&&speak(cur().zh,0.95));
+  on('spk-slow',()=>cur()&&speak(cur().zh,0.55));
+  on('exSpk',()=>{const w=cur();if(!w)return;const exData=resolveWordExample(w);if(exData.ex)speak(exData.ex,audioRate());});
+  on('tog-py',()=>{store.settings.showPinyin=!store.settings.showPinyin;saveStore(store);applySettingsUI();});
+  on('tog-slow',()=>{store.settings.slowAudio=!store.settings.slowAudio;saveStore(store);applySettingsUI();if(cur())speak(cur().zh,audioRate());});
+  on('star',()=>{
+    const w=cur();if(!w)return;
+    toggleFavorite(w.id);
+    const savedOn=isFavorite(w.id);
+    toast(savedOn?'Đã lưu từ vào Sổ từ (Yêu thích)':'Đã bỏ lưu từ');
+    updateSaveBtn(w);
+    if(opts.onMutate)opts.onMutate();
+  });
+
+  if($('#vc-prev-btn'))$('#vc-prev-btn').onclick=()=>{if(i>0){i--;render();}};
+  if($('#vc-next-btn'))$('#vc-next-btn').onclick=()=>{
+    if(!queue.length)return;
+    if(i+1<queue.length){
+      i+=1;render();
+      try{window.scrollTo({top:0,behavior:'smooth'});}catch(_){}
+    }else{
+      openVocabSummary(false);
+    }
+  };
+
+  buildQueue();
+  return {
+    render,
+    refreshMask(){},
+    reset(customList){buildQueue(customList);render();},
+    openSummary(manual){openVocabSummary(manual);},
+    getQueueIds(){return queue.map(w=>w.id).join(',');},
+    isSessionDone(){return session.done;},
+    openWord(id){buildQueue();const idx=queue.findIndex(w=>w.id===id);if(idx>=0)i=idx;render();}
+  };
+}
+
+const vocab=makeVocabQuiz($('#vocab'),{listFn:()=>WORDS,onRender(w){vcCurWord=w;vcExtCharIdx=0;vcMmPage=0;renderVocabExtension(w);},onMutate(){renderReviewDash();renderWordbook();}});
 window.renderFlash=()=>{vocab.reset();try{renderReviewDash();renderWordbook();}catch(_){}};
 
 /* ---------- Màn 2: Ôn tập SRS chồng thẻ ---------- */
@@ -625,8 +851,52 @@ let ORDER_BANK=[
   {id:'ord5',tokens:['我','想','去','旅游','。'],ans:'我想去旅游。',py:'Wǒ xiǎng qù lǚyóu.',vi:'Tôi muốn đi du lịch.'}
 ];
 
+const PUNCT_ONLY_RE=/^[。！？?!，,；;：:…、.]+$/;
+function mergePunctTokens(arr){
+  const out=[];
+  for(const raw of (arr||[])){
+    const tok=String(raw||'').trim();
+    if(!tok)continue;
+    if(PUNCT_ONLY_RE.test(tok)&&out.length)out[out.length-1]+=tok;
+    else out.push(tok);
+  }
+  return out;
+}
+function resolveTokenPinyin(tok,sentZh,sentPy){
+  const clean=String(tok||'').replace(/[。！？?!，,；;：:…、.\s]+/g,'');
+  if(!clean)return '';
+  const lex=new Map();
+  (WORDS||[]).forEach(w=>{if(w&&w.zh&&w.py)lex.set(w.zh,w.py);});
+  if(lex.has(clean))return lex.get(clean);
+  if(store&&store.vocabBank){
+    for(const w of Object.values(store.vocabBank)){if(w&&w.zh===clean&&w.py)return w.py;}
+  }
+  if(sentZh&&sentPy&&typeof splitPinyinSyllables==='function'){
+    const hanAll=[...String(sentZh)].filter(c=>/[\u4e00-\u9fff]/.test(c));
+    const syls=splitPinyinSyllables(sentPy);
+    const tokHan=[...clean].filter(c=>/[\u4e00-\u9fff]/.test(c)).join('');
+    if(tokHan&&syls.length===hanAll.length){
+      const pos=hanAll.join('').indexOf(tokHan);
+      if(pos>=0)return syls.slice(pos,pos+tokHan.length).join(' ');
+    }
+  }
+  const chs=[...clean].filter(c=>/[\u4e00-\u9fff]/.test(c));
+  if(chs.length){
+    const parts=chs.map(c=>{
+      if(lex.has(c))return lex.get(c);
+      if(typeof HANZI_HACKNAO_DB!=='undefined'&&HANZI_HACKNAO_DB[c]&&HANZI_HACKNAO_DB[c].py)return HANZI_HACKNAO_DB[c].py;
+      if(typeof HANZI_MINDMAP_DB!=='undefined'&&HANZI_MINDMAP_DB[c]&&HANZI_MINDMAP_DB[c].py)return HANZI_MINDMAP_DB[c].py;
+      return '';
+    });
+    if(parts.every(Boolean))return parts.join(' ');
+  }
+  return '';
+}
+
 function buildLessonOrderBank(){
-  if(typeof ORDER_BANK!=='undefined'&&Array.isArray(ORDER_BANK)&&ORDER_BANK.length)return ORDER_BANK;
+  if(typeof ORDER_BANK!=='undefined'&&Array.isArray(ORDER_BANK)&&ORDER_BANK.length){
+    return ORDER_BANK.map(o=>Object.assign({},o,{tokens:mergePunctTokens(o.tokens)}));
+  }
   const wordSet=(WORDS||[]).map(w=>w.zh).filter(z=>z&&z.length>=2).sort((a,b)=>b.length-a.length);
   const splitSentence=zh=>{
     const clean=String(zh||'').trim();
@@ -636,17 +906,21 @@ function buildLessonOrderBank(){
     while(i<clean.length){
       const ch=clean[i];
       if(/\s/.test(ch)){i++;continue;}
-      if(/[。！？?!，,；;：:]/.test(ch)){tokens.push(ch);i++;continue;}
+      if(/[。！？?!，,；;：:]/.test(ch)){
+        if(tokens.length)tokens[tokens.length-1]+=ch;
+        else tokens.push(ch);
+        i++;continue;
+      }
       const hit=wordSet.find(w=>clean.startsWith(w,i));
       if(hit){tokens.push(hit);i+=hit.length;}
       else{tokens.push(ch);i++;}
     }
-    return tokens;
+    return mergePunctTokens(tokens);
   };
   const candidates=[];
   const seen=new Set();
   const pushItem=(zh,py,vi,id)=>{
-    const cleanZh=String(zh||'').trim();
+    const cleanZh=String(zh||'').trim().replace(/\s+/g,'');
     const hanLen=(cleanZh.match(/[\u4e00-\u9fff]/g)||[]).length;
     if(hanLen<3||seen.has(cleanZh))return;
     const tokens=splitSentence(cleanZh);
@@ -691,7 +965,7 @@ function buildExerciseQuestions(mode){
     const pairs=slice.map(w=>({id:w.id,zh:w.zh,py:w.py,vi:w.vi}));
     return {type:'match',prompt:`Nối ${pairs.length} cặp chữ Hán với nghĩa đúng:`,pairs,left:shuffle(pairs),right:shuffle(pairs),exp:pairs.map(p=>`${p.zh} (${p.py}) = ${p.vi}`).join(' · ')};
   };
-  const makeOrder=o=>({type:'order',prompt:'Sắp xếp các từ thành câu đúng:',tokens:shuffle(o.tokens),ans:o.ans,py:o.py,vi:o.vi,exp:`Đáp án đúng: ${o.ans}${o.py?' ('+o.py+')':''}`});
+  const makeOrder=o=>({type:'order',prompt:'Sắp xếp các từ thành câu đúng:',tokens:shuffle(mergePunctTokens(o.tokens)),ans:o.ans,py:o.py,vi:o.vi,exp:`Đáp án đúng: ${o.ans}${o.py?' ('+o.py+')':''}`});
   const ordBank=buildLessonOrderBank();
 
   if(mode==='meaning')return shuffle(WORDS).slice(0,6).map(makeMeaning);
@@ -725,6 +999,20 @@ function buildExerciseQuestions(mode){
 /* ---------- Bộ điều khiển Bài tập tương tác (#exercise) ---------- */
 const exCtrl=(function(){
   let mode='mix',qs=[],qi=0,correct=0,wrong=0,wrongQs=[],answered=false,recorded=false,placed=[],mSelL=null,mSelR=null,mDone=new Set(),mErrors=0;
+  let showPy=(!store.settings||store.settings.showPinyin!==false);
+
+  function syncPyBtn(){
+    const exSec=$('#exercise'),btn=$('#ex-tog-py');
+    if(exSec)exSec.classList.toggle('ex-nopy',!showPy);
+    if(btn){
+      btn.classList.toggle('on',showPy);
+      btn.setAttribute('aria-pressed',String(showPy));
+      const useEl=btn.querySelector('use');
+      if(useEl)useEl.setAttribute('href',showPy?'#i-eye':'#i-eye-off');
+      const sp=btn.querySelector('span');
+      if(sp)sp.textContent=showPy?'Pinyin: Bật':'Pinyin: Tắt';
+    }
+  }
 
   function syncHeader(){
     const l=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
@@ -764,6 +1052,7 @@ const exCtrl=(function(){
   }
 
   function showFb(isOk,title,desc,allowRetry){
+    if(typeof playSfx==='function')playSfx(isOk?'ok':'no');
     const fb=$('#ex-fb'),act=$('#ex-actions'),rbtn=$('#ex-retry');
     fb.className='fb-card '+(isOk?'ok':'no');
     fb.innerHTML=`<b><svg class="ic" style="width:1.1em;height:1.1em"><use href="#i-${isOk?'check':'x'}"/></svg>${title}</b><span>${desc}</span>`;
@@ -815,7 +1104,7 @@ const exCtrl=(function(){
         gradeSimple(ok,q);
       });
     }else if(q.type==='meaning'){
-      pbox.innerHTML=`<p class="muted small">${q.prompt}</p><div class="q-han" style="margin-top:8px"><span>${q.zh}</span><button type="button" class="playbtn" data-say="${q.zh}" aria-label="Nghe ${q.zh}"><svg class="ic"><use href="#i-vol"/></svg></button></div><div class="q-sub">${q.py}</div>`;
+      pbox.innerHTML=`<p class="muted small">${q.prompt}</p><div class="word-aud-grid" style="margin-top:8px"><span aria-hidden="true"></span><div class="word-aud-stack"><div class="q-han"><span>${q.zh}</span></div><div class="q-sub ex-py">${q.py}</div></div><div class="word-aud-btns"><button type="button" class="playbtn" data-say="${q.zh}" aria-label="Nghe ${q.zh}"><svg class="ic"><use href="#i-vol"/></svg></button><button type="button" class="playbtn slow" data-say-slow="${q.zh}" title="Nghe chậm" aria-label="Nghe chậm ${q.zh}"><svg class="ic"><use href="#i-slow"/></svg></button></div></div>`;
       stage.innerHTML=`<div class="opt-list">${q.opts.map((o,idx)=>`<button type="button" class="opt" data-idx="${idx}"><i>${ABC[idx]}</i><span>${o.label}</span><span class="st-ic"></span></button>`).join('')}</div>`;
       $$('.opt',stage).forEach(btn=>btn.onclick=()=>{
         if(answered)return;
@@ -827,47 +1116,49 @@ const exCtrl=(function(){
       });
     }else if(q.type==='hanzi'){
       pbox.innerHTML=`<p class="muted small">${q.prompt}</p><div style="font-size:22px;font-weight:700;margin-top:8px;color:var(--accent)">“${q.vi}”</div>`;
-      stage.innerHTML=`<div class="opt-list">${q.opts.map((o,idx)=>`<button type="button" class="opt" data-idx="${idx}"><i>${ABC[idx]}</i><span class="zh">${o.zh}</span><span class="muted small">(${o.py})</span><span class="st-ic"></span></button>`).join('')}</div>`;
+      stage.innerHTML=`<div class="opt-list">${q.opts.map((o,idx)=>`<button type="button" class="opt" data-idx="${idx}"><i>${ABC[idx]}</i><span class="ex-opt-stack"><span class="zh">${o.zh}</span><span class="ex-py">${o.py}</span></span><span class="st-ic"></span></button>`).join('')}</div>`;
       $$('.opt',stage).forEach(btn=>btn.onclick=()=>{
         if(answered)return;
         const idx=+btn.dataset.idx,ok=q.opts[idx].ok;
         btn.classList.add(ok?'ok':'no');
         $('.st-ic',btn).textContent=ok?'✓':'✕';
         if(!ok){const oi=q.opts.findIndex(x=>x.ok);if(oi>=0){const ob=$$('.opt',stage)[oi];ob.classList.add('ok');$('.st-ic',ob).textContent='✓';}}
-        speak(q.zh);
         gradeSimple(ok,q);
+        setTimeout(()=>speak(q.zh),240);
       });
     }else if(q.type==='fill'){
       pbox.innerHTML=`<p class="muted small">${q.prompt}</p><div style="font-family:var(--han);font-size:24px;font-weight:700;margin-top:10px">${q.sentence}</div><div class="q-sub">${q.vi}</div>`;
-      stage.innerHTML=`<div class="opt-list">${q.opts.map((o,idx)=>`<button type="button" class="opt" data-idx="${idx}"><i>${ABC[idx]}</i><span class="zh">${o.zh}</span><span class="muted small">(${o.py})</span><span class="st-ic"></span></button>`).join('')}</div>`;
+      stage.innerHTML=`<div class="opt-list">${q.opts.map((o,idx)=>`<button type="button" class="opt" data-idx="${idx}"><i>${ABC[idx]}</i><span class="ex-opt-stack"><span class="zh">${o.zh}</span><span class="ex-py">${o.py}</span></span><span class="st-ic"></span></button>`).join('')}</div>`;
       $$('.opt',stage).forEach(btn=>btn.onclick=()=>{
         if(answered)return;
         const idx=+btn.dataset.idx,ok=q.opts[idx].ok;
         btn.classList.add(ok?'ok':'no');
         $('.st-ic',btn).textContent=ok?'✓':'✕';
         if(!ok){const oi=q.opts.findIndex(x=>x.ok);if(oi>=0){const ob=$$('.opt',stage)[oi];ob.classList.add('ok');$('.st-ic',ob).textContent='✓';}}
-        speak(q.zh);
         gradeSimple(ok,q);
+        setTimeout(()=>speak(q.zh),240);
       });
     }else if(q.type==='match'){
       pbox.innerHTML=`<p class="muted small">${q.prompt}</p><div class="q-sub">Chạm 1 chữ Hán bên trái và 1 nghĩa bên phải</div>`;
       const drawMatch=()=>{
         stage.innerHTML=`<div class="match-grid">
-          <div class="match-col">${q.left.map(p=>`<button type="button" class="m-btn zh ${mDone.has(p.id)?'ok':mSelL===p.id?'sel':''}" data-ml="${p.id}">${p.zh}</button>`).join('')}</div>
-          <div class="match-col">${q.right.map(p=>`<button type="button" class="m-btn ${mDone.has(p.id)?'ok':mSelR===p.id?'sel':''}" data-mr="${p.id}"><span><b>${p.py}</b><br><span class="small muted">${p.vi}</span></span></button>`).join('')}</div>
+          <div class="match-col">${q.left.map(p=>`<button type="button" class="m-btn zh ${mDone.has(p.id)?'ok':mSelL===p.id?'sel':''}" data-ml="${p.id}" data-zh="${p.zh}"><span class="m-han">${p.zh}</span><span class="ex-py m-py">${p.py}</span></button>`).join('')}</div>
+          <div class="match-col">${q.right.map(p=>`<button type="button" class="m-btn ${mDone.has(p.id)?'ok':mSelR===p.id?'sel':''}" data-mr="${p.id}"><span>${p.vi}</span></button>`).join('')}</div>
         </div>`;
-        $$('[data-ml]',stage).forEach(b=>b.onclick=()=>{if(answered)return;mSelL=b.dataset.ml;speak(b.textContent);tryMatch();});
+        $$('[data-ml]',stage).forEach(b=>b.onclick=()=>{if(answered)return;mSelL=b.dataset.ml;speak(b.dataset.zh||b.textContent);tryMatch();});
         $$('[data-mr]',stage).forEach(b=>b.onclick=()=>{if(answered)return;mSelR=b.dataset.mr;tryMatch();});
       };
       const tryMatch=()=>{
         if(mSelL&&mSelR){
           if(mSelL===mSelR){
+            if(typeof playSfx==='function')playSfx('ok');
             mDone.add(mSelL);mSelL=null;mSelR=null;drawMatch();
             if(mDone.size===q.pairs.length){
               gradeSimple(mErrors===0,q);
               if(mErrors>0)showFb(false,`Hoàn thành (sai ${mErrors} lần ghép)`,q.exp,true);
             }
           }else{
+            if(typeof playSfx==='function')playSfx('no');
             mErrors++;
             const l=mSelL,r=mSelR;mSelL=null;mSelR=null;drawMatch();
             const lb=$(`[data-ml="${l}"]`,stage),rb=$(`[data-mr="${r}"]`,stage);
@@ -879,10 +1170,12 @@ const exCtrl=(function(){
       drawMatch();
     }else if(q.type==='order'){
       pbox.innerHTML=`<p class="muted small">${q.prompt}</p><div class="q-sub" style="font-size:16px;color:var(--ink);font-weight:600;margin-top:8px">“${q.vi}”</div>`;
+      const tokPys=q.tokens.map(t=>resolveTokenPinyin(t,q.ans,q.py));
+      const renderTokInner=(t,idx)=>`<span class="tok-zh">${escH(t)}</span>${tokPys[idx]?`<span class="tok-py">${escH(tokPys[idx])}</span>`:''}`;
       const drawOrder=()=>{
         stage.innerHTML=`
-          <div class="order-zone" id="ord-ans">${placed.length?placed.map((ti,pos)=>`<button type="button" class="tok placed" data-op="${pos}">${q.tokens[ti]}</button>`).join(''):'<span class="muted small">Chạm các mảnh từ bên dưới để xếp câu...</span>'}</div>
-          <div class="bank-zone" style="margin-top:10px">${q.tokens.map((t,ti)=>`<button type="button" class="tok ${placed.includes(ti)?'used':''}" data-ot="${ti}">${t}</button>`).join('')}</div>
+          <div class="order-zone" id="ord-ans">${placed.length?placed.map((ti,pos)=>`<button type="button" class="tok placed" data-op="${pos}">${renderTokInner(q.tokens[ti],ti)}</button>`).join(''):'<span class="muted small">Chạm các mảnh từ bên dưới để xếp câu...</span>'}</div>
+          <div class="bank-zone" style="margin-top:10px">${q.tokens.map((t,ti)=>`<button type="button" class="tok ${placed.includes(ti)?'used':''}" data-ot="${ti}">${renderTokInner(t,ti)}</button>`).join('')}</div>
           <div class="btnrow" style="margin-top:10px"><button type="button" class="btn ghost sm" id="ord-clr">Xếp lại</button><button type="button" class="btn sm" id="ord-chk">Kiểm tra</button></div>`;
         $$('[data-ot]',stage).forEach(b=>b.onclick=()=>{if(answered)return;placed.push(+b.dataset.ot);drawOrder();});
         $$('[data-op]',stage).forEach(b=>b.onclick=()=>{if(answered)return;placed.splice(+b.dataset.op,1);drawOrder();});
@@ -890,10 +1183,10 @@ const exCtrl=(function(){
         $('#ord-chk',stage).onclick=()=>{
           if(answered)return;
           if(!placed.length){toast('Hãy chọn các từ trước khi kiểm tra');return;}
-          const userStr=placed.map(ti=>q.tokens[ti]).join('');
-          const ok=userStr===q.ans;
-          speak(q.ans);
+          const userStr=placed.map(ti=>q.tokens[ti]).join('').replace(/\s+/g,'');
+          const ok=userStr===String(q.ans||'').replace(/\s+/g,'');
           gradeSimple(ok,q);
+          setTimeout(()=>speak(q.ans),240);
         };
       };
       drawOrder();
@@ -922,8 +1215,22 @@ const exCtrl=(function(){
       <div class="btnrow" style="margin-top:14px">${wrongQs.length?`<button type="button" class="btn ghost sm" id="ex-retry-wrong">Làm lại ${wrongQs.length} câu sai</button>`:''}<button type="button" class="btn sm" id="ex-again"><svg class="ic"><use href="#i-refresh"/></svg>Luyện lại</button></div>`;
     const rw=$('#ex-retry-wrong');if(rw)rw.onclick=()=>start(mode,wrongQs.slice());
     $('#ex-again').onclick=()=>start(mode);
+    if(total>0&&typeof showSectionSummary==='function'){
+      showSectionSummary('exercise',{
+        doneCount:total,
+        totalCount:total,
+        unit:'câu',
+        errors:wrong,
+        accuracy:pct,
+        wrongItems:wrongQs.map(w=>({zh:w.zh||w.ans||'',py:w.py||'',vi:w.vi||w.exp||'',note:'Bạn đã trả lời sai'}))
+      },{
+        onRetryWrong:wrongQs.length?()=>start(mode,wrongQs.slice()):null,
+        onRetryAll:()=>start(mode)
+      });
+    }
   }
 
+  if($('#ex-tog-py'))$('#ex-tog-py').onclick=()=>{showPy=!showPy;syncPyBtn();};
   $('#ex-modes').addEventListener('click',e=>{const b=e.target.closest('button');if(b)start(b.dataset.em);});
   $('#ex-next').onclick=()=>{qi+=1;if(qi<qs.length)saveActive();renderQ();};
   $('#ex-retry').onclick=()=>{
@@ -933,7 +1240,7 @@ const exCtrl=(function(){
     renderQ();
   };
 
-  return {init(){syncHeader();checkResumeBanner();start('mix');},refresh(){syncHeader();checkResumeBanner();start(mode);},syncHeader};
+  return {init(){syncPyBtn();syncHeader();checkResumeBanner();start('mix');},refresh(){syncPyBtn();syncHeader();checkResumeBanner();start(mode);},syncHeader};
 })();
 
 /* ---------- Bộ điều khiển Ngữ pháp (#grammar: Lý thuyết + Bài tập áp dụng đa dạng) ---------- */
@@ -957,7 +1264,7 @@ const HN_GRAMMAR_QUIZ_BANK={
 };
 
 const gramCtrl=(function(){
-  let curGp='ye',gMode='mix',quizList=[],qi=0,correct=0,wrong=0,answered=false,recorded=false,wrongList=[],placed=[];
+  let curGp='ye',gMode='mix',quizList=[],qi=0,correct=0,wrong=0,answered=false,recorded=false,wrongList=[],placed=[],phase='theory',gpKeys=[],gpIdx=0;
   const esc=s=>(typeof escHtml==='function')?escHtml(s):String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
   function syncHeader(){
@@ -1093,16 +1400,14 @@ const gramCtrl=(function(){
       quizList=full.filter(x=>x.qtype===gMode);
     }
     qi=0;correct=0;wrong=0;answered=false;recorded=false;wrongList=[];placed=[];
-    if(wrap)wrap.classList.remove('hide');
+    if(wrap)wrap.classList.toggle('hide',phase!=='quiz');
     if(sum)sum.classList.add('hide');
     renderQuiz();
   }
 
-  function renderPoint(key){
+  function renderGrammarPointHtml(key){
     const g=GRAMMAR_POINTS[key];
-    if(!g)return;
-    curGp=key;
-    $$('#gp-tabs button').forEach(b=>b.classList.toggle('on',b.dataset.gp===key));
+    if(!g)return '<p class="muted small" style="margin:0">Chưa có nội dung ngữ pháp.</p>';
     const han=g.han||'语法';
     const py=g.py||'';
     const desc=g.desc||g.explain||'';
@@ -1111,15 +1416,63 @@ const gramCtrl=(function(){
     const exHtml=exList.length?`<h3 style="border-left:4px solid var(--accent);padding-left:8px">Ví dụ</h3>
       <div>${exList.map(ex=>`<div class="ex"><span class="ib"><svg class="ic"><use href="#i-${esc(ex.ic||'book')}"/></svg></span><div><div class="zh">${ex.hl?highlightText(ex.zh||'',ex.hl):esc(ex.zh||'')}</div>${ex.py?`<small>${esc(ex.py)}</small>`:''}${ex.vi?`<small>${esc(ex.vi)}</small>`:''}</div><button type="button" class="playbtn" data-say="${esc(ex.zh||'')}" aria-label="Nghe ví dụ"><svg class="ic"><use href="#i-vol"/></svg></button></div>`).join('')}</div>`:'';
     const noteHtml=g.note?`<div class="note"><svg class="ic"><use href="#i-bulb"/></svg><div><b>Lưu ý:</b> ${esc(g.note)}</div></div>`:'';
-    const jumpHtml=quizList.length?`<div style="display:flex;justify-content:flex-end;margin-top:4px"><button type="button" class="chip on" id="gp-jump-quiz">Làm bài tập áp dụng (${quizList.length} câu) ↓</button></div>`:'';
-    $('#gp-card').innerHTML=`
-      <div class="gram"><div class="big">${esc(han)}<small>${esc(py)}</small></div><div><h3>${esc(g.title||'')}</h3>${desc?`<p class="muted small" style="margin-top:4px">${esc(desc)}</p>`:''}</div></div>
-      ${structHtml}
-      ${exHtml}
-      ${noteHtml}
-      ${jumpHtml}`;
-    const jb=$('#gp-jump-quiz');
-    if(jb)jb.onclick=()=>{const w=$('#gq-wrap');if(w)w.scrollIntoView({behavior:'smooth',block:'start'});};
+    const isWide=han.length>2||/[\/、，,\s]/.test(han);
+    return `<div class="gram${isWide?' gram-wide':''}"><div class="big">${esc(han)}<small>${esc(py)}</small></div><div><h3>${esc(g.title||'')}</h3>${desc?`<p class="muted small" style="margin-top:4px">${esc(desc)}</p>`:''}</div></div>${structHtml}${exHtml}${noteHtml}`;
+  }
+
+  function setPhase(nextPhase){
+    phase=(nextPhase==='quiz'||!gpKeys.length)?'quiz':'theory';
+    const th=$('#gp-theory-view'),wrap=$('#gq-wrap'),sum=$('#gq-summary'),peek=$('#gr-peek-btn');
+    if(phase==='theory'){
+      if(th)th.classList.remove('hide');
+      if(wrap)wrap.classList.add('hide');
+      if(sum)sum.classList.add('hide');
+      if(peek)peek.classList.add('hide');
+    }else{
+      if(th)th.classList.add('hide');
+      if(peek)peek.classList.toggle('hide',!gpKeys.length);
+      if(wrap&&(!sum||sum.classList.contains('hide'))){
+        if(!quizList.length)startQuiz(gMode);
+        else wrap.classList.remove('hide');
+      }
+      try{window.scrollTo({top:0,behavior:'smooth'});}catch(_){}
+    }
+  }
+
+  function renderPoint(key){
+    const g=GRAMMAR_POINTS[key];
+    if(!g)return;
+    curGp=key;
+    if(gpKeys.length){const idx=gpKeys.indexOf(key);if(idx>=0)gpIdx=idx;}
+    $$('#gp-tabs button').forEach(b=>b.classList.toggle('on',b.dataset.gp===key));
+    $('#gp-card').innerHTML=renderGrammarPointHtml(key);
+    const total=Math.max(1,gpKeys.length);
+    const cntEl=$('#gp-cnt'),barEl=$('#gp-bar'),prevB=$('#gp-prev-btn'),nextB=$('#gp-next-btn');
+    if(cntEl)cntEl.textContent=`${gpIdx+1} / ${total}`;
+    if(barEl)barEl.style.width=((gpIdx+1)/total*100)+'%';
+    if(prevB)prevB.classList.toggle('hide',gpIdx<=0);
+    if(nextB)nextB.textContent=(gpIdx+1>=gpKeys.length)?'Làm bài tập áp dụng →':'Tiếp theo →';
+  }
+
+  function openGrammarPopup(){
+    if(!gpKeys.length||typeof openModal!=='function')return;
+    let popKey=gpKeys.includes(curGp)?curGp:gpKeys[0];
+    const tabsHtml=gpKeys.length>1?`<div class="gr-pop-tabs" id="gr-pop-tabs">${gpKeys.map(k=>`<button type="button" class="${k===popKey?'on':''}" data-gpop="${esc(k)}">${esc((GRAMMAR_POINTS[k]&&GRAMMAR_POINTS[k].title)||k)}</button>`).join('')}</div>`:'';
+    openModal(`<div class="gr-pop-wrap">
+      <div class="gr-pop-head"><b>Ngữ pháp bài học</b><button type="button" class="iconb" id="gr-pop-x" aria-label="Đóng"><svg class="ic"><use href="#i-x"/></svg></button></div>
+      ${tabsHtml}
+      <div class="gr-pop-body card" id="gr-pop-body">${renderGrammarPointHtml(popKey)}</div>
+      <button type="button" class="btn sm" id="gr-pop-close">Đóng &amp; tiếp tục làm bài</button>
+    </div>`);
+    const closeFn=()=>{if(typeof closeModal==='function')closeModal();};
+    if($('#gr-pop-x'))$('#gr-pop-x').onclick=closeFn;
+    if($('#gr-pop-close'))$('#gr-pop-close').onclick=closeFn;
+    if($('#gr-pop-tabs'))$('#gr-pop-tabs').addEventListener('click',e=>{
+      const b=e.target.closest('[data-gpop]');if(!b)return;
+      popKey=b.dataset.gpop;
+      $$('#gr-pop-tabs button').forEach(x=>x.classList.toggle('on',x.dataset.gpop===popKey));
+      const bd=$('#gr-pop-body');if(bd)bd.innerHTML=renderGrammarPointHtml(popKey);
+    });
   }
 
   function renderQuiz(){
@@ -1153,9 +1506,22 @@ const gramCtrl=(function(){
         <div class="sum-grid" style="margin-top:12px"><div><b style="color:var(--good)">${correct}</b><span>Đúng</span></div><div><b>${wrong}</b><span>Sai</span></div><div><b style="color:var(--ink)">${store.grammarQuiz.attempts}</b><span>Lần làm</span></div></div>
         <div class="btnrow" style="margin-top:12px"><button type="button" class="btn sm" id="gq-restart"><svg class="ic"><use href="#i-refresh"/></svg>Làm lại bài ngữ pháp</button></div>`;
       $('#gq-restart').onclick=()=>startQuiz(gMode);
+      if(total>0&&typeof showSectionSummary==='function'){
+        showSectionSummary('grammar',{
+          doneCount:total,
+          totalCount:total,
+          unit:'câu',
+          errors:wrong,
+          accuracy:pct,
+          wrongItems:wrongList.map(w=>({zh:w.ans||w.ansZh||w.qText||'',py:'',vi:w.exp||'',note:'Bạn đã trả lời sai'}))
+        },{
+          onRetryWrong:wrongList.length?()=>startQuiz(gMode):null,
+          onRetryAll:()=>startQuiz(gMode)
+        });
+      }
       return;
     }
-    wrap.classList.remove('hide');sum.classList.add('hide');
+    wrap.classList.toggle('hide',phase!=='quiz');sum.classList.add('hide');
     answered=false;placed=[];
     const q=quizList[qi],ABC=['A','B','C','D','E','F'];
     $('#gq-count').textContent=`${qi+1} / ${quizList.length}`;
@@ -1164,12 +1530,14 @@ const gramCtrl=(function(){
     $('#gq-fb').classList.add('hide');$('#gq-actions').classList.add('hide');
 
     if(q.qtype==='order'){
-      const tokens=shuffle(q.tokens.slice());
+      const tokens=shuffle(mergePunctTokens(q.tokens.slice()));
+      const tokPys=tokens.map(t=>resolveTokenPinyin(t,q.ans,q.py));
+      const renderTokInner=(t,idx)=>`<span class="tok-zh">${esc(t)}</span>${tokPys[idx]?`<span class="tok-py">${esc(tokPys[idx])}</span>`:''}`;
       $('#gq-q').textContent=q.vi?`“${q.vi}”`:'Ghép thành câu tiếng Trung hoàn chỉnh';
       const drawOrder=()=>{
         $('#gq-opts').innerHTML=`
-          <div class="order-zone" id="gq-ord-ans">${placed.length?placed.map((ti,pos)=>`<button type="button" class="tok placed" data-gop="${pos}">${esc(tokens[ti])}</button>`).join(''):'<span class="muted small">Chạm các mảnh từ bên dưới để xếp câu...</span>'}</div>
-          <div class="bank-zone" style="margin-top:8px">${tokens.map((t,ti)=>`<button type="button" class="tok ${placed.includes(ti)?'used':''}" data-got="${ti}">${esc(t)}</button>`).join('')}</div>
+          <div class="order-zone" id="gq-ord-ans">${placed.length?placed.map((ti,pos)=>`<button type="button" class="tok placed" data-gop="${pos}">${renderTokInner(tokens[ti],ti)}</button>`).join(''):'<span class="muted small">Chạm các mảnh từ bên dưới để xếp câu...</span>'}</div>
+          <div class="bank-zone" style="margin-top:8px">${tokens.map((t,ti)=>`<button type="button" class="tok ${placed.includes(ti)?'used':''}" data-got="${ti}">${renderTokInner(t,ti)}</button>`).join('')}</div>
           <div class="btnrow" style="margin-top:8px"><button type="button" class="btn ghost sm" id="gq-ord-clr">Xếp lại</button><button type="button" class="btn sm" id="gq-ord-chk">Kiểm tra</button></div>`;
         $$('[data-got]',$('#gq-opts')).forEach(b=>b.onclick=()=>{if(answered)return;placed.push(+b.dataset.got);drawOrder();});
         $$('[data-gop]',$('#gq-opts')).forEach(b=>b.onclick=()=>{if(answered)return;placed.splice(+b.dataset.gop,1);drawOrder();});
@@ -1178,9 +1546,10 @@ const gramCtrl=(function(){
           if(answered)return;
           if(!placed.length){toast('Hãy chọn các mảnh từ trước khi kiểm tra');return;}
           answered=true;
-          const userStr=placed.map(ti=>tokens[ti]).join('');
-          const ok=userStr===q.ans;
-          speak(q.ans);
+          const userStr=placed.map(ti=>tokens[ti]).join('').replace(/\s+/g,'');
+          const ok=userStr===String(q.ans||'').replace(/\s+/g,'');
+          if(typeof playSfx==='function')playSfx(ok?'ok':'no');
+          setTimeout(()=>speak(q.ans),240);
           if(ok)correct++;else{wrong++;wrongList.push(q);}
           const fb=$('#gq-fb');
           fb.className='fb-card '+(ok?'ok':'no');
@@ -1204,7 +1573,8 @@ const gramCtrl=(function(){
       btn.classList.add(ok?'ok':'no');
       $('.st-ic',btn).textContent=ok?'✓':'✕';
       if(!ok){const oi=q.opts.findIndex(x=>x.ok);if(oi>=0){const ob=$$('#gq-opts .opt')[oi];ob.classList.add('ok');$('.st-ic',ob).textContent='✓';}}
-      if(q.ansZh)speak(q.ansZh);
+      if(typeof playSfx==='function')playSfx(ok?'ok':'no');
+      if(q.ansZh)setTimeout(()=>speak(q.ansZh),240);
       if(ok)correct++;else{wrong++;wrongList.push(q);}
       const fb=$('#gq-fb');
       fb.className='fb-card '+(ok?'ok':'no');
@@ -1217,27 +1587,34 @@ const gramCtrl=(function(){
   }
 
   $('#gp-tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(b)renderPoint(b.dataset.gp);});
-  if($('#gq-modes'))$('#gq-modes').addEventListener('click',e=>{const b=e.target.closest('button');if(b)startQuiz(b.dataset.gm);});
+  if($('#gp-prev-btn'))$('#gp-prev-btn').onclick=()=>{if(gpIdx>0)renderPoint(gpKeys[gpIdx-1]);};
+  if($('#gp-next-btn'))$('#gp-next-btn').onclick=()=>{if(gpIdx+1<gpKeys.length)renderPoint(gpKeys[gpIdx+1]);else{setPhase('quiz');startQuiz(gMode);}};
+  if($('#gr-peek-btn'))$('#gr-peek-btn').onclick=openGrammarPopup;
+  if($('#gq-modes'))$('#gq-modes').addEventListener('click',e=>{const b=e.target.closest('button');if(b){phase='quiz';startQuiz(b.dataset.gm);}});
   $('#gq-next').onclick=()=>{qi+=1;renderQuiz();};
   $('#gq-retry').onclick=()=>{if(answered&&wrong>0)wrong--;renderQuiz();};
 
   window.renderGrammarPoint=renderPoint;
   function refresh(){
     syncHeader();
-    const ks=Object.keys(GRAMMAR_POINTS||{});
+    gpKeys=Object.keys(GRAMMAR_POINTS||{});
+    gpIdx=0;
     const gpTabs=$('#gp-tabs'),gpCard=$('#gp-card');
-    startQuiz('mix');
-    if(gpTabs&&gpCard){
-      if(!ks.length){
-        gpTabs.innerHTML='';
-        gpCard.innerHTML='<p class="muted small" style="margin:0">Bài học này chưa có điểm ngữ pháp. Hãy vào <b>Sửa bài</b> để bổ sung.</p>';
-      }else{
-        gpTabs.innerHTML=ks.map((k,i)=>`<button class="${i===0?'on':''}" data-gp="${esc(k)}" type="button">${esc(GRAMMAR_POINTS[k].title||k)}</button>`).join('');
-        renderPoint(ks[0]);
-      }
+    if(!gpKeys.length){
+      if(gpTabs)gpTabs.innerHTML='';
+      if(gpCard)gpCard.innerHTML='<p class="muted small" style="margin:0">Bài học này chưa có điểm ngữ pháp. Hãy vào <b>Sửa bài</b> để bổ sung.</p>';
+      setPhase('quiz');
+      startQuiz('mix');
+      return;
     }
+    if(gpTabs){
+      gpTabs.innerHTML=gpKeys.map((k,i)=>`<button class="${i===0?'on':''}" data-gp="${esc(k)}" type="button">${esc(GRAMMAR_POINTS[k].title||k)}</button>`).join('');
+    }
+    setPhase('theory');
+    renderPoint(gpKeys[0]);
+    startQuiz('mix');
   }
-  return {renderPoint,syncHeader,refresh,init:refresh};
+  return {renderPoint,syncHeader,refresh,init:refresh,setPhase,openPopup:openGrammarPopup};
 })();
 
 function updateLessonExerciseStatus(){

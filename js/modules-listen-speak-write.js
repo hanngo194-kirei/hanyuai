@@ -12,7 +12,8 @@ function playItemAudio(item,rate,onEnd){
   const url=item&&typeof item==='object'?item.audio:null;
   if(url){
     try{
-      const a=new Audio(url);activeAudio=a;a.playbackRate=spd;
+      const a=new Audio(url);activeAudio=a;a.playbackRate=spd;a.volume=1.0;
+      if(typeof boostAudioEl==='function')boostAudioEl(a,1.75);
       if(onEnd)a.onended=onEnd;
       a.onerror=()=>speak(text,spd,onEnd);
       const p=a.play();if(p&&p.catch)p.catch(()=>speak(text,spd,onEnd));
@@ -345,6 +346,7 @@ const listenCtrl=(function(){
   }
 
   function showFb(ok,title,htmlDesc,allowRetry){
+    if(typeof playSfx==='function')playSfx(ok?'ok':'no');
     const fb=$('#ln-fb'),act=$('#ln-actions'),rb=$('#ln-retry');
     fb.className='fb-card '+(ok?'ok':'no');
     fb.innerHTML=`<b><svg class="ic" style="width:1.1em;height:1.1em"><use href="#i-${ok?'check':'x'}"/></svg>${title}</b><div>${htmlDesc}</div>`;
@@ -471,6 +473,19 @@ const listenCtrl=(function(){
       <div class="btnrow" style="margin-top:14px">${wrongQs.length?`<button type="button" class="btn ghost sm" id="ln-retry-wrong">Luyện lại ${wrongQs.length} câu sai</button>`:''}<button type="button" class="btn sm" id="ln-again"><svg class="ic"><use href="#i-refresh"/></svg>Luyện lại</button></div>`;
     const rw=$('#ln-retry-wrong');if(rw)rw.onclick=()=>start(mode,wrongQs.slice());
     $('#ln-again').onclick=()=>start(mode);
+    if(total>0&&typeof showSectionSummary==='function'){
+      showSectionSummary('listen',{
+        doneCount:total,
+        totalCount:total,
+        unit:'câu',
+        errors:wrong,
+        accuracy:pct,
+        wrongItems:wrongQs.map(w=>({zh:w.zh||w.q||'',py:w.py||'',vi:w.vi||w.exp||'',note:'Nghe chưa chính xác'}))
+      },{
+        onRetryWrong:wrongQs.length?()=>start(mode,wrongQs.slice()):null,
+        onRetryAll:()=>start(mode)
+      });
+    }
   }
 
   $('#ln-modes').addEventListener('click',e=>{const b=e.target.closest('button');if(b)start(b.dataset.lm);});
@@ -765,7 +780,7 @@ const speakCtrl=(function(){
   let chunks=[],recBlob=null,recUrl=null,recDuration=0,recStart=0,isRecording=false;
   let liveRec=null,lastLiveTranscript='';
   let assessInFlight=false,apiCallsInSession=0;
-  const MAX_API_CALLS_SESSION=60;
+  const MAX_API_CALLS_SESSION=600;
 
   // Render 16 thanh đo tín hiệu âm thanh thật
   const meterEl=$('#sp-meter');
@@ -1052,6 +1067,8 @@ const speakCtrl=(function(){
     const item=list[idx];
     const maxSec=Number($('#sp-maxsec').value)||15;
     $('#sp-idx').textContent=`${idx+1} / ${list.length}`;
+    if($('#sp-prev'))$('#sp-prev').disabled=(idx<=0);
+    if($('#sp-next'))$('#sp-next').title=(idx+1>=list.length)?'Hoàn thành & xem tổng kết':'Mục sau';
     $('#sp-zh').textContent=item.zh;
     $('#sp-py').textContent=item.py;
     $('#sp-vi').textContent=item.vi;
@@ -1075,6 +1092,7 @@ const speakCtrl=(function(){
     const it=getList()[idx];if(!it)return;
     saveItemRec(it.id,{selfStatus:status,needsPractice:status==='retry'});
     recordLearningEvent({type:'assess',skill:'speak',title:`Luyện nói: ${it.zh}`,targetId:it.id,view:'speak',result:status==='ok'?'Tự đánh giá: Đạt':'Cần luyện lại'});
+    if(typeof playSfx==='function')playSfx(status==='ok'?'ok':'no');
     if(typeof markLessonSectionDone==='function')markLessonSectionDone(store.activeLessonId,'speak',true);
     renderSelfBox(it);
     toast(status==='ok'?`Đã đánh dấu “${it.zh}” đạt yêu cầu`:`Đã đánh dấu “${it.zh}” cần luyện thêm`);
@@ -1202,8 +1220,12 @@ const speakCtrl=(function(){
     store.speaking.maxSec=Number($('#sp-maxsec').value)||15;saveStore(store);
     if(!isRecording)$('#sp-timer').textContent=`00:00 / ${fmtSec(store.speaking.maxSec)}`;
   };
-  $('#sp-prev').onclick=()=>{const L=getList();if(L.length){idx=(idx+L.length-1)%L.length;renderItem();}};
-  $('#sp-next').onclick=()=>{const L=getList();if(L.length){idx=(idx+1)%L.length;renderItem();}};
+  $('#sp-prev').onclick=()=>{if(idx>0){idx--;renderItem();}};
+  $('#sp-next').onclick=()=>{
+    const L=getList();if(!L.length)return;
+    if(idx+1<L.length){idx++;renderItem();}
+    else openSpeakSummary();
+  };
   $('#sp-hear').onclick=()=>{const it=getList()[idx];if(it)playItemAudio(it,.9);};
   $('#sp-slow').onclick=()=>{const it=getList()[idx];if(it)playItemAudio(it,.55);};
   $('#sp-mic').onclick=startRec;
@@ -1253,6 +1275,22 @@ const speakCtrl=(function(){
             const syls=(typeof analyzeExpectedTones==='function')?analyzeExpectedTones(it.zh,it.py):[];
             result.pitchData=pitchRes;
             result.pitchSvg=LocalSpeechAnalyzer.buildToneContourSvg(pitchRes,syls);
+          }
+          // Nếu AI (như Chivox) không trả về điểm tổng hoặc mảng từng chữ, tự bổ sung phân tích chi tiết từ giọng thật
+          if(result&&(!Array.isArray(result.wordResults)||!result.wordResults.length||result.overallScore===null)&&typeof LocalSpeechAnalyzer!=='undefined'&&LocalSpeechAnalyzer.assessLocal){
+            try{
+              const locSupplement=await runLocal();
+              if(locSupplement){
+                if(result.overallScore===null&&locSupplement.overallScore!==null) result.overallScore=locSupplement.overallScore;
+                if(result.accuracyScore===null&&locSupplement.accuracyScore!==null) result.accuracyScore=locSupplement.accuracyScore;
+                if(result.completenessScore===null&&locSupplement.completenessScore!==null) result.completenessScore=locSupplement.completenessScore;
+                if(result.toneScore===undefined||result.toneScore===null) result.toneScore=locSupplement.toneScore;
+                if(!Array.isArray(result.wordResults)||!result.wordResults.length) result.wordResults=locSupplement.wordResults||[];
+                if(!result.pitchSvg&&locSupplement.pitchSvg) result.pitchSvg=locSupplement.pitchSvg;
+                if(!result.recognizedText&&locSupplement.recognizedText) result.recognizedText=locSupplement.recognizedText;
+                if(locSupplement.feedback) result.feedback=locSupplement.feedback;
+              }
+            }catch(_){}
           }
         }catch(aiErr){
           const code=(aiErr&&aiErr.code)||'';
@@ -1317,6 +1355,36 @@ const speakCtrl=(function(){
       }
     }
   });
+  function openSpeakSummary(){
+    const list=getList();
+    const total=list.length||1;
+    let practiced=0,err=0,scoreSum=0,scoreCnt=0;
+    const wrongItems=[];
+    list.forEach(x=>{
+      const r=getItemRec(x.id);
+      const has=Boolean(r&&(r.attempts>0||r.selfStatus||r.lastResult));
+      if(has)practiced++;
+      const sc=r&&r.lastResult&&r.lastResult.overallScore!==undefined&&r.lastResult.overallScore!==null?Number(r.lastResult.overallScore):null;
+      if(sc!==null&&Number.isFinite(sc)){scoreSum+=sc;scoreCnt++;}
+      if(r&&(r.selfStatus==='retry'||r.needsPractice||(sc!==null&&sc<75))){
+        err++;
+        wrongItems.push({zh:x.zh,py:x.py||'',vi:x.vi||'',note:sc!==null?`Điểm ${sc}/100`:'Cần luyện lại'});
+      }
+    });
+    const doneCnt=practiced||total;
+    const acc=scoreCnt?Math.round(scoreSum/scoreCnt):Math.max(0,Math.min(100,Math.round((doneCnt-err)*100/Math.max(1,doneCnt))));
+    if(typeof showSectionSummary==='function'){
+      showSectionSummary('speak',{
+        doneCount:doneCnt,
+        totalCount:total,
+        unit:'câu',
+        errors:err,
+        accuracy:acc,
+        scoreLabel:scoreCnt?`Đánh giá AI: ${acc}/100`:'',
+        wrongItems
+      },{onRetryAll:()=>{idx=0;renderItem();}});
+    }
+  }
 
   function syncHeader(){
     const l=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
@@ -1611,6 +1679,9 @@ async function setupPadForChar(){
   $('#wghost').textContent=c.ch;
   $('#wcount').textContent=`${ci+1} / ${CHARS.length}`;
   $('#wbar').style.width=((ci+1)/CHARS.length*100)+'%';
+  if($('#wprev'))$('#wprev').disabled=(ci<=0);
+  if($('#wnext'))$('#wnext').title=(ci+1>=CHARS.length)?'Hoàn thành & xem tổng kết':'Chữ sau';
+  if($('#wr-next'))$('#wr-next').innerHTML=(ci+1>=CHARS.length)?'Xem tổng kết →':'Chữ tiếp theo <svg class="ic"><use href="#i-chev"></use></svg>';
   $('#w-strokes-tag').textContent=`${c.strokes} nét`;
   $('#w-strokes-tag').classList.toggle('hide',!c.strokes);
   $('#w-rad-tag').textContent=`Bộ: ${c.rad}`;
@@ -1677,6 +1748,7 @@ async function setupPadForChar(){
       highlightOnComplete:true,
       onMistake(){
         runMistakes++;
+        if(typeof playSfx==='function')playSfx('no');
         setWriteFb('no','Nét này chưa đúng hướng hoặc thứ tự, hãy thử lại.');
       },
       onCorrectStroke(info){
@@ -1686,6 +1758,7 @@ async function setupPadForChar(){
       onComplete(summary){
         if(runDone)return;
         runDone=true;
+        if(typeof playSfx==='function')playSfx('ok');
         const totalSt=c.strokes;
         const prev=getWriteRec(c.id);
         recordLearningEvent({type:'writing',skill:'write',title:`Luyện viết: ${c.ch}`,targetId:c.id,view:'writing',result:`Sai ${summary.totalMistakes} nét`});
@@ -1729,10 +1802,40 @@ function refreshWritingForLesson(){
 }
 window.refreshWritingForLesson=refreshWritingForLesson;
 
+function openWritingSummary(){
+  const total=CHARS.length||1;
+  let practiced=0,totalErr=0;
+  const wrongItems=[];
+  CHARS.forEach(c=>{
+    const rec=getWriteRec(c.id);
+    const meta=enrichCharMeta(c);
+    if(rec&&(rec.attempts>0||rec.guidedCompleted>0||rec.selfStatus)){
+      practiced++;
+      const err=Number(rec.mistakes)||0;
+      totalErr+=err;
+      if(rec.needsPractice||rec.selfStatus==='retry'||err>=3){
+        wrongItems.push({zh:meta.ch,py:meta.py||'',vi:meta.vi||'',note:err>0?`Sai ${err} nét`:'Cần luyện thêm'});
+      }
+    }
+  });
+  const doneCnt=practiced||total;
+  const acc=Math.max(0,Math.min(100,Math.round(100 - Math.min(80, Math.round(totalErr*100/Math.max(1,doneCnt*5))))));
+  if(typeof showSectionSummary==='function'){
+    showSectionSummary('writing',{
+      doneCount:doneCnt,
+      totalCount:total,
+      unit:'chữ',
+      errors:totalErr,
+      accuracy:acc,
+      wrongItems
+    },{onRetryAll:()=>{ci=0;setupPadForChar();}});
+  }
+}
 function showChar(){setupPadForChar();}
-$('#wprev').onclick=()=>{if(!CHARS.length)return;ci=(ci+CHARS.length-1)%CHARS.length;showChar();};
-const nextChar=()=>{if(!CHARS.length)return;ci=(ci+1)%CHARS.length;showChar();};
-$('#wnext').onclick=nextChar;$('#wr-next').onclick=nextChar;
+$('#wprev').onclick=()=>{if(!CHARS.length||ci<=0)return;ci--;showChar();};
+const nextChar=()=>{if(!CHARS.length)return;if(ci+1<CHARS.length){ci++;showChar();}else{openWritingSummary();}};
+$('#wnext').onclick=nextChar;
+$('#wr-next').onclick=nextChar;
 $('#wsay').onclick=()=>{if(CHARS[ci])speak(CHARS[ci].ch,.7);};
 
 $('#wmode').addEventListener('click',e=>{
@@ -1796,6 +1899,7 @@ if($('#wf-compare'))$('#wf-compare').onclick=()=>{
 };
 $('#wf-mark-retry').onclick=()=>{
   const c=CHARS[ci];if(!c)return;
+  if(typeof playSfx==='function')playSfx('no');
   const prev=getWriteRec(c.id);
   saveWriteRec(c.id,{attempts:prev.attempts+1,selfStatus:'retry',needsPractice:true});
   toast(`Đã đánh dấu “${c.ch}” cần luyện lại`);
@@ -1803,11 +1907,13 @@ $('#wf-mark-retry').onclick=()=>{
 };
 $('#wf-mark-ok').onclick=()=>{
   const c=CHARS[ci];if(!c)return;
+  if(typeof playSfx==='function')playSfx('ok');
   const prev=getWriteRec(c.id);
   saveWriteRec(c.id,{attempts:prev.attempts+1,selfStatus:'ok',needsPractice:false});
   if(typeof markLessonSectionDone==='function')markLessonSectionDone(store.activeLessonId,'writing',true);
   recordLearningEvent({type:'writing',skill:'write',title:`Tự viết: ${c.ch}`,targetId:c.id,view:'writing',result:'Đã viết được'});
   toast(`Đã lưu thực hành chữ “${c.ch}”`);
+  if(CHARS.length&&ci===CHARS.length-1){openWritingSummary();return;}
   nextChar();
 };
 

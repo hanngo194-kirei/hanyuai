@@ -48,7 +48,7 @@ function speak(text,rate,onEnd){
     toast('Thiết bị chưa hỗ trợ đọc mẫu');if(typeof onEnd==='function')onEnd();return;
   }
   try{
-    const u=new SpeechSynthesisUtterance(text);u.lang='zh-CN';u.rate=+rate||.9;
+    const u=new SpeechSynthesisUtterance(text);u.lang='zh-CN';u.volume=1.0;u.rate=+rate||.9;
     const voices=speechSynthesis.getVoices()||[];
     const v=voices.find(x=>x.lang&&x.lang.toLowerCase().startsWith('zh'));
     if(v)u.voice=v;
@@ -75,11 +75,24 @@ function fakeRecord(btn,label,done){
 /* ---------- Router (hoạt động cả khi WebView chặn hashchange) ---------- */
 const TAB={home:'home',roadmap:'learn',learn:'learn',lesson:'learn',vocab:'learn',exercise:'learn',grammar:'learn',dialog:'learn',copy:'learn',trans:'learn',listen:'learn',writing:'learn',review:'review',wordbook:'review',speak:'speak',me:'me','course-detail':'learn','lesson-editor':'learn','pdf-import':'learn','textbook-reader':'learn'};
 let curView='home';
+const _secStartTimes={};
+window.getSectionElapsedSec=function(key){
+  const k=key||curView;
+  const st=_secStartTimes[k];
+  if(!st)return 10;
+  return Math.max(1,Math.round((Date.now()-st)/1000));
+};
+window.resetSectionTimer=function(key){
+  if(key)_secStartTimes[key]=Date.now();
+};
 function route(forced){
   if(window._activeTimeReady&&typeof touchActiveTime==='function')touchActiveTime();
   const h=(typeof forced==='string'&&forced)?forced:((location.hash&&location.hash.length>1)?location.hash.slice(1):curView);
   const id=$(`.view[data-view="${h}"]`)?h:'home';
   curView=id;
+  if(['vocab','grammar','listen','speak','exercise','dialog','copy','writing','trans','review'].includes(id)){
+    _secStartTimes[id]=Date.now();
+  }
   $$('.view').forEach(v=>v.classList.toggle('on',v.dataset.view===id));
   $$('.tabs a').forEach(a=>{const on=a.dataset.tab===TAB[id];a.classList.toggle('on',on);on?a.setAttribute('aria-current','page'):a.removeAttribute('aria-current')});
   const sbTab=(id==='wordbook')?'wordbook':TAB[id];
@@ -93,6 +106,10 @@ function route(forced){
   document.body.classList.toggle('view-trans',id==='trans');
   document.body.classList.toggle('view-listen',id==='listen');
   document.body.classList.toggle('view-writing',id==='writing');
+  document.body.classList.toggle('view-grammar',id==='grammar');
+  document.body.classList.toggle('view-exercise',id==='exercise');
+  document.body.classList.toggle('view-speak',id==='speak');
+  document.body.classList.toggle('view-review',id==='review');
   try{window.scrollTo(0,0);}catch(_){}
   if(id!=='listen'&&window._stopListen)window._stopListen();
   if(id!=='speak'&&window._stopSpeak)window._stopSpeak();
@@ -113,10 +130,11 @@ document.addEventListener('click',e=>{
     goView(navLink.dataset.go);
     return;
   }
-  const t=e.target.closest('[data-toast],[data-say],[data-task],[data-sw],[data-quiz] .opt,[data-gosk]');
+  const t=e.target.closest('[data-toast],[data-say],[data-say-slow],[data-task],[data-sw],[data-quiz] .opt,[data-gosk]');
   if(!t)return;
   if(t.dataset.toast)toast(t.dataset.toast);
   else if(t.dataset.say)speak(t.dataset.say);
+  else if(t.dataset.saySlow)speak(t.dataset.saySlow,0.55);
   else if(t.hasAttribute('data-task'))t.parentElement.classList.toggle('done');
   else if(t.dataset.sw){const on=t.getAttribute('aria-checked')==='true';t.setAttribute('aria-checked',String(!on));t.closest('.view').classList.toggle(t.dataset.sw,on)}
   else if(t.hasAttribute('data-gosk')){e.preventDefault();$('#mtabs [data-m="sk"]').click()}
@@ -460,4 +478,81 @@ function updateGlobalCounts(){
   set('#wb-cnt-fav',favCnt);
   set('#wb-cnt-wrong',wrongCnt);
 }
+
+/* ---------- Âm thanh phản hồi Ting (đúng) / Tè (sai) / Hoàn thành & Khuếch đại loa ---------- */
+(function(){
+  let _sfxCtx=null;
+  function ensureAudioCtx(){
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)return null;
+    if(!_sfxCtx)_sfxCtx=new AC();
+    if(_sfxCtx.state==='suspended'){
+      try{_sfxCtx.resume().catch(()=>{});}catch(_){}
+    }
+    return _sfxCtx;
+  }
+  if(typeof document!=='undefined'){
+    const unlock=()=>{ensureAudioCtx();};
+    ['pointerdown','touchstart','click','keydown'].forEach(ev=>document.addEventListener(ev,unlock,{passive:true,capture:true}));
+  }
+  window.boostAudioEl=function(audio,gainVal){
+    if(!audio)return;
+    try{audio.volume=1.0;}catch(_){}
+    try{
+      const ctx=ensureAudioCtx();if(!ctx)return;
+      if(audio._hanyuBoosted){
+        if(audio._hanyuGainNode)audio._hanyuGainNode.gain.value=Number(gainVal)||1.75;
+        return;
+      }
+      audio._hanyuBoosted=true;
+      const src=ctx.createMediaElementSource(audio);
+      const gain=ctx.createGain();
+      gain.gain.value=Number(gainVal)||1.75;
+      const comp=ctx.createDynamicsCompressor();
+      comp.threshold.value=-10;
+      comp.ratio.value=6;
+      src.connect(gain);
+      gain.connect(comp);
+      comp.connect(ctx.destination);
+      audio._hanyuGainNode=gain;
+    }catch(_){}
+  };
+  function tone(ctx,freq,start,dur,type,vol){
+    const o=ctx.createOscillator(),g=ctx.createGain();
+    o.type=type||'sine';
+    o.frequency.setValueAtTime(freq,start);
+    g.gain.setValueAtTime(0.0001,start);
+    g.gain.exponentialRampToValueAtTime(vol||0.32,start+0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001,start+dur);
+    o.connect(g);g.connect(ctx.destination);
+    o.start(start);o.stop(start+dur+0.02);
+  }
+  function playTones(ctx,kind){
+    const t=ctx.currentTime+0.01;
+    if(kind==='ok'){
+      tone(ctx,1046.5,t,0.12,'sine',0.38);
+      tone(ctx,1318.5,t+0.075,0.22,'sine',0.42);
+      tone(ctx,1568,t+0.15,0.18,'sine',0.32);
+    }else if(kind==='no'){
+      tone(ctx,220,t,0.14,'triangle',0.34);
+      tone(ctx,164.8,t+0.09,0.22,'triangle',0.34);
+    }else if(kind==='done'){
+      tone(ctx,523.25,t,0.11,'sine',0.30);
+      tone(ctx,659.25,t+0.08,0.11,'sine',0.32);
+      tone(ctx,783.99,t+0.16,0.13,'sine',0.34);
+      tone(ctx,1046.5,t+0.25,0.28,'sine',0.36);
+    }
+  }
+  window.playSfx=function(kind){
+    try{
+      if(typeof store!=='undefined'&&store.settings&&store.settings.sfx===false)return;
+      const ctx=ensureAudioCtx();if(!ctx)return;
+      if(ctx.state==='suspended'){
+        ctx.resume().then(()=>playTones(ctx,kind)).catch(()=>{});
+      }else{
+        playTones(ctx,kind);
+      }
+    }catch(_){}
+  };
+})();
 
