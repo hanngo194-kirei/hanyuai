@@ -82,27 +82,213 @@ let DIALOG_QUESTIONS=[
   {id:'dq4',q:'Lan thích môn thể thao nào?',opts:[{t:'Bơi lội (游泳)',ok:true},{t:'Chạy bộ',ok:false},{t:'Đá bóng',ok:false},{t:'Cầu lông',ok:false}],exp:'Lan trả lời: “我喜欢游泳。” (Tôi thích bơi lội).'}
 ];
 
+/* ---------- Tiện ích phân tách Pinyin & Thanh điệu ---------- */
+const PY_VOWEL_CLASS='aāáǎàeēéěèiīíǐìoōóǒòuūúǔùüǖǘǚǜ';
+const PY_SYL_RE=new RegExp(`(?:zh|ch|sh|[bpmfdtnlgkhjqxrzcsyw])?[${PY_VOWEL_CLASS}]+(?:(?:ng|n)(?![${PY_VOWEL_CLASS}]))?r?(?![${PY_VOWEL_CLASS}])`,'gi');
+const PY_TONE_REV={
+  'ā':['a',1],'á':['a',2],'ǎ':['a',3],'à':['a',4],
+  'ē':['e',1],'é':['e',2],'ě':['e',3],'è':['e',4],
+  'ī':['i',1],'í':['i',2],'ǐ':['i',3],'ì':['i',4],
+  'ō':['o',1],'ó':['o',2],'ǒ':['o',3],'ò':['o',4],
+  'ū':['u',1],'ú':['u',2],'ǔ':['u',3],'ù':['u',4],
+  'ǖ':['ü',1],'ǘ':['ü',2],'ǚ':['ü',3],'ǜ':['ü',4]
+};
+const PY_TONE_FWD={
+  a:['ā','á','ǎ','à'],e:['ē','é','ě','è'],i:['ī','í','ǐ','ì'],
+  o:['ō','ó','ǒ','ò'],u:['ū','ú','ǔ','ù'],'ü':['ǖ','ǘ','ǚ','ǜ']
+};
+const TONE_SHORT={1:'Thanh 1 · Ngang',2:'Thanh 2 · Lên',3:'Thanh 3 · Vòng',4:'Thanh 4 · Giáng',5:'Thanh nhẹ'};
+
+function splitPinyinSyllables(py){
+  const clean=String(py||'').replace(/[.,!?;:"'“”‘’。，！？；：()（）/]/g,' ').trim();
+  if(!clean)return [];
+  const raw=clean.split(/\s+/).filter(Boolean),out=[];
+  for(const tok of raw){
+    const m=tok.match(PY_SYL_RE);
+    if(m&&m.length)out.push(...m);
+    else out.push(tok);
+  }
+  return out;
+}
+function parseToneSyllable(syl){
+  let tone=5,base='';
+  for(const ch of String(syl||'').toLowerCase()){
+    if(PY_TONE_REV[ch]){base+=PY_TONE_REV[ch][0];if(tone===5)tone=PY_TONE_REV[ch][1];}
+    else if(/[a-zü]/.test(ch))base+=ch;
+  }
+  return {base,tone};
+}
+function applyToneMark(base,tone){
+  const b=String(base||'').toLowerCase();
+  if(tone<1||tone>4)return b;
+  const repAt=idx=>{
+    const ch=b[idx],arr=PY_TONE_FWD[ch];
+    if(!arr)return b;
+    return b.slice(0,idx)+arr[tone-1]+b.slice(idx+1);
+  };
+  let idx=b.indexOf('a');if(idx>=0)return repAt(idx);
+  idx=b.indexOf('e');if(idx>=0)return repAt(idx);
+  idx=b.indexOf('ou');if(idx>=0)return repAt(idx);
+  for(let k=b.length-1;k>=0;k--){if(PY_TONE_FWD[b[k]])return repAt(k);}
+  return b;
+}
+function makeToneVariants(syl){
+  const p=parseToneSyllable(syl);
+  if(!p.base||p.tone<1||p.tone>4)return null;
+  return {
+    base:p.base,
+    expectedTone:p.tone,
+    variants:[1,2,3,4].map(t=>({tone:t,py:applyToneMark(p.base,t),label:TONE_SHORT[t]}))
+  };
+}
+function getListenWordPool(excludeId,need){
+  const cur=WORDS.filter(x=>x&&x.id!==excludeId&&x.zh&&x.vi);
+  if(cur.length>=need)return cur;
+  const seen=new Set(cur.map(x=>x.id));
+  if(excludeId)seen.add(excludeId);
+  const bank=(store&&store.vocabBank)?Object.values(store.vocabBank):[];
+  for(const w of bank){
+    if(w&&w.id&&!seen.has(w.id)&&w.zh&&w.vi&&w.py){cur.push(w);seen.add(w.id);if(cur.length>=need+4)break;}
+  }
+  return cur;
+}
+function pickListenDistractors(target,pool,count,key){
+  const seen=new Set([target[key]]);
+  const cands=shuffle(pool.filter(x=>x&&x[key]&&!seen.has(x[key])));
+  const picked=[];
+  for(const c of cands){
+    if(seen.has(c[key]))continue;
+    seen.add(c[key]);picked.push(c);
+    if(picked.length>=count)break;
+  }
+  return picked;
+}
+
 function buildListenQuestions(mode){
-  if(!WORDS.length&&!SENT.length)return [];
+  const hasWords=Array.isArray(WORDS)&&WORDS.length>0;
+  const hasSent=Array.isArray(SENT)&&SENT.length>0;
+  const hasDlg=Array.isArray(LISTEN_DIALOG)&&LISTEN_DIALOG.length>0;
+  if(!hasWords&&!hasSent&&!hasDlg)return [];
+
+  if(mode==='tone'){
+    const out=[],usedKeys=new Set();
+    const src=shuffle(WORDS);
+    for(const w of src){
+      const items=analyzeExpectedTones(w.zh,w.py);
+      const pick=items.find(s=>s.baseTone>=1&&s.baseTone<=4&&!s.sandhi)||items.find(s=>s.baseTone>=1&&s.baseTone<=4);
+      if(!pick)continue;
+      const tv=makeToneVariants(pick.py);if(!tv)continue;
+      const key=`${tv.base}:${pick.baseTone}`;
+      if(usedKeys.has(key))continue;
+      usedKeys.add(key);
+      out.push({
+        id:'lt_'+w.id+'_'+pick.baseTone,
+        type:'tone',
+        audioText:pick.ch||w.zh,
+        targetChar:pick.ch||w.zh,
+        targetPy:pick.py,
+        base:tv.base,
+        expectedTone:pick.baseTone,
+        zh:w.zh,
+        py:w.py,
+        vi:w.vi,
+        prompt:'Nghe âm mẫu và chọn thanh điệu đúng:',
+        opts:tv.variants.map(v=>({t:v.py,label:v.label,tone:v.tone,ok:v.tone===pick.baseTone})),
+        exp:`<b>${pick.ch}</b> (${pick.py}) mang <b>${TONE_NAMES[pick.baseTone]}</b> — trong từ “${w.zh}” (${w.py}: ${w.vi}).`
+      });
+      if(out.length>=8)break;
+    }
+    return out;
+  }
+
   if(mode==='choice'){
+    const qs=[];
     const ws=shuffle(WORDS);
-    const q1={id:'lc_'+ws[0].id,audioText:ws[0].zh,prompt:'Nghe từ và chọn nghĩa đúng:',opts:shuffle([ws[0],...pickDistractors(ws[0],WORDS,3)]).map(x=>({t:x.vi,ok:x.id===ws[0].id})),exp:`${ws[0].zh} (${ws[0].py}): ${ws[0].vi}.`,zh:ws[0].zh};
-    const q2={id:'lc_'+ws[1].id,audioText:ws[1].zh,prompt:'Nghe từ và chọn chữ Hán đúng:',opts:shuffle([ws[1],...pickDistractors(ws[1],WORDS,3)]).map(x=>({t:x.zh,ok:x.id===ws[1].id})),exp:`Đáp án là ${ws[1].zh} (${ws[1].py}) — ${ws[1].vi}.`,zh:ws[1].zh};
-    const q3={id:'lc_'+ws[2].id,audioText:ws[2].zh,prompt:'Nghe từ và chọn Pinyin đúng:',opts:shuffle([ws[2],...pickDistractors(ws[2],WORDS,3)]).map(x=>({t:x.py,ok:x.id===ws[2].id})),exp:`${ws[2].zh} đọc là ${ws[2].py} (${ws[2].vi}).`,zh:ws[2].zh};
-    const q4={id:'lc_'+ws[3].id,audioText:ws[3].ex,prompt:'Nghe câu và chọn nghĩa đúng:',opts:shuffle([ws[3],...pickDistractors(ws[3],WORDS,3)]).map(x=>({t:x.exVi,ok:x.id===ws[3].id})),exp:`${ws[3].ex} (${ws[3].exPy}) — ${ws[3].exVi}`,zh:ws[3].ex};
-    const q5={id:'lc_'+ws[4].id,audioText:ws[4].ex,prompt:'Nghe câu và chọn nghĩa đúng:',opts:shuffle([ws[4],...pickDistractors(ws[4],WORDS,3)]).map(x=>({t:x.exVi,ok:x.id===ws[4].id})),exp:`${ws[4].ex} (${ws[4].exPy}) — ${ws[4].exVi}`,zh:ws[4].ex};
-    return [q1,q2,q3,q4,q5];
+    const pool=getListenWordPool(null,6);
+    if(ws[0]){
+      const ds=pickListenDistractors(ws[0],pool,3,'vi');
+      qs.push({id:'lc_vi_'+ws[0].id,audioText:ws[0].zh,prompt:'Nghe từ và chọn nghĩa đúng:',opts:shuffle([ws[0],...ds]).map(x=>({t:x.vi,ok:x.id===ws[0].id})),exp:`${ws[0].zh} (${ws[0].py}): ${ws[0].vi}.`,zh:ws[0].zh});
+    }
+    const w1=ws[1]||ws[0];
+    if(w1){
+      const ds=pickListenDistractors(w1,pool,3,'zh');
+      qs.push({id:'lc_zh_'+w1.id,audioText:w1.zh,prompt:'Nghe từ và chọn chữ Hán đúng:',opts:shuffle([w1,...ds]).map(x=>({t:x.zh,ok:x.id===w1.id})),exp:`Đáp án là ${w1.zh} (${w1.py}) — ${w1.vi}.`,zh:w1.zh});
+    }
+    const w2=ws[2]||ws[0];
+    if(w2){
+      const ds=pickListenDistractors(w2,pool,3,'py');
+      qs.push({id:'lc_py_'+w2.id,audioText:w2.zh,prompt:'Nghe từ và chọn Pinyin đúng:',opts:shuffle([w2,...ds]).map(x=>({t:x.py,ok:x.id===w2.id})),exp:`${w2.zh} đọc là ${w2.py} (${w2.vi}).`,zh:w2.zh});
+    }
+    // Câu ví dụ / hội thoại thật (xử lý an toàn cho bài chưa có ex ở từng từ)
+    const sentCandidates=[];
+    const seenSent=new Set();
+    const pushSent=(id,zh,py,vi)=>{
+      if(!zh||!vi||seenSent.has(zh))return;
+      seenSent.add(zh);sentCandidates.push({id,zh,py:py||'',vi});
+    };
+    ws.forEach(w=>{if(w.ex&&w.exVi)pushSent('ex_'+w.id,w.ex,w.exPy,w.exVi);});
+    (SENT||[]).forEach((s,k)=>pushSent('s_'+k,s.zh,s.py,s.vi));
+    (LISTEN_DIALOG||[]).forEach((d,k)=>pushSent('d_'+k,d.zh,d.py,d.vi));
+    const distractorPool=[...sentCandidates,...pool.map(x=>({id:'wp_'+x.id,zh:x.zh,py:x.py,vi:x.vi}))];
+    sentCandidates.slice(0,2).forEach((sc,k)=>{
+      const ds=pickListenDistractors(sc,distractorPool,3,'vi');
+      if(ds.length>=2){
+        qs.push({id:'lc_sc_'+k+'_'+sc.id,audioText:sc.zh,prompt:'Nghe câu và chọn nghĩa đúng:',opts:shuffle([sc,...ds]).map(x=>({t:x.vi,ok:x.vi===sc.vi})),exp:`${sc.zh}${sc.py?' ('+sc.py+')':''} — ${sc.vi}`,zh:sc.zh});
+      }
+    });
+    // Nếu bài ngắn vẫn chưa đủ 5 câu, bổ sung từ các từ còn lại trong bài
+    let extraIdx=3;
+    while(qs.length<5&&extraIdx<ws.length){
+      const w=ws[extraIdx++];
+      const ds=pickListenDistractors(w,pool,3,'vi');
+      qs.push({id:'lc_ex_'+w.id,audioText:w.zh,prompt:'Nghe từ và chọn nghĩa đúng:',opts:shuffle([w,...ds]).map(x=>({t:x.vi,ok:x.id===w.id})),exp:`${w.zh} (${w.py}): ${w.vi}.`,zh:w.zh});
+    }
+    return qs;
   }
+
   if(mode==='dict'){
-    const pool=SENT.slice(0,4).map((s,idx)=>({id:'ld_'+idx,zh:s.zh,py:s.py,vi:s.vi}));
-    return pool;
+    const seen=new Set(),out=[];
+    const add=(id,zh,py,vi)=>{if(!zh||seen.has(zh))return;seen.add(zh);out.push({id,zh,py:py||'',vi:vi||''});};
+    (SENT||[]).forEach((s,idx)=>add('ld_s_'+idx,s.zh,s.py,s.vi));
+    if(out.length<3)(LISTEN_DIALOG||[]).forEach((d,idx)=>add('ld_d_'+idx,d.zh,d.py,d.vi));
+    if(out.length<3)(WORDS||[]).forEach((w,idx)=>add('ld_w_'+idx,w.zh,w.py,w.vi));
+    return out.slice(0,4);
   }
-  return DIALOG_QUESTIONS;
+
+  if(DIALOG_QUESTIONS&&DIALOG_QUESTIONS.length)return DIALOG_QUESTIONS;
+  if(hasDlg){
+    const fallbackViPool=[...LISTEN_DIALOG.map(d=>({vi:d.vi})),...(SENT||[]).map(s=>({vi:s.vi})),...getListenWordPool(null,6).map(w=>({vi:w.vi}))].filter(x=>x&&x.vi);
+    const seenDlg=new Set(),dlgQs=[];
+    LISTEN_DIALOG.forEach((d,idx)=>{
+      if(!d.zh||!d.vi||seenDlg.has(d.zh))return;
+      seenDlg.add(d.zh);
+      const ds=pickListenDistractors({vi:d.vi},fallbackViPool,3,'vi');
+      if(ds.length>=2){
+        dlgQs.push({
+          id:'dq_auto_'+idx,
+          audioText:d.zh,
+          q:`Câu thứ ${idx+1} (${d.name||'Nhân vật'}) nói gì?`,
+          opts:shuffle([{t:d.vi,ok:true},...ds.map(x=>({t:x.vi,ok:false}))]),
+          exp:`${d.name||'Nhân vật'}: “${d.zh}” (${d.py}) — ${d.vi}.`
+        });
+      }
+    });
+    return dlgQs.slice(0,4);
+  }
+  return [];
 }
 
 const listenCtrl=(function(){
   let mode='choice',qs=[],qi=0,correct=0,wrong=0,wrongQs=[],answered=false,recorded=false,dlgPlaying=false,dlgTimer=null;
 
+  function syncHeader(){
+    const l=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
+    const code=l?(l.code||'Bài học'):'Bài học';
+    const sub=$('#ln-sub');
+    if(sub)sub.textContent=`${code} • Nghe chọn, thanh điệu, chính tả & hội thoại`;
+    const dSub=$('#ln-dlg-sub');
+    if(dSub)dSub.textContent=`2 nhân vật • ${code}`;
+  }
   function applySpeedUI(){
     const spd=store.listening.speed;
     $$('#ln-speeds button,#ln-dlg-speeds button').forEach(b=>b.classList.toggle('on',Number(b.dataset.spd)===spd));
@@ -142,6 +328,7 @@ const listenCtrl=(function(){
   }
   function renderDialogList(){
     const dl=$('#ln-dlg-list');if(!dl)return;
+    if(!LISTEN_DIALOG.length){dl.innerHTML='<div class="card"><p class="muted small" style="margin:0">Bài học này chưa có hội thoại mẫu.</p></div>';return;}
     dl.innerHTML=LISTEN_DIALOG.map((line,idx)=>`
       <div class="bub" data-dl="${idx}">
         <span class="who ${line.who==='B'?'f':''}">${line.who}</span>
@@ -160,6 +347,7 @@ const listenCtrl=(function(){
   function start(newMode,customQs){
     stopDlg();
     mode=newMode||mode;
+    syncHeader();
     $$('#ln-modes button').forEach(b=>b.classList.toggle('on',b.dataset.lm===mode));
     qs=customQs||buildListenQuestions(mode);
     qi=0;correct=0;wrong=0;wrongQs=[];recorded=false;
@@ -184,7 +372,13 @@ const listenCtrl=(function(){
     else{
       wrong++;
       if(!wrongQs.includes(q))wrongQs.push(q);
-      if(q.id&&!store.listening.wrongIds.includes(q.id)){store.listening.wrongIds.push(q.id);saveStore(store);}
+      if(q.id&&!store.listening.wrongIds.includes(q.id)){store.listening.wrongIds.push(q.id);}
+      if(q.type==='tone'&&q.expectedTone>=1&&q.expectedTone<=4){
+        if(!store.listening.toneMistakes)store.listening.toneMistakes={1:0,2:0,3:0,4:0};
+        store.listening.toneMistakes[q.expectedTone]=(store.listening.toneMistakes[q.expectedTone]||0)+1;
+      }
+      saveStore(store);
+      if(typeof updateReviewFooter==='function')updateReviewFooter();
     }
   }
 
@@ -193,6 +387,10 @@ const listenCtrl=(function(){
     sum.classList.add('hide');
     $('#ln-audio-card').classList.toggle('hide',mode==='dlg');
     $('#ln-dlg-wrap').classList.toggle('hide',mode!=='dlg');
+    const hintEl=$('#ln-audio-hint');
+    if(hintEl){
+      hintEl.textContent=mode==='tone'?'Nhấn loa để nghe và phân biệt thanh điệu (1–4)':mode==='dict'?'Nghe kỹ câu mẫu rồi gõ lại bằng chữ Hán':'Nhấn loa để nghe và chọn đáp án đúng';
+    }
 
     if(!qs.length){
       play.classList.add('hide');em.classList.remove('hide');
@@ -219,6 +417,27 @@ const listenCtrl=(function(){
         if(!ok){const oi=q.opts.findIndex(x=>x.ok);if(oi>=0){const ob=$$('.opt',stage)[oi];ob.classList.add('ok');$('.st-ic',ob).textContent='✓';}}
         recordAnswer(ok,q);
         showFb(ok,ok?'Chính xác!':'Chưa đúng rồi!',q.exp,!ok);
+      });
+    }else if(mode==='tone'){
+      stage.innerHTML=`
+        <div class="d3-tone-prompt"><span>${q.prompt}</span><span class="d3-tone-char-pill">Âm gốc: <b>${q.base}</b></span></div>
+        <div class="d3-tone-grid">${q.opts.map((o,idx)=>`
+          <button type="button" class="d3-tone-opt" data-idx="${idx}">
+            <i>${ABC[idx]}</i>
+            <div class="d3-tone-opt-mid">
+              <span class="d3-tone-opt-py">${o.t}</span>
+              <span class="d3-tone-opt-lbl">${o.label}</span>
+            </div>
+            <svg class="d3-tone-mini" viewBox="0 0 30 16" aria-hidden="true"><path d="${TONE_PATHS[o.tone]||TONE_PATHS[1]}"/></svg>
+          </button>`).join('')}
+        </div>`;
+      $$('.d3-tone-opt',stage).forEach(btn=>btn.onclick=()=>{
+        if(answered)return;
+        const idx=+btn.dataset.idx,ok=q.opts[idx].ok;
+        btn.classList.add(ok?'ok':'no');
+        if(!ok){const oi=q.opts.findIndex(x=>x.ok);if(oi>=0)$$('.d3-tone-opt',stage)[oi].classList.add('ok');}
+        recordAnswer(ok,q);
+        showFb(ok,ok?'Phân biệt chuẩn rồi!':'Chưa đúng thanh điệu',q.exp,!ok);
       });
     }else if(mode==='dict'){
       stage.innerHTML=`
@@ -248,10 +467,14 @@ const listenCtrl=(function(){
       recorded=true;
       store.listening.attempts+=1;
       if(pct>store.listening.bestPct)store.listening.bestPct=pct;
-      store.listening.sessions.push({at:Date.now(),mode,correct,wrong,total,pct});recordLearningEvent({type:mode==='dict'?'dictation':'listen',skill:'listen',title:mode==='dict'?'Chép chính tả':mode==='dlg'?'Nghe hội thoại':'Nghe chọn đáp án',result:`${correct}/${total} (${pct}%)`,view:'listen',meta:{correct,total,pct}});
+      const modeTitle=mode==='dict'?'Chép chính tả':mode==='dlg'?'Nghe hội thoại':mode==='tone'?'Phân biệt thanh điệu':'Nghe chọn đáp án';
+      store.listening.sessions.push({at:Date.now(),mode,correct,wrong,total,pct});
+      recordLearningEvent({type:mode==='dict'?'dictation':'listen',skill:'listen',title:modeTitle,result:`${correct}/${total} (${pct}%)`,view:'listen',meta:{correct,total,pct}});
       if(store.listening.sessions.length>20)store.listening.sessions=store.listening.sessions.slice(-20);
       saveStore(store);
       updateLessonListenStatus();
+      if(typeof markLessonSectionDone==='function')markLessonSectionDone(store.activeLessonId,'listen',true);
+      if(typeof updateReviewFooter==='function')updateReviewFooter();
     }
     sum.innerHTML=`<div class="sphead"><svg class="ic"><use href="#i-award"/></svg><div><h3>Hoàn thành bài nghe!</h3><span class="muted small">Độ chính xác: ${pct}% • Kỷ lục: ${store.listening.bestPct}%</span></div></div>
       <div class="sum-grid" style="margin-top:12px"><div><b style="color:var(--good)">${correct}</b><span>Đúng</span></div><div><b>${wrong}</b><span>Sai</span></div><div><b style="color:var(--ink)">${store.listening.attempts}</b><span>Lần luyện</span></div></div>
@@ -285,7 +508,7 @@ const listenCtrl=(function(){
   $('#ln-next').onclick=()=>{qi+=1;renderQ();};
   $('#ln-retry').onclick=()=>{if(answered&&wrong>0){wrong--;const idx=wrongQs.indexOf(qs[qi]);if(idx>=0)wrongQs.splice(idx,1);}renderQ();};
 
-  return {init(){applySpeedUI();applyDlgToggles();start('choice');},stop:stopDlg};
+  return {init(){applySpeedUI();applyDlgToggles();start('choice');},refresh(){start(mode);},syncHeader,stop:stopDlg};
 })();
 
 function updateLessonListenStatus(){
@@ -332,12 +555,10 @@ function detectBaseTone(syllable){
 }
 function analyzeExpectedTones(zhText,pyText){
   const hanChars=[...String(zhText||'')].filter(ch=>/[\u4e00-\u9fff]/.test(ch));
-  let rawSyls=String(pyText||'').replace(/[.,!?;:"'“”‘’。，！？；：]/g,' ').trim().split(/\s+/).filter(Boolean);
-  if(rawSyls.length<hanChars.length){
-    const sylRe=/(?:zh|ch|sh|[bpmfdtnlgkhjqxrzcsyw])?[aāáǎàeēéěèiīíǐìoōóǒòuūúǔùüǖǘǚǜ]+(?:ng|n|r)?/gi;
-    const expanded=[];
-    for(const tok of rawSyls){const m=tok.match(sylRe);if(m&&m.length)expanded.push(...m);else expanded.push(tok);}
-    if(expanded.length===hanChars.length)rawSyls=expanded;
+  let rawSyls=splitPinyinSyllables(pyText);
+  if(rawSyls.length!==hanChars.length){
+    const spaced=String(pyText||'').replace(/[.,!?;:"'“”‘’。，！？；：]/g,' ').trim().split(/\s+/).filter(Boolean);
+    if(spaced.length===hanChars.length)rawSyls=spaced;
   }
   const items=hanChars.map((ch,idx)=>{
     const py=rawSyls[idx]||'';
@@ -428,8 +649,88 @@ function detectSupportedMime(){
   return candidates.find(t=>{try{return MediaRecorder.isTypeSupported(t);}catch(_){return false;}})||'';
 }
 
+const PY_INITIALS=['zh','ch','sh','b','p','m','f','d','t','n','l','g','k','h','j','q','x','r','z','c','s','y','w'];
+const INITIAL_GUIDE={
+  b:'Khép hai môi rồi mở nhẹ, KHÔNG bật hơi (gần với /p/ nhẹ).',
+  p:'Khép hai môi rồi BẬT HƠI MẠNH ra ngoài (có luồng gió rõ trước miệng).',
+  m:'Khép môi rung mũi như chữ /m/ tiếng Việt.',
+  f:'Răng trên chạm nhẹ môi dưới thổi hơi như /ph/ nhẹ.',
+  d:'Đầu lưỡi chạm lợi trên rồi thả nhẹ, KHÔNG bật hơi.',
+  t:'Đầu lưỡi chạm lợi trên rồi BẬT HƠI MẠNH.',
+  n:'Đầu lưỡi chạm lợi trên, luồng hơi đi qua mũi như /n/.',
+  l:'Đầu lưỡi chạm lợi trên, luồng hơi thoát hai bên lưỡi như /l/.',
+  g:'Cuống lưỡi nâng chạm vòm mềm rồi mở nhẹ, KHÔNG bật hơi.',
+  k:'Cuống lưỡi chạm vòm mềm rồi BẬT HƠI MẠNH.',
+  h:'Xát nhẹ ở cuống họng, gần giống /kh/ nhẹ trong tiếng Việt.',
+  j:'Mặt lưỡi áp vòm cứng, đầu lưỡi sau răng dưới, KHÔNG bật hơi.',
+  q:'Vị trí giống j nhưng BẬT HƠI MẠNH và kéo âm xì rõ.',
+  x:'Mặt lưỡi nâng gần vòm cứng, thổi luồng hơi xì nhẹ giữa kẽ hẹp.',
+  zh:'Uốn cong đầu lưỡi về phía sau, KHÔNG bật hơi.',
+  ch:'Uốn cong đầu lưỡi giống zh nhưng BẬT HƠI MẠNH.',
+  sh:'Uốn cong đầu lưỡi ra sau và thổi luồng hơi xát đều.',
+  r:'Uốn cong đầu lưỡi, dây thanh rung nhẹ (khác /r/ rung tiếng Việt).',
+  z:'Đầu lưỡi thẳng chạm sau răng cửa trên rồi thả nhẹ, KHÔNG bật hơi.',
+  c:'Đầu lưỡi thẳng sau răng cửa trên, BẬT HƠI MẠNH (xì sắc gọn).',
+  s:'Đầu lưỡi gần răng cửa trên, xì hơi mảnh và đều như /x/.',
+  y:'Bán nguyên âm /i/, môi kéo hơi dẹt nhẹ.',
+  w:'Bán nguyên âm /u/, môi chu tròn rồi mở ra.'
+};
+const FINAL_GUIDE={
+  'ü':'Môi chu tròn giữ nguyên khẩu hình /u/ nhưng phát âm /i/ bên trong (tạo thành /uy/).',
+  'üe':'Bắt đầu với /uy/ tròn môi rồi mở sang /ê/ ngắn.',
+  'üan':'Bắt đầu với /uy/ tròn môi, trượt sang /en/ (hoặc /an/ gọn).',
+  'ün':'Âm /uy/ nối với phụ âm mũi đầu lưỡi /-n/.',
+  ang:'Mở rộng miệng hết cỡ ở /a/ rồi đưa cuống lưỡi lên đóng mũi /-ng/.',
+  eng:'Phát âm /ơ/ nhẹ rồi kéo dài âm mũi sau /-ng/.',
+  ing:'Phát âm /i/ rõ rồi đóng mũi sau /-ng/ (như /i-ng/).',
+  ong:'Môi hơi tròn, đọc gần /u-ng/ (âm mũi sau vang hơn /ông/).',
+  ian:'Đọc gần /iên/, không bẹt quá sang /ian/.',
+  uan:'Chu tròn môi ở /u/ rồi mở sang /an/.',
+  ao:'Mở miệng ở /a/ rõ rồi khép dần sang /u/ (/ao/ gọn).',
+  ou:'Tròn môi /ô/ rồi khép nhẹ sang /u/ (/âu/).',
+  ei:'Mở vừa /ê/ rồi khép lên /i/ (/ây/).',
+  ai:'Mở /a/ rồi nâng nhẹ lên /i/ (/ai/).',
+  ui:'Đọc đầy đủ là /u-êi/, lướt nhanh qua /ê/ ở giữa.',
+  iu:'Đọc đầy đủ là /i-ôu/, không bỏ âm tròn môi cuối.',
+  er:'Phát âm /ơ/ đồng thời uốn đầu lưỡi cong lên về phía vòm.',
+  a:'Mở miệng rộng và thoáng theo chiều dọc.',
+  o:'Môi tròn gọn, giữ ổn định không dẹt miệng.',
+  e:'Không tròn môi, âm gần giữa /ơ/ và /ư/.',
+  i:'Kéo nhẹ khóe miệng sang hai bên (sau z/c/s/zh/ch/sh/r đọc là âm ư kéo dài).',
+  u:'Chu môi tròn nhỏ nhô về phía trước.'
+};
+const TONE_GUIDE_INFO={
+  1:{title:'Thanh 1 ( ¯ · mức 5–5 )',desc:'Giọng ở mức cao, giữ thẳng ngang và ổn định từ đầu đến cuối.',pathBig:'M24 14 L196 14',arrow:'190,9 200,14 190,19',tips:['Giữ hơi đều, không cho giọng bị tuột xuống cuối âm tiết.','Thích hợp khởi động ở độ cao thoải mái nhất của quãng trên.']},
+  2:{title:'Thanh 2 ( ˊ · mức 3–5 )',desc:'Giọng đi từ mức trung lên cao dứt khoát như âm sắc/hỏi vút lên.',pathBig:'M24 44 L196 14',arrow:'187,12 200,13 192,23',tips:['Bắt đầu ngang trung bình rồi đẩy nhẹ lên dứt khoát.','Tránh ngắt khựng ở điểm bắt đầu như thanh 3.']},
+  3:{title:'Thanh 3 ( ˇ · mức 2–1–4 )',desc:'Giọng hạ xuống thấp nhất rồi nâng nhẹ lên ở cuối, có dạng “võng”.',pathBig:'M24 46 Q96 70 196 24',arrow:'186,23 200,22 192,33',tips:['Hạ giọng xuống vùng trầm và giữ ngắn ở đáy đường cong.','Khi đứng trước âm thanh 1/2/4/nhẹ chỉ đọc nửa thanh 3 (hạ trầm không cần vút cao).']},
+  4:{title:'Thanh 4 ( ˋ · mức 5–1 )',desc:'Giọng rơi mạnh và gọn từ cao xuống thấp dứt khoát.',pathBig:'M24 14 L196 62',arrow:'191,53 200,63 187,64',tips:['Bắt đầu từ cao (gần thanh 1) rồi thả xuống thật nhanh và ngắn gọn.','Tránh đọc kéo dài lờ đờ khiến âm bị giống thanh 2/3.']},
+  5:{title:'Thanh nhẹ ( ˙ )',desc:'Đọc rất ngắn, nhẹ và lướt, âm lượng nhỏ hơn âm tiết chính.',pathBig:'M68 38 L152 38',arrow:'',tips:['Không gồng thanh quản hoặc nhấn mạnh cao độ.','Độ cao phụ thuộc tự nhiên vào thanh điệu của âm tiết đứng trước.']}
+};
+function parseInitialFinal(syl){
+  const p=parseToneSyllable(syl);
+  const b=p.base;
+  if(!b)return {syl,base:b,tone:p.tone,initial:'',final:''};
+  const init=PY_INITIALS.find(x=>b.startsWith(x))||'';
+  const fin=b.slice(init.length);
+  return {syl,base:b,tone:p.tone,initial:init,final:fin};
+}
+function getFinalTip(init,fin){
+  if(fin==='i'&&['z','c','s','zh','ch','sh','r'].includes(init)){
+    return `Âm “i” đi sau “${init}” KHÔNG đọc là /i/, mà giữ nguyên lưỡi của “${init}” và rung nhẹ âm /ư/ kéo dài.`;
+  }
+  if(fin==='u'&&['j','q','x','y'].includes(init)){
+    return `Sau “${init}”, chữ “u” thực chất là vần “ü” (/uy/): cần chu tròn môi và đọc là /uy/ thay vì /u/.`;
+  }
+  if(FINAL_GUIDE[fin])return FINAL_GUIDE[fin];
+  for(const k of Object.keys(FINAL_GUIDE)){
+    if(fin.endsWith(k))return FINAL_GUIDE[k];
+  }
+  return `Phát âm trọn vẹn vần “-${fin}”, kết nối mượt sau thanh mẫu.`;
+}
+
 const speakCtrl=(function(){
   let mode=(store.speaking&&store.speaking.mode)||'sentence';
+  let viewTab='practice',guideTab='tone';
   let idx=0,mediaRec=null,stream=null,audioCtx=null,analyser=null,rafId=null,timerId=null;
   let chunks=[],recBlob=null,recUrl=null,recDuration=0,recStart=0,isRecording=false;
   let assessInFlight=false,apiCallsInSession=0;
@@ -439,13 +740,14 @@ const speakCtrl=(function(){
   const meterEl=$('#sp-meter');
   if(meterEl)meterEl.innerHTML=Array.from({length:16},()=>'<i style="height:4px"></i>').join('');
 
-  function getList(){
-    if(mode==='word')return WORDS.map(w=>({id:'sp_w_'+w.id,zh:w.zh,py:w.py,vi:w.vi}));
-    if(mode==='dialog')return LISTEN_DIALOG.map((d,k)=>({id:'sp_d_'+k,zh:d.zh,py:d.py,vi:d.vi}));
+  function getList(m){
+    const useMode=m||mode;
+    if(useMode==='word')return WORDS.map(w=>({id:'sp_w_'+w.id,zh:w.zh,py:w.py,vi:w.vi}));
+    if(useMode==='dialog')return LISTEN_DIALOG.map((d,k)=>({id:'sp_d_'+k,zh:d.zh,py:d.py,vi:d.vi}));
     return SENT.map((s,k)=>({id:'sp_s_'+k,zh:s.zh,py:s.py,vi:s.vi}));
   }
   function getItemRec(id){
-    return store.speaking.items[id]||{attempts:0,assessRequests:0,lastPracticedAt:null,lastResult:null,needsPractice:false,history:[]};
+    return store.speaking.items[id]||{attempts:0,assessRequests:0,lastPracticedAt:null,lastResult:null,selfStatus:null,needsPractice:false,history:[]};
   }
   function saveItemRec(id,patch){
     const prev=getItemRec(id);
@@ -490,7 +792,80 @@ const speakCtrl=(function(){
         <svg class="tone-svg" viewBox="0 0 30 16"><path d="${TONE_PATHS[s.tone]||TONE_PATHS[5]}"/></svg>
         <span class="st">${TONE_NAMES[s.tone]}</span>
       </button>`).join('');
-    $('#sp-sandhi-note').textContent=notes.length?('Biến điệu: '+notes.join(' • ')):'Không có biến điệu đặc biệt trong mục này.';
+    $('#sp-sandhi-note').textContent=notes.length?('Biến điệu: '+notes.join(' • ')):'Chạm vào từng âm tiết ở trên để nghe riêng từng chữ.';
+  }
+
+  function renderGuide(item){
+    const body=$('#sp-guide-body');if(!body)return;
+    $$('#sp-guide-tabs button').forEach(b=>b.classList.toggle('on',b.dataset.spg===guideTab));
+    if(!item){body.innerHTML='<p class="muted small">Chưa có dữ liệu.</p>';return;}
+    const syls=analyzeExpectedTones(item.zh,item.py).map(s=>Object.assign({},s,parseInitialFinal(s.py)));
+
+    if(guideTab==='init'){
+      const groups=new Map();
+      syls.forEach(s=>{
+        const key=s.initial||'_zero';
+        if(!groups.has(key))groups.set(key,{init:s.initial,samples:[]});
+        groups.get(key).samples.push(s);
+      });
+      body.innerHTML=[...groups.values()].map(g=>{
+        const lbl=g.init?`Âm đầu “${g.init}”`:'Âm tiết không có thanh mẫu (Zero-initial)';
+        const tip=g.init?(INITIAL_GUIDE[g.init]||'Đọc rõ khẩu hình của thanh mẫu trước khi nối vần.'):'Mở miệng trực tiếp vào nguyên âm chính, phát âm gọn và rõ từ đầu.';
+        const exChips=g.samples.slice(0,4).map(s=>`<button type="button" class="sp-part-ex" data-say="${s.ch}"><b>${s.ch}</b><span>${s.py}</span></button>`).join('');
+        return `<div class="sp-part-box"><div class="sp-part-top"><span class="sp-part-pill">${lbl}</span><div style="display:flex;gap:5px;flex-wrap:wrap">${exChips}</div></div><div class="sp-part-tip">${tip}</div></div>`;
+      }).join('');
+      return;
+    }
+
+    if(guideTab==='fin'){
+      const groups=new Map();
+      syls.forEach(s=>{
+        if(!s.final)return;
+        const key=s.initial&&((s.final==='i'&&['z','c','s','zh','ch','sh','r'].includes(s.initial))||(s.final==='u'&&['j','q','x','y'].includes(s.initial)))?`${s.initial}+${s.final}`:s.final;
+        if(!groups.has(key))groups.set(key,{init:s.initial,fin:s.final,samples:[]});
+        groups.get(key).samples.push(s);
+      });
+      body.innerHTML=groups.size?[...groups.values()].map(g=>{
+        const tip=getFinalTip(g.init,g.fin);
+        const exChips=g.samples.slice(0,4).map(s=>`<button type="button" class="sp-part-ex" data-say="${s.ch}"><b>${s.ch}</b><span>${s.py}</span></button>`).join('');
+        return `<div class="sp-part-box"><div class="sp-part-top"><span class="sp-part-pill">Vần “-${g.fin}”</span><div style="display:flex;gap:5px;flex-wrap:wrap">${exChips}</div></div><div class="sp-part-tip">${tip}</div></div>`;
+      }).join(''):'<p class="muted small">Chưa tách được vần cho mục này.</p>';
+      return;
+    }
+
+    // Tab Thanh điệu: SVG đường cong lớn + mẹo luyện tập
+    const focus=syls.find(s=>s.sandhi)||syls.find(s=>s.tone===3)||syls[0];
+    const focusTone=focus?focus.tone:1;
+    const gInfo=TONE_GUIDE_INFO[focusTone]||TONE_GUIDE_INFO[1];
+    const gridLines=[12,24,36,48,60].map(y=>`<line x1="16" y1="${y}" x2="204" y2="${y}" stroke="var(--line)" stroke-width="1" stroke-dasharray="4 4"/>`).join('');
+    const focusBtn=focus?`<button type="button" class="sp-part-ex" data-say="${focus.ch}"><b>${focus.ch}</b><span>${focus.py}</span></button>`:'';
+    body.innerHTML=`
+      <div class="sp-tone-curve-box">
+        <div class="sp-tone-curve-hd"><b>${gInfo.title}</b>${focusBtn}</div>
+        <div class="sp-tone-curve-desc">${gInfo.desc}</div>
+        <div class="sp-tone-svg-wrap">
+          <svg class="sp-tone-big-svg" viewBox="0 0 220 74" aria-label="${gInfo.title}">
+            ${gridLines}
+            <text x="6" y="16" font-size="9" fill="var(--muted)">5</text>
+            <text x="6" y="40" font-size="9" fill="var(--muted)">3</text>
+            <text x="6" y="64" font-size="9" fill="var(--muted)">1</text>
+            <path d="${gInfo.pathBig}" fill="none" stroke="var(--accent)" stroke-width="3.6" stroke-linecap="round"/>
+            ${gInfo.arrow?`<polygon points="${gInfo.arrow}" fill="var(--accent)"/>`:''}
+          </svg>
+        </div>
+      </div>
+      <div class="sp-tip-callout"><span>💡</span><div><b>Mẹo luyện tập:</b><ul>${gInfo.tips.map(t=>`<li>${t}</li>`).join('')}</ul></div></div>`;
+  }
+
+  function renderSelfBox(item){
+    const rec=getItemRec(item.id);
+    const badge=$('#sp-self-badge'),okB=$('#sp-mark-ok'),rtB=$('#sp-mark-retry');
+    if(badge){
+      badge.className='sp-self-badge'+(rec.selfStatus==='ok'?' ok':rec.selfStatus==='retry'?' retry':'');
+      badge.textContent=rec.selfStatus==='ok'?'Đạt yêu cầu':rec.selfStatus==='retry'?'Cần luyện lại':'Chưa đánh dấu';
+    }
+    if(okB)okB.classList.toggle('on',rec.selfStatus==='ok');
+    if(rtB)rtB.classList.toggle('on',rec.selfStatus==='retry');
   }
 
   function renderAssessmentArea(item){
@@ -498,7 +873,7 @@ const speakCtrl=(function(){
     const banner=$('#sp-api-banner'),resWrap=$('#sp-result-wrap');
     const saved=getItemRec(item.id).lastResult;
     if(!cfg.configured){
-      banner.innerHTML='<b>Chế độ luyện tập miễn phí:</b> Chưa kết nối dịch vụ chấm phát âm (cần backend bảo mật cho TonePerfect / SpeechSuper). Bạn vẫn có thể ghi âm thật, nghe lại, so sánh và xem thanh điệu.';
+      banner.innerHTML='<b>Chế độ luyện tập miễn phí (offline):</b> Không dùng API trả phí hay điểm chấm giả. Hãy ghi âm thật, bấm <b>Mẫu ↔ Giọng mình</b> để đối chiếu, xem <b>Hướng dẫn sửa lỗi</b> và tự đánh dấu kết quả.';
     }else{
       banner.innerHTML=`<b>Dịch vụ chấm:</b> ${cfg.provider} • Lượt gọi trong phiên: ${apiCallsInSession}/${MAX_API_CALLS_SESSION}`;
     }
@@ -514,11 +889,66 @@ const speakCtrl=(function(){
     }
   }
 
+  function renderHistory(){
+    const listEl=$('#sp-hist-list');if(!listEl)return;
+    const entries=Object.entries(store.speaking.items||{});
+    let totalRecs=0,okCnt=0,retryCnt=0;
+    const rows=[];
+    const lookupItem=id=>{
+      const all=[...WORDS.map((w,k)=>({id:'sp_w_'+w.id,m:'word',zh:w.zh,py:w.py})),...SENT.map((s,k)=>({id:'sp_s_'+k,m:'sentence',zh:s.zh,py:s.py})),...LISTEN_DIALOG.map((d,k)=>({id:'sp_d_'+k,m:'dialog',zh:d.zh,py:d.py}))];
+      const found=all.find(x=>x.id===id);
+      if(found)return found;
+      if(id.startsWith('sp_w_')&&store.vocabBank){const w=store.vocabBank[id.slice(5)];if(w)return {id,m:'word',zh:w.zh,py:w.py};}
+      return {id,m:'sentence',zh:id.replace(/^sp_[wsd]_/,''),py:''};
+    };
+    entries.forEach(([id,rec])=>{
+      totalRecs+=(rec.attempts||0);
+      if(rec.selfStatus==='ok')okCnt++;
+      else if(rec.selfStatus==='retry'||rec.needsPractice)retryCnt++;
+      if(rec.attempts>0||rec.selfStatus||rec.lastResult){
+        const meta=lookupItem(id);
+        rows.push({id,rec,meta});
+      }
+    });
+    rows.sort((a,b)=>(b.rec.lastPracticedAt||0)-(a.rec.lastPracticedAt||0));
+    if($('#sp-st-recs'))$('#sp-st-recs').textContent=totalRecs;
+    if($('#sp-st-ok'))$('#sp-st-ok').textContent=okCnt;
+    if($('#sp-st-retry'))$('#sp-st-retry').textContent=retryCnt;
+    if(!rows.length){
+      listEl.innerHTML='<div class="card" style="text-align:center"><p class="muted small" style="margin:0">Chưa có lịch sử luyện nói nào. Hãy ghi âm hoặc tự đánh dấu ở tab <b>Luyện tập</b>.</p></div>';
+      return;
+    }
+    listEl.innerHTML=rows.slice(0,25).map(({id,rec,meta})=>{
+      const d=rec.lastPracticedAt?new Date(rec.lastPracticedAt):null;
+      const ts=d?`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')} · ${d.getDate()}/${d.getMonth()+1}`:'Gần đây';
+      const stCls=rec.selfStatus==='ok'?'ok':rec.selfStatus==='retry'?'retry':'';
+      const stTxt=rec.selfStatus==='ok'?'Đạt':rec.selfStatus==='retry'?'Cần luyện':(rec.attempts?`Đã thu ${rec.attempts} lần`:'Đã luyện');
+      return `<div class="sp-hist-item">
+        <div class="sp-hist-zh">${meta.zh}</div>
+        <div class="sp-hist-mid"><b>${meta.py||meta.zh}</b><span>${ts} · ${rec.attempts||0} lượt ghi âm</span></div>
+        <div class="sp-hist-act">
+          <span class="sp-self-badge ${stCls}">${stTxt}</span>
+          <button type="button" class="playbtn" data-say="${meta.zh}" style="width:32px;height:32px" aria-label="Nghe ${meta.zh}"><svg class="ic"><use href="#i-vol"/></svg></button>
+          <button type="button" class="chip on" data-sp-jump="${id}" data-sp-jm="${meta.m}" style="padding:5px 10px;font-size:12px">Luyện</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
   function renderItem(){
     stopAll();
     clearRecBlob();
+    const l=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
+    const spSub=$('#sp-sub');
+    if(spSub)spSub.textContent=`${l?(l.code||'Bài học'):'Bài học'} • Ghi âm thật & hướng dẫn sửa lỗi`;
     const list=getList();
-    if(!list.length){$('#sp-zh').textContent='Chưa có dữ liệu luyện tập';return;}
+    if(!list.length){
+      $('#sp-zh').textContent='Chưa có dữ liệu luyện tập';
+      $('#sp-py').textContent='';$('#sp-vi').textContent='';
+      $('#sp-idx').textContent='0 / 0';
+      renderGuide(null);
+      return;
+    }
     if(idx>=list.length)idx=0;
     const item=list[idx];
     const maxSec=Number($('#sp-maxsec').value)||15;
@@ -528,8 +958,27 @@ const speakCtrl=(function(){
     $('#sp-vi').textContent=item.vi;
     $('#sp-rec-state').textContent='Sẵn sàng ghi âm';
     $('#sp-timer').textContent=`00:00 / ${fmtSec(maxSec)}`;
+    renderSelfBox(item);
     renderTones(item);
+    renderGuide(item);
     renderAssessmentArea(item);
+  }
+
+  function setViewTab(t){
+    viewTab=t==='history'?'history':'practice';
+    $$('#sp-view-tabs button').forEach(b=>b.classList.toggle('on',b.dataset.spv===viewTab));
+    $('#sp-pane-practice').classList.toggle('hide',viewTab!=='practice');
+    $('#sp-pane-history').classList.toggle('hide',viewTab!=='history');
+    if(viewTab==='history'){stopAll();renderHistory();}
+  }
+
+  function markSelf(status){
+    const it=getList()[idx];if(!it)return;
+    saveItemRec(it.id,{selfStatus:status,needsPractice:status==='retry'});
+    recordLearningEvent({type:'assess',skill:'speak',title:`Luyện nói: ${it.zh}`,targetId:it.id,view:'speak',result:status==='ok'?'Tự đánh giá: Đạt':'Cần luyện lại'});
+    if(typeof markLessonSectionDone==='function')markLessonSectionDone(store.activeLessonId,'speak',true);
+    renderSelfBox(it);
+    toast(status==='ok'?`Đã đánh dấu “${it.zh}” đạt yêu cầu`:`Đã đánh dấu “${it.zh}” cần luyện thêm`);
   }
 
   async function startRec(){
@@ -562,7 +1011,6 @@ const speakCtrl=(function(){
     $('#sp-mic').classList.add('rec');
     $('#sp-rec-state').textContent='Đang ghi âm… Nhấn lại để dừng';
 
-    // Phân tích tín hiệu micro thật bằng Web Audio API
     try{
       const AC=window.AudioContext||window.webkitAudioContext;
       if(AC){
@@ -606,7 +1054,8 @@ const speakCtrl=(function(){
       const curItem=getList()[idx];
       if(curItem){
         const prev=getItemRec(curItem.id);
-        saveItemRec(curItem.id,{attempts:prev.attempts+1});recordLearningEvent({type:'record',skill:'speak',title:`Ghi âm: ${curItem.zh}`,targetId:curItem.id,view:'speak',durationSec:Math.round(dur),result:`${dur.toFixed(1)}s`});
+        saveItemRec(curItem.id,{attempts:prev.attempts+1});
+        recordLearningEvent({type:'record',skill:'speak',title:`Ghi âm: ${curItem.zh}`,targetId:curItem.id,view:'speak',durationSec:Math.round(dur),result:`${dur.toFixed(1)}s`});
       }
     };
 
@@ -617,6 +1066,21 @@ const speakCtrl=(function(){
       if(el>=maxSec)releaseMic();
     },250);
   }
+
+  $('#sp-view-tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(b)setViewTab(b.dataset.spv);});
+  $('#sp-guide-tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;guideTab=b.dataset.spg;renderGuide(getList()[idx]);});
+  $('#sp-mark-ok').onclick=()=>markSelf('ok');
+  $('#sp-mark-retry').onclick=()=>markSelf('retry');
+  $('#sp-hist-list').addEventListener('click',e=>{
+    const jb=e.target.closest('[data-sp-jump]');if(!jb)return;
+    const jm=jb.dataset.spJm||'sentence',jid=jb.dataset.spJump;
+    mode=jm;store.speaking.mode=mode;saveStore(store);
+    $$('#sp-modes button').forEach(x=>x.classList.toggle('on',x.dataset.sm===mode));
+    const list=getList(mode),found=list.findIndex(x=>x.id===jid);
+    if(found>=0)idx=found;
+    setViewTab('practice');
+    renderItem();
+  });
 
   $('#sp-modes').addEventListener('click',e=>{
     const b=e.target.closest('button');if(!b)return;
@@ -646,7 +1110,8 @@ const speakCtrl=(function(){
     const it=getList()[idx];if(!it||!recBlob)return;
     const cfg=PronunciationAssessor.getConfig();
     if(!cfg.configured){
-      toast('Chưa cấu hình endpoint chấm phát âm (đang dùng chế độ miễn phí)');
+      toast('Đang ở chế độ offline: đối chiếu bằng Hướng dẫn sửa lỗi bên dưới và tự đánh dấu!');
+      const gc=$('#sp-guide-card');if(gc)gc.scrollIntoView({behavior:'smooth',block:'nearest'});
       return;
     }
     if(apiCallsInSession>=MAX_API_CALLS_SESSION){
@@ -663,7 +1128,7 @@ const speakCtrl=(function(){
     }catch(err){
       toast('Không thể kết nối dịch vụ chấm phát âm');
     }finally{
-      assessInFlight=false;btn.disabled=false;btn.innerHTML='<svg class="ic"><use href="#i-award"/></svg>Chấm phát âm';
+      assessInFlight=false;btn.disabled=false;btn.innerHTML='<svg class="ic"><use href="#i-award"/></svg>Kiểm tra phát âm';
     }
   };
 
@@ -671,8 +1136,10 @@ const speakCtrl=(function(){
     init(){
       $$('#sp-modes button').forEach(x=>x.classList.toggle('on',x.dataset.sm===mode));
       $('#sp-maxsec').value=String(store.speaking.maxSec||15);
+      setViewTab('practice');
       renderItem();
     },
+    render(){if(viewTab==='history')renderHistory();else renderItem();},
     stop:stopAll
   };
 })();
@@ -681,10 +1148,33 @@ try{window._stopSpeak=speakCtrl.stop;speakCtrl.init();}catch(e){console.error(e)
 /* ---------- Luyện nghe: sóng âm trang trí ---------- */
 (function(){const w=$('#wave');const h=[8,14,22,12,18,26,16,10,20,24,14,8,18,22,12,16,24,10,14,20,12,8,16,22,10,14];w.innerHTML=h.map(x=>`<i style="height:${x}px"></i>`).join('')})();
 
-/* ---------- Công đoạn 5: Luyện viết chữ Hán (Hanzi Writer + Canvas tự viết) ---------- */
+/* ---------- Công đoạn 5 + Đợt 3: Luyện viết chữ Hán (Apple Pencil / S Pen + 2 ô đối chiếu) ---------- */
 const cv=$('#cv'),cx=cv.getContext('2d'),pad=$('#pad'),hwBox=$('#hw-target');
-let ci=0,wMode=(store.writing&&store.writing.mode)||'trace',wOutline=true,drawing=false,strokesHist=[],curStroke=[],hwLibPromise=null,hwWriter=null,hwCharData=null,hwPlaying=false,hwPaused=false,hwStrokeIdx=0,runMistakes=0,runHints=0,runDone=false,loadSeq=0;
+let ci=0,wMode=(store.writing&&store.writing.mode)||'trace',wOutline=true,drawing=false,strokesHist=[],curStroke=[],wPenActive=false,hwLibPromise=null,hwWriter=null,hwCharData=null,hwPlaying=false,hwPaused=false,hwStrokeIdx=0,runMistakes=0,runHints=0,runDone=false,loadSeq=0;
 
+function enrichCharMeta(c){
+  if(!c)return c;
+  let py=c.py||'',vi=c.vi||'',rad=c.rad||'';
+  if((!py||!vi)&&typeof HANZI_HACKNAO_DB!=='undefined'&&HANZI_HACKNAO_DB[c.ch]){
+    const h=HANZI_HACKNAO_DB[c.ch];
+    if(!py&&h.py)py=h.py;
+    if(!vi&&h.meaning)vi=String(h.meaning).split(',')[0].trim();
+  }
+  if((!py||!vi||!rad)&&typeof HANZI_MINDMAP_DB!=='undefined'&&HANZI_MINDMAP_DB[c.ch]){
+    const m=HANZI_MINDMAP_DB[c.ch];
+    if(!py&&m.py)py=m.py;
+    if(!vi&&m.meaning)vi=String(m.meaning).split(',')[0].trim();
+    if(!rad&&m.parts&&m.parts[0]){
+      const p=m.parts[0];
+      rad=`${p.rad}${p.meaning?' ('+p.meaning+')':p.hv?' ('+p.hv.toLowerCase()+')':''}`;
+    }
+  }
+  if(!py||!vi){
+    const wMatch=(WORDS||[]).find(w=>w.zh===c.ch)||((store&&store.vocabBank)?Object.values(store.vocabBank).find(w=>w.zh===c.ch):null);
+    if(wMatch){if(!py)py=wMatch.py||'';if(!vi)vi=wMatch.vi||'';}
+  }
+  return Object.assign({},c,{py,vi,rad});
+}
 function getWriteRec(id){
   return store.writing.chars[id]||{attempts:0,guidedCompleted:0,acceptedStrokes:0,mistakes:0,hintsUsed:0,lastPracticedAt:null,selfStatus:null,needsPractice:false};
 }
@@ -719,6 +1209,27 @@ function ensureHanziWriter(){
   return hwLibPromise;
 }
 
+function updateStylusPill(){
+  const pill=$('#w-stylus-pill');if(!pill)return;
+  pill.classList.toggle('pen-on',wPenActive);
+  pill.textContent=wPenActive?'Đang viết bằng bút cảm ứng · Đã bật chống chạm lòng bàn tay':'Hỗ trợ chuột, cảm ứng & Apple Pencil / S Pen';
+}
+function drawPressurePath(ctx,pts,baseW,color,scaleX=1,scaleY=1){
+  if(!pts||!pts.length)return;
+  ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineCap='round';ctx.lineJoin='round';
+  if(pts.length===1){
+    const w=Math.max(2,baseW*(0.45+(pts[0].p||0.5)*1.1));
+    ctx.beginPath();ctx.arc(pts[0].x*scaleX,pts[0].y*scaleY,w/2,0,Math.PI*2);ctx.fill();
+    return;
+  }
+  for(let k=1;k<pts.length;k++){
+    const a=pts[k-1],b=pts[k];
+    const p=((a.p||0.5)+(b.p||0.5))/2;
+    ctx.lineWidth=Math.max(2,baseW*(0.45+p*1.1));
+    ctx.beginPath();ctx.moveTo(a.x*scaleX,a.y*scaleY);ctx.lineTo(b.x*scaleX,b.y*scaleY);ctx.stroke();
+  }
+}
+
 function fitPad(){
   const r=cv.getBoundingClientRect(),d=window.devicePixelRatio||1;if(!r.width)return;
   cv.width=Math.round(r.width*d);cv.height=Math.round(r.height*d);
@@ -727,29 +1238,112 @@ function fitPad(){
 }
 function redrawFreeCanvas(){
   cx.save();cx.setTransform(1,0,0,1,0,0);cx.clearRect(0,0,cv.width,cv.height);cx.restore();
-  cx.strokeStyle=getComputedStyle(document.body).color;
-  for(const st of strokesHist){
-    if(!st.length)continue;
-    cx.beginPath();cx.moveTo(st[0].x,st[0].y);
-    if(st.length===1)cx.lineTo(st[0].x+.01,st[0].y);
-    else for(let k=1;k<st.length;k++)cx.lineTo(st[k].x,st[k].y);
-    cx.stroke();
-  }
+  const col=getComputedStyle(document.body).color;
+  for(const st of strokesHist)drawPressurePath(cx,st,9.5,col);
 }
-const pt=e=>{const r=cv.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}};
+const pt=e=>{
+  const r=cv.getBoundingClientRect();
+  const pr=(e.pointerType==='pen'&&Number.isFinite(e.pressure)&&e.pressure>0)?e.pressure:0.48;
+  return {x:e.clientX-r.left,y:e.clientY-r.top,p:pr};
+};
 cv.addEventListener('pointerdown',e=>{
-  if(wMode!=='free')return;
+  const freeCanvasActive=wMode==='free'||!pad.classList.contains('hw-on');
+  if(!freeCanvasActive)return;
+  if(e.pointerType==='pen'){if(!wPenActive){wPenActive=true;updateStylusPill();}}
+  else if(e.pointerType==='touch'&&wPenActive)return;
+  else if(e.pointerType==='mouse'&&wPenActive){wPenActive=false;updateStylusPill();}
   e.preventDefault();drawing=true;const p=pt(e);curStroke=[p];strokesHist.push(curStroke);
   try{cv.setPointerCapture(e.pointerId);}catch(_){}
-  cx.strokeStyle=getComputedStyle(document.body).color;
-  cx.beginPath();cx.moveTo(p.x,p.y);cx.lineTo(p.x+.01,p.y);cx.stroke();
+  drawPressurePath(cx,[p],9.5,getComputedStyle(document.body).color);
 });
 cv.addEventListener('pointermove',e=>{
-  if(!drawing||wMode!=='free')return;
-  e.preventDefault();const p=pt(e);curStroke.push(p);
-  cx.beginPath();cx.moveTo(curStroke[curStroke.length-2].x,curStroke[curStroke.length-2].y);cx.lineTo(p.x,p.y);cx.stroke();
+  const freeCanvasActive=wMode==='free'||!pad.classList.contains('hw-on');
+  if(!drawing||!freeCanvasActive)return;
+  if(e.pointerType==='touch'&&wPenActive)return;
+  e.preventDefault();const p=pt(e);const prev=curStroke[curStroke.length-1];curStroke.push(p);
+  drawPressurePath(cx,[prev,p],9.5,getComputedStyle(document.body).color);
 });
 ['pointerup','pointercancel'].forEach(ev=>cv.addEventListener(ev,()=>{drawing=false;}));
+
+function initExtraMiniPads(ch){
+  const grid=$('#w-extra-grid');if(!grid)return;
+  grid.innerHTML=[0,1,2].map(idx=>`
+    <div class="w-extra-cell" data-excell="${idx}">
+      <div class="w-extra-ghost">${ch}</div>
+      <canvas aria-label="Ô luyện thêm ${idx+1}"></canvas>
+      <button type="button" class="w-extra-clr" aria-label="Xóa ô ${idx+1}">×</button>
+    </div>`).join('');
+  $$('.w-extra-cell',grid).forEach(cell=>{
+    const mcv=$('canvas',cell),mcx=mcv.getContext('2d'),clr=$('.w-extra-clr',cell);
+    let mDrawing=false,mStrokes=[],mCur=[];
+    const col=getComputedStyle(document.body).color;
+    const resizeMini=()=>{
+      const r=mcv.getBoundingClientRect(),d=window.devicePixelRatio||1;
+      if(!r.width)return;
+      mcv.width=Math.round(r.width*d);mcv.height=Math.round(r.height*d);
+      mcx.setTransform(d,0,0,d,0,0);
+      mStrokes.forEach(s=>drawPressurePath(mcx,s,5,col));
+    };
+    requestAnimationFrame(resizeMini);
+    const mPt=e=>{
+      const r=mcv.getBoundingClientRect();
+      const pr=(e.pointerType==='pen'&&Number.isFinite(e.pressure)&&e.pressure>0)?e.pressure:0.48;
+      return {x:e.clientX-r.left,y:e.clientY-r.top,p:pr};
+    };
+    mcv.addEventListener('pointerdown',e=>{
+      if(e.pointerType==='pen'&&!wPenActive){wPenActive=true;updateStylusPill();}
+      else if(e.pointerType==='touch'&&wPenActive)return;
+      e.preventDefault();
+      if(!mcv.width)resizeMini();
+      mDrawing=true;const p=mPt(e);mCur=[p];mStrokes.push(mCur);
+      try{mcv.setPointerCapture(e.pointerId);}catch(_){}
+      drawPressurePath(mcx,[p],5,getComputedStyle(document.body).color);
+    });
+    mcv.addEventListener('pointermove',e=>{
+      if(!mDrawing)return;
+      if(e.pointerType==='touch'&&wPenActive)return;
+      e.preventDefault();const p=mPt(e),prev=mCur[mCur.length-1];mCur.push(p);
+      drawPressurePath(mcx,[prev,p],5,getComputedStyle(document.body).color);
+    });
+    ['pointerup','pointercancel'].forEach(ev=>mcv.addEventListener(ev,()=>{mDrawing=false;}));
+    clr.onclick=()=>{mStrokes=[];mcx.save();mcx.setTransform(1,0,0,1,0,0);mcx.clearRect(0,0,mcv.width,mcv.height);mcx.restore();};
+  });
+}
+
+function showWriteComparison(sourceMode){
+  const card=$('#w-compare-card'),c=CHARS[ci];
+  if(!card||!c)return;
+  card.classList.remove('hide');
+  const sub=$('#w-cmp-sub');
+  if(sub)sub.textContent=sourceMode==='guided'?'Bản vừa tô nét vs Chữ mẫu chuẩn':'Bản bạn tự viết vs Chữ mẫu chuẩn';
+  const stdBox=$('#wc-std-box');
+  if(stdBox){
+    stdBox.innerHTML=`<div class="w-std-ch">${c.ch}</div><button type="button" class="w-cmp-std-say" aria-label="Nghe ${c.ch}"><svg class="ic"><use href="#i-vol"/></svg></button>`;
+    const sb=$('.w-cmp-std-say',stdBox);if(sb)sb.onclick=()=>speak(c.ch,.7);
+  }
+  const uWrap=$('#wc-user-wrap');
+  if(uWrap){
+    const hwSvg=sourceMode==='guided'?$('#hw-target svg'):null;
+    if(hwSvg){
+      const clone=hwSvg.cloneNode(true);
+      clone.removeAttribute('width');clone.removeAttribute('height');
+      uWrap.innerHTML='';uWrap.appendChild(clone);
+    }else{
+      uWrap.innerHTML='<canvas id="wc-user-cv"></canvas>';
+      const ucv=$('#wc-user-cv'),ucx=ucv.getContext('2d');
+      requestAnimationFrame(()=>{
+        const srcRect=cv.getBoundingClientRect(),dstRect=ucv.getBoundingClientRect(),d=window.devicePixelRatio||1;
+        if(!dstRect.width||!srcRect.width)return;
+        ucv.width=Math.round(dstRect.width*d);ucv.height=Math.round(dstRect.height*d);
+        ucx.setTransform(d,0,0,d,0,0);
+        const sx=dstRect.width/srcRect.width,sy=dstRect.height/srcRect.height;
+        const col=getComputedStyle(document.body).color;
+        strokesHist.forEach(st=>drawPressurePath(ucx,st,9.5*sx,col,sx,sy));
+      });
+    }
+  }
+  initExtraMiniPads(c.ch);
+}
 
 function setWriteFb(kind,msg){
   const fb=$('#w-fb');
@@ -762,6 +1356,7 @@ function renderStrokeStrip(){
   if(!hwCharData||!Array.isArray(hwCharData.strokes)){strip.innerHTML='';return;}
   const total=hwCharData.strokes.length;
   $('#w-strokes-tag').textContent=`${total} nét`;
+  $('#w-strokes-tag').classList.remove('hide');
   $('#w-stroke-cur').textContent=`Nét ${Math.min(hwStrokeIdx+1,total)} / ${total}`;
   strip.innerHTML=hwCharData.strokes.map((_,idx)=>{
     const paths=hwCharData.strokes.slice(0,idx+1).map((d,k)=>`<path d="${d}" fill="${k===idx?'var(--accent)':'var(--ink)'}" opacity="${k===idx?1:.45}"/>`).join('');
@@ -795,16 +1390,30 @@ async function setupPadForChar(){
   hwBox.innerHTML='';
   runMistakes=0;runHints=0;runDone=false;
   $('#w-result-box').classList.add('hide');
+  if($('#w-compare-card'))$('#w-compare-card').classList.add('hide');
 
-  const c=CHARS[ci];if(!c)return;
+  const l=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
+  const wSub=$('#w-sub');if(wSub)wSub.textContent=`${l?(l.code||'Bài học'):'Bài học'} • Thứ tự nét & đối chiếu mẫu`;
+
+  if(!CHARS||!CHARS.length){
+    $('#wch').textContent='—';$('#wpy').textContent='Bài học chưa có chữ tập viết';
+    $('#wghost').textContent='';$('#wcount').textContent='0 / 0';$('#wbar').style.width='0%';
+    $('#w-strokes-tag').classList.add('hide');$('#w-rad-tag').classList.add('hide');
+    return;
+  }
+  if(ci>=CHARS.length)ci=0;
+  const c=enrichCharMeta(CHARS[ci]);
+  CHARS[ci]=c;
   const rec=getWriteRec(c.id);
   $('#wch').textContent=c.ch;
-  $('#wpy').textContent=`${c.py} • ${c.vi}`;
+  $('#wpy').textContent=(c.py||c.vi)?`${c.py||''}${c.py&&c.vi?' • ':''}${c.vi||''}`:'Chưa có phiên âm';
   $('#wghost').textContent=c.ch;
   $('#wcount').textContent=`${ci+1} / ${CHARS.length}`;
   $('#wbar').style.width=((ci+1)/CHARS.length*100)+'%';
   $('#w-strokes-tag').textContent=`${c.strokes} nét`;
+  $('#w-strokes-tag').classList.toggle('hide',!c.strokes);
   $('#w-rad-tag').textContent=`Bộ: ${c.rad}`;
+  $('#w-rad-tag').classList.toggle('hide',!c.rad);
   $('#w-prog-tag').textContent=rec.guidedCompleted>0?`Đã viết ${rec.guidedCompleted} lần`:rec.selfStatus==='ok'?'Đã viết được':rec.needsPractice?'Cần luyện lại':'Chưa luyện';
 
   $$('#wmode button').forEach(b=>b.classList.toggle('on',b.dataset.m===wMode));
@@ -818,7 +1427,7 @@ async function setupPadForChar(){
     $('#wf-peek span').textContent='Hiện mẫu';
     hwBox.style.pointerEvents='none';cv.style.pointerEvents='auto';
     strokesHist=[];fitPad();
-    setWriteFb('','Tự viết chữ từ trí nhớ trên khung. Dùng “Hiện mẫu” để tự đối chiếu.');
+    setWriteFb('','Tự viết chữ từ trí nhớ trên khung. Xong bấm “Đối chiếu mẫu” để so 2 ô và luyện thêm.');
     return;
   }
 
@@ -837,6 +1446,7 @@ async function setupPadForChar(){
     hwCharData=data;pad.classList.add('hw-on');
     c.strokes=data.strokes.length;
     $('#w-strokes-tag').textContent=`${c.strokes} nét`;
+    $('#w-strokes-tag').classList.remove('hide');
 
     if(wMode==='order'){
       hwStrokeIdx=0;
@@ -886,28 +1496,35 @@ async function setupPadForChar(){
           hintsUsed:prev.hintsUsed+runHints,
           needsPractice:summary.totalMistakes>=3
         });
-        setWriteFb('ok',`Bạn đã hoàn thành chữ “${c.ch}”!`);
+        setWriteFb('ok',`Bạn đã hoàn thành chữ “${c.ch}”! Hãy đối chiếu bên dưới hoặc luyện thêm.`);
         $('#wr-strokes').textContent=`${totalSt}/${totalSt}`;
         $('#wr-mistakes').textContent=summary.totalMistakes;
         $('#wr-hints').textContent=runHints;
         $('#w-result-box').classList.remove('hide');
         $('#w-prog-tag').textContent=`Đã viết ${prev.guidedCompleted+1} lần`;
+        showWriteComparison('guided');
       }
     });
   }catch(err){
     if(seq!==loadSeq)return;
-    // Fallback an toàn khi offline hoặc chữ chưa có dữ liệu nét: cho phép tự viết trên Canvas
+    // Fallback an toàn khi offline hoặc chữ chưa có dữ liệu nét: cho phép tự viết trên Canvas + đối chiếu 2 ô
     hwCharData=null;pad.classList.remove('hw-on');$('#w-strip').innerHTML='';
     cv.style.pointerEvents='auto';hwBox.style.pointerEvents='none';fitPad();
-    setWriteFb('no','Không tải được dữ liệu thứ tự nét (cần mạng hoặc chữ chưa có dữ liệu). Bạn có thể tự viết trên khung hoặc chuyển sang chế độ Tự viết.');
+    setWriteFb('no','Chế độ ngoại tuyến: hãy tự viết trực tiếp trên khung hoặc chuyển sang tab “Tự viết” để đối chiếu mẫu 2 ô.');
   }
 }
 
+function refreshWritingForLesson(){
+  ci=0;
+  setupPadForChar();
+}
+window.refreshWritingForLesson=refreshWritingForLesson;
+
 function showChar(){setupPadForChar();}
-$('#wprev').onclick=()=>{ci=(ci+CHARS.length-1)%CHARS.length;showChar();};
-const nextChar=()=>{ci=(ci+1)%CHARS.length;showChar();};
+$('#wprev').onclick=()=>{if(!CHARS.length)return;ci=(ci+CHARS.length-1)%CHARS.length;showChar();};
+const nextChar=()=>{if(!CHARS.length)return;ci=(ci+1)%CHARS.length;showChar();};
 $('#wnext').onclick=nextChar;$('#wr-next').onclick=nextChar;
-$('#wsay').onclick=()=>speak(CHARS[ci].ch,.7);
+$('#wsay').onclick=()=>{if(CHARS[ci])speak(CHARS[ci].ch,.7);};
 
 $('#wmode').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
@@ -956,22 +1573,31 @@ $('#w-outline').onclick=()=>{
 $('#w-reset-quiz').onclick=()=>setupPadForChar();
 $('#wr-again').onclick=()=>setupPadForChar();
 
-// Điều khiển chế độ Tự viết
+// Điều khiển chế độ Tự viết + Đối chiếu 2 ô
 $('#wf-undo').onclick=()=>{if(!strokesHist.length)return;strokesHist.pop();redrawFreeCanvas();};
-$('#wf-clear').onclick=()=>{strokesHist=[];redrawFreeCanvas();};
+$('#wf-clear').onclick=()=>{strokesHist=[];redrawFreeCanvas();if($('#w-compare-card'))$('#w-compare-card').classList.add('hide');};
 $('#wf-peek').onclick=()=>{
   const on=pad.classList.toggle('peek');
   $('#wf-peek span').textContent=on?'Ẩn mẫu':'Hiện mẫu';
 };
+if($('#wf-compare'))$('#wf-compare').onclick=()=>{
+  if(!strokesHist.length){toast('Hãy viết chữ vào khung trước khi đối chiếu');return;}
+  showWriteComparison('free');
+  const cc=$('#w-compare-card');if(cc)cc.scrollIntoView({behavior:'smooth',block:'nearest'});
+};
 $('#wf-mark-retry').onclick=()=>{
-  const c=CHARS[ci],prev=getWriteRec(c.id);
+  const c=CHARS[ci];if(!c)return;
+  const prev=getWriteRec(c.id);
   saveWriteRec(c.id,{attempts:prev.attempts+1,selfStatus:'retry',needsPractice:true});
   toast(`Đã đánh dấu “${c.ch}” cần luyện lại`);
   setupPadForChar();
 };
 $('#wf-mark-ok').onclick=()=>{
-  const c=CHARS[ci],prev=getWriteRec(c.id);
+  const c=CHARS[ci];if(!c)return;
+  const prev=getWriteRec(c.id);
   saveWriteRec(c.id,{attempts:prev.attempts+1,selfStatus:'ok',needsPractice:false});
+  if(typeof markLessonSectionDone==='function')markLessonSectionDone(store.activeLessonId,'writing',true);
+  recordLearningEvent({type:'writing',skill:'write',title:`Tự viết: ${c.ch}`,targetId:c.id,view:'writing',result:'Đã viết được'});
   toast(`Đã lưu thực hành chữ “${c.ch}”`);
   nextChar();
 };

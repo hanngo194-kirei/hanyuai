@@ -392,6 +392,10 @@ function onViewEntered(id){
   if(id==='dialog'&&typeof dialogCtrl!=='undefined')dialogCtrl.enter();
   if(id==='copy'&&typeof copyCtrl!=='undefined')copyCtrl.enter();
   if(id==='trans'&&typeof transCtrl!=='undefined')transCtrl.enter();
+  if(id==='listen'&&typeof listenCtrl!=='undefined'&&listenCtrl.syncHeader)listenCtrl.syncHeader();
+  if(id==='speak'&&typeof speakCtrl!=='undefined'&&speakCtrl.render)speakCtrl.render();
+  if(id==='review'&&typeof renderReviewDash==='function')renderReviewDash();
+  if(id==='wordbook'&&typeof renderWordbook==='function')renderWordbook();
   if(id==='dialog'&&typeof LISTEN_DIALOG!=='undefined'&&LISTEN_DIALOG.length&&typeof markLessonSectionDone==='function'){
     markLessonSectionDone(store.activeLessonId,'dialog',true);
   }

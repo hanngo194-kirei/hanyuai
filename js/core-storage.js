@@ -86,6 +86,8 @@ function route(forced){
   document.body.classList.toggle('view-dialog',id==='dialog');
   document.body.classList.toggle('view-copy',id==='copy');
   document.body.classList.toggle('view-trans',id==='trans');
+  document.body.classList.toggle('view-listen',id==='listen');
+  document.body.classList.toggle('view-writing',id==='writing');
   try{window.scrollTo(0,0);}catch(_){}
   if(id!=='listen'&&window._stopListen)window._stopListen();
   if(id!=='speak'&&window._stopSpeak)window._stopSpeak();
@@ -138,7 +140,7 @@ function defaultStore(){
     settings:{showPinyin:true,showVi:true,flashMode:'zh',slowAudio:false,showOptionalExt:true},
     exercises:{attempts:0,bestPct:0,sessions:[],active:null},
     grammarQuiz:{attempts:0,bestPct:0,sessions:[]},
-    listening:{speed:1,showZh:true,showPy:true,showVi:false,attempts:0,bestPct:0,sessions:[],wrongIds:[]},
+    listening:{speed:1,showZh:true,showPy:true,showVi:false,attempts:0,bestPct:0,sessions:[],wrongIds:[],toneMistakes:{1:0,2:0,3:0,4:0}},
     writing:{mode:'trace',chars:{}},
     speaking:{mode:'sentence',maxSec:15,items:{}},
     goals:{minutes:20,newWords:5,reviews:10,listen:1,speak:3,write:2},
@@ -227,6 +229,9 @@ function migrateStore(raw){
     base.listening.bestPct=Number.isFinite(L.bestPct)?L.bestPct:0;
     base.listening.sessions=Array.isArray(L.sessions)?L.sessions.slice(-20):[];
     base.listening.wrongIds=Array.isArray(L.wrongIds)?L.wrongIds:[];
+    if(L.toneMistakes&&typeof L.toneMistakes==='object'){
+      [1,2,3,4].forEach(t=>{const n=Number(L.toneMistakes[t]);if(Number.isFinite(n)&&n>=0)base.listening.toneMistakes[t]=Math.round(n);});
+    }
   }
   if(raw.writing&&typeof raw.writing==='object'){
     if(['order','trace','guided','free'].includes(raw.writing.mode))base.writing.mode=raw.writing.mode;
@@ -257,6 +262,7 @@ function migrateStore(raw){
           assessRequests:Number.isFinite(v.assessRequests)?v.assessRequests:0,
           lastPracticedAt:Number.isFinite(v.lastPracticedAt)?v.lastPracticedAt:null,
           lastResult:v.lastResult&&typeof v.lastResult==='object'?v.lastResult:null,
+          selfStatus:(v.selfStatus==='ok'||v.selfStatus==='retry')?v.selfStatus:null,
           needsPractice:Boolean(v.needsPractice),
           history:Array.isArray(v.history)?v.history.slice(-10):[]
         };
@@ -402,22 +408,32 @@ function applySettingsUI(){
   });
 }
 
+function getReviewWordPool(){
+  const seen=new Set(),pool=[];
+  const add=w=>{if(w&&w.id&&!seen.has(w.id)){seen.add(w.id);pool.push(w);}};
+  (typeof WORDS!=='undefined'&&Array.isArray(WORDS)?WORDS:[]).forEach(add);
+  Object.keys(store.words||{}).forEach(id=>add(wordById(id)));
+  (store.difficultIds||[]).forEach(id=>add(wordById(id)));
+  return pool;
+}
+
 function updateGlobalCounts(){
   const now=Date.now();
-  const dueCnt=WORDS.filter(w=>isDue(w.id,now)).length;
-  const newCnt=WORDS.filter(w=>getWordState(w.id).status==='new').length;
+  const pool=getReviewWordPool();
+  const dueCnt=pool.filter(w=>isDue(w.id,now)).length;
+  const newCnt=pool.filter(w=>getWordState(w.id).status==='new').length;
   const hardCnt=store.difficultIds.filter(id=>wordById(id)).length;
   const favCnt=store.favoriteIds.filter(id=>wordById(id)).length;
-  const wrongCnt=WORDS.filter(w=>getWordState(w.id).wrongCount>0).length;
+  const wrongCnt=pool.filter(w=>getWordState(w.id).wrongCount>0).length;
 
   const set=(s,v)=>{const el=$(s);if(el)el.textContent=v;};
   set('#home-due',`${dueCnt} từ đến hạn`);
   set('#srs-due-n',dueCnt);
   set('#srs-hard-n',hardCnt);
-  set('#srs-total-n',WORDS.length);
+  set('#srs-total-n',pool.length);
   set('#cnt-due',dueCnt);
   set('#cnt-hard',hardCnt);
-  set('#cnt-all',WORDS.length);
+  set('#cnt-all',pool.length);
   set('#cnt-new',newCnt);
   set('#wb-cnt-hard',hardCnt);
   set('#wb-cnt-fav',favCnt);

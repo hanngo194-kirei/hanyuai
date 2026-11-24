@@ -9,7 +9,8 @@ function makeDeck(root,opts){
   }
   function applyMask(){
     const card=f('card'),exbox=f('exbox');if(!card)return;
-    const mode=opts.fixedMode||store.settings.flashMode;
+    let mode=opts.fixedMode||store.settings.flashMode;
+    if(root&&root.id==='r-session'&&mode==='vi')mode='zh';
     const zhEl=f('zh'),pyRow=f('pyrow'),viEl=f('vi'),lp=f('lprompt'),hint=f('hint'),spkBig=f('spkBig');
     const hasWord=queue.length>0&&!session.done;
     card.classList.toggle('masked',!revealed&&hasWord);
@@ -34,27 +35,34 @@ function makeDeck(root,opts){
   function renderSummary(){
     const sumEl=f('summary');if(!sumEl)return;
     const showSum=session.done;sumEl.classList.toggle('hide',!showSum);
-    if(opts.onStateChange)opts.onStateChange({empty:queue.length===0,done:showSum});
+    if(opts.onStateChange)opts.onStateChange({empty:queue.length===0,done:showSum,len:queue.length});
     if(!showSum)return;
     sumEl.innerHTML=`<div class="sphead"><svg class="ic"><use href="#i-award"/></svg><div><h3>Hoàn thành phiên ôn!</h3><span class="muted small">Bạn đã ôn ${session.reviewed} lượt thẻ</span></div></div>
       <div class="sum-grid" style="margin-top:12px"><div><b style="color:var(--good)">${session.r2}</b><span>Đã thuộc</span></div><div><b style="color:var(--gold)">${session.r1}</b><span>Hơi nhớ</span></div><div><b>${session.r0}</b><span>Chưa nhớ</span></div></div>
       <div class="btnrow" style="margin-top:12px"><button type="button" class="btn sm" data-f="restart"><svg class="ic"><use href="#i-refresh"/></svg>Ôn lại phiên mới</button></div>`;
     const rb=$('[data-f="restart"]',sumEl);if(rb)rb.onclick=()=>{buildQueue();render();};
   }
+  function resolveExample(w){
+    if(w.ex)return {ex:w.ex,exPy:w.exPy||'',exVi:w.exVi||''};
+    const pool=[...(typeof SENT!=='undefined'&&Array.isArray(SENT)?SENT:[]),...(typeof LISTEN_DIALOG!=='undefined'&&Array.isArray(LISTEN_DIALOG)?LISTEN_DIALOG:[])];
+    const match=pool.find(s=>s&&s.zh&&s.zh.includes(w.zh));
+    return match?{ex:match.zh,exPy:match.py||'',exVi:match.vi||''}:{ex:'',exPy:'',exVi:''};
+  }
   function render(){
     if(i>=queue.length&&queue.length>0)i=0;
     const w=queue[i];
-    if(f('count'))f('count').textContent=queue.length?`${i+1} / ${queue.length} từ`:'0 / 0 từ';
+    if(f('count'))f('count').textContent=queue.length?(root&&root.id==='r-session'?`${i+1} / ${queue.length}`:`${i+1} / ${queue.length} từ`):(root&&root.id==='r-session'?'0 / 0':'0 / 0 từ');
     const bar=f('bar');if(bar)bar.style.width=queue.length?((i+1)/queue.length*100)+'%':'0%';
     if(!w||session.done){renderSummary();updateGlobalCounts();if(opts.onRender)opts.onRender(null);return;}
     if(f('summary'))f('summary').classList.add('hide');
-    if(opts.onStateChange)opts.onStateChange({empty:false,done:false});
+    if(opts.onStateChange)opts.onStateChange({empty:false,done:false,len:queue.length});
     const zhEl=f('zh');zhEl.textContent=w.zh;zhEl.classList.toggle('long',(w.zh||'').length>=3);
     f('py').textContent=w.py;f('vi').textContent=w.vi;
-    const exBox=f('exbox');if(exBox)exBox.classList.toggle('hide',!w.ex);
-    f('ex').innerHTML=highlightText(w.ex,w.zh);
-    f('exPy').innerHTML=highlightText(w.exPy,w.py);
-    f('exVi').textContent=w.exVi;
+    const exData=resolveExample(w);
+    const exBox=f('exbox');if(exBox)exBox.classList.toggle('hide',!exData.ex);
+    f('ex').innerHTML=highlightText(exData.ex,w.zh);
+    f('exPy').innerHTML=highlightText(exData.exPy,w.py);
+    f('exVi').textContent=exData.exVi;
     const srsEl=f('srs');if(srsEl)srsEl.textContent=formatSrsBadge(w.id);
     const st=f('star');if(st){const on=isFavorite(w.id);st.classList.toggle('on',on);st.setAttribute('aria-pressed',String(on));}
     const hb=f('hard');if(hb){const on=isDifficult(w.id);hb.classList.toggle('on',on);hb.setAttribute('aria-pressed',String(on));}
@@ -67,7 +75,7 @@ function makeDeck(root,opts){
   on('next',()=>go(1));on('prev',()=>go(-1));
   on('spk',()=>cur()&&speak(cur().zh,audioRate()));
   on('spkBig',()=>cur()&&speak(cur().zh,audioRate()));
-  on('exSpk',()=>cur()&&speak(cur().ex,audioRate()));
+  on('exSpk',()=>{const w=cur();if(!w)return;const exData=resolveExample(w);if(exData.ex)speak(exData.ex,audioRate());});
   on('vc-repeat',()=>{const w=cur();if(!w)return;speak(w.zh,audioRate());toast(`Đọc theo: ${w.zh}${w.py?' ('+w.py+')':''}`);});
   on('tog-py',()=>{store.settings.showPinyin=!store.settings.showPinyin;saveStore(store);applySettingsUI();applyMask();});
   on('tog-vi',()=>{store.settings.showVi=!store.settings.showVi;saveStore(store);applySettingsUI();applyMask();});
@@ -98,7 +106,14 @@ function makeDeck(root,opts){
     }else go(1);
   }));
   buildQueue();
-  return {render,refreshMask:applyMask,reset(){buildQueue();render();},openWord(id){buildQueue();const idx=queue.findIndex(w=>w.id===id);if(idx>=0)i=idx;revealed=false;render();}};
+  return {
+    render,
+    refreshMask:applyMask,
+    reset(){buildQueue();render();},
+    getQueueIds(){return queue.map(w=>w.id).join(',');},
+    isSessionDone(){return session.done;},
+    openWord(id){buildQueue();const idx=queue.findIndex(w=>w.id===id);if(idx>=0)i=idx;revealed=false;render();}
+  };
 }
 
 let vcExtTab='hacknao',vcExtCharIdx=0,vcMmPage=0,vcCurWord=null;
@@ -263,91 +278,135 @@ if($('#vc-ext-panel'))$('#vc-ext-panel').addEventListener('click',e=>{
 const vocab=makeDeck($('#vocab'),{fixedMode:'zh',listFn:()=>WORDS,sessionQueue:false,onRender(w){vcCurWord=w;vcExtCharIdx=0;vcMmPage=0;renderVocabExtension(w);},onMutate(){vocab.render();renderReviewDash();renderWordbook();}});
 window.renderFlash=()=>{vocab.reset();try{renderReviewDash();renderWordbook();}catch(_){}};
 
-/* ---------- Màn 2: Ôn tập theo lịch ---------- */
-let rmode='today',rCustomIds=null,inReviewSession=false;
-function getReviewQueue(){
+/* ---------- Màn 2: Ôn tập SRS chồng thẻ ---------- */
+let rmode='today',rCustomIds=null,rUserPicked=false,inReviewSession=true;
+function getReviewQueue(forcedMode){
   if(rCustomIds)return rCustomIds.map(wordById).filter(Boolean);
-  const now=Date.now();
-  if(rmode==='today')return WORDS.filter(w=>isDue(w.id,now));
-  if(rmode==='hard')return WORDS.filter(w=>isDifficult(w.id));
-  if(rmode==='new')return WORDS.filter(w=>getWordState(w.id).status==='new');
-  return WORDS;
+  const pool=(typeof getReviewWordPool==='function')?getReviewWordPool():WORDS;
+  const m=forcedMode||rmode,now=Date.now();
+  if(m==='today')return pool.filter(w=>isDue(w.id,now));
+  if(m==='hard')return pool.filter(w=>isDifficult(w.id));
+  if(m==='new')return pool.filter(w=>getWordState(w.id).status==='new');
+  return pool;
 }
+function updateReviewFooter(){
+  updateGlobalCounts();
+  const weakEl=$('#rv-weak-txt');if(!weakEl)return;
+  const tm=(store&&store.listening&&store.listening.toneMistakes)||{};
+  let bestTone=0,maxToneErr=0;
+  [1,2,3,4].forEach(t=>{const c=Number(tm[t])||0;if(c>maxToneErr){maxToneErr=c;bestTone=t;}});
+  if(maxToneErr>0){
+    weakEl.innerHTML=`Sai nhiều: <b>thanh ${bestTone}</b> (${maxToneErr} lần)`;
+    return;
+  }
+  const pool=(typeof getReviewWordPool==='function')?getReviewWordPool():WORDS;
+  let weakW=null,maxW=0;
+  pool.forEach(w=>{const wc=getWordState(w.id).wrongCount||0;if(wc>maxW){maxW=wc;weakW=w;}});
+  if(weakW){
+    weakEl.innerHTML=`Hay quên: <b>${escH(weakW.zh)}</b> (${maxW} lần)`;
+    return;
+  }
+  const hardCnt=store.difficultIds.filter(id=>wordById(id)).length;
+  weakEl.innerHTML=`Từ khó: <b>${hardCnt}</b> · Tổng: <b>${pool.length}</b>`;
+}
+window.updateReviewFooter=updateReviewFooter;
+
+function renderReviewBanner(autoSwitched){
+  const bn=$('#r-mode-banner');if(!bn)return;
+  if(rCustomIds){
+    bn.classList.remove('hide');
+    bn.innerHTML=`<span>Đang ôn danh sách từ Sổ từ (${rCustomIds.length} từ)</span><button type="button" id="r-exit-custom">Xem tất cả</button>`;
+    const eb=$('#r-exit-custom');if(eb)eb.onclick=()=>{rCustomIds=null;rUserPicked=true;rmode='all';renderReviewDash();};
+    return;
+  }
+  if(autoSwitched){
+    const pool=(typeof getReviewWordPool==='function')?getReviewWordPool():WORDS;
+    bn.classList.remove('hide');
+    bn.innerHTML=`<span>Chưa có từ đến hạn hôm nay · Đang mở tất cả ${pool.length} từ để luyện ngay</span>`;
+    return;
+  }
+  bn.classList.add('hide');bn.innerHTML='';
+}
+
 function renderReviewDash(){
   updateGlobalCounts();
-  const list=getReviewQueue();
-  const btn=$('#r-start-btn');
-  if(btn)btn.innerHTML=`<svg class="ic f"><use href="#i-play"/></svg>Bắt đầu ôn (${list.length} từ)`;
-
-  const now=Date.now();
-  const dueList=WORDS.filter(w=>isDue(w.id,now));
-  const hardList=WORDS.filter(w=>isDifficult(w.id));
-  const newList=WORDS.filter(w=>getWordState(w.id).status==='new');
-  const cards=[];
-  if(rmode==='today'){
-    if(dueList.length)cards.push({m:'today',ic:'book',t:'Bài 4 · Sở thích',c:`${dueList.length} từ`,p:'Đến hạn hôm nay'});
-    if(hardList.length)cards.push({m:'hard',ic:'layers',t:'Từ khó tổng hợp',c:`${hardList.length} từ`,p:'Ôn lại (từ khó)'});
-    if(newList.length)cards.push({m:'new',ic:'bulb',t:'Từ mới chưa học',c:`${newList.length} từ`,p:'Chủ động học mới'});
-    if(!dueList.length&&!hardList.length&&!newList.length)cards.push({m:'all',ic:'layers',t:'Tất cả từ vựng',c:`${WORDS.length} từ`,p:'Ôn tự do'});
-  }else if(rmode==='hard'){
-    cards.push({m:'hard',ic:'flag',t:'Từ khó tổng hợp',c:`${hardList.length} từ`,p:'Danh sách từ khó'});
-  }else if(rmode==='new'){
-    cards.push({m:'new',ic:'bulb',t:'Từ mới Bài 4',c:`${newList.length} từ`,p:'Chưa học'});
-  }else{
-    cards.push({m:'all',ic:'layers',t:'Bài 4 · Sở thích (Toàn bộ)',c:`${WORDS.length} từ`,p:'Tất cả'});
+  const pool=(typeof getReviewWordPool==='function')?getReviewWordPool():WORDS;
+  const dueList=getReviewQueue('today');
+  let autoSwitched=false;
+  if(!rCustomIds&&!rUserPicked&&rmode==='today'&&!dueList.length&&pool.length){
+    rmode='all';
+    autoSwitched=true;
   }
-  $('#r-decks').innerHTML=cards.map(d=>`<button type="button" class="deck-item" data-dm="${d.m}"><span class="ib"><svg class="ic"><use href="#i-${d.ic}"/></svg></span><div class="mid"><b>${d.t}</b><span>${d.c}</span></div><span class="due-pill">${d.p}</span><svg class="ic" style="color:var(--accent)"><use href="#i-chev"/></svg></button>`).join('');
+  $$('#rmode button').forEach(b=>b.classList.toggle('on',b.dataset.m===rmode));
+  renderReviewBanner(autoSwitched);
+  if(store.settings.flashMode==='vi'){
+    const zb=$('#review [data-f="fmode"] [data-fm="zh"]');
+    if(zb)zb.classList.add('on');
+  }
+  $('#r-session').classList.remove('hide');
+  const nextIds=getReviewQueue().map(w=>w.id).join(',');
+  if(rev.getQueueIds()!==nextIds||rev.isSessionDone())rev.reset();
+  else rev.render();
+  updateReviewFooter();
 }
 function openReviewSession(mode,customIds,openId){
   if(mode)rmode=mode;
   rCustomIds=customIds||null;
+  rUserPicked=true;
   inReviewSession=true;
-  $('#r-decks').classList.add('hide');
-  $('#r-start-btn').classList.add('hide');
-  $('#rmode').classList.add('hide');
+  $$('#rmode button').forEach(b=>b.classList.toggle('on',b.dataset.m===rmode));
+  renderReviewBanner(false);
   $('#r-session').classList.remove('hide');
   if(openId)rev.openWord(openId);else rev.reset();
+  updateReviewFooter();
 }
 function closeReviewSession(){
-  inReviewSession=false;rCustomIds=null;
-  $('#r-session').classList.add('hide');
-  $('#r-decks').classList.remove('hide');
-  $('#r-start-btn').classList.remove('hide');
-  $('#rmode').classList.remove('hide');
+  rCustomIds=null;rUserPicked=false;rmode='today';
   renderReviewDash();
 }
 const rev=makeDeck($('#r-session'),{
-  listFn:getReviewQueue,
+  listFn:()=>getReviewQueue(),
   sessionQueue:true,
-  onStateChange({empty,done}){
+  onStateChange({empty,done,len}){
     const hideCard=empty||done;
-    $$('#r-session .flash,#r-session .rate3,#r-session .fmodes').forEach(el=>el.classList.toggle('hide',hideCard));
+    $$('#r-session .rv-stack-wrap,#r-session [data-f="exbox"],#r-session .rv-rate3,#r-session .rv-nav-row,#r-session .bar').forEach(el=>el.classList.toggle('hide',hideCard));
+    const sw=$('#rv-stack-wrap');if(sw)sw.classList.toggle('empty-stack',hideCard||(len<=1));
     const em=$('#r-empty');em.classList.toggle('hide',!empty||done);
     if(empty&&!done){
-      em.innerHTML=rmode==='today'
-        ? `<h3>Hôm nay bạn đã ôn hết từ đến hạn!</h3><p class="muted small" style="margin-top:6px">Từ chưa học sẽ không tự tính là đến hạn.</p><div class="btnrow" style="margin-top:12px"><button type="button" class="btn sm" id="re-new">Học từ mới</button><button type="button" class="btn ghost sm" id="re-back">Quay lại</button></div>`
-        : `<h3>Danh sách hiện đang trống</h3><div class="btnrow" style="margin-top:12px"><button type="button" class="btn ghost sm" id="re-back">Quay lại danh sách</button></div>`;
-      const rn=$('#re-new');if(rn)rn.onclick=()=>openReviewSession('new');
-      const rb=$('#re-back');if(rb)rb.onclick=closeReviewSession;
+      const msg=rmode==='today'?'Hôm nay bạn chưa có từ đến hạn!':rmode==='hard'?'Chưa có từ khó nào được đánh dấu.':'Danh sách ôn hiện đang trống';
+      const sub=rmode==='today'?'Hãy học từ mới trong bài học hoặc chuyển sang ôn Tất cả từ.':'Bạn có thể đánh dấu ⚑ trên flashcard hoặc mở danh sách Tất cả.';
+      em.innerHTML=`<h3>${msg}</h3><p class="muted small" style="margin-top:6px">${sub}</p><div class="btnrow" style="margin-top:12px"><button type="button" class="btn sm" id="re-all">Ôn tất cả từ</button></div>`;
+      const ra=$('#re-all');if(ra)ra.onclick=()=>openReviewSession('all');
     }
   },
-  onMutate(){if(rmode==='hard')rev.reset();else rev.render();renderReviewDash();renderWordbook();}
+  onMutate(){
+    if(rmode==='hard')rev.reset();else rev.render();
+    updateReviewFooter();
+    renderWordbook();
+  }
 });
 $('#rmode').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
-  rmode=b.dataset.m;$$('#rmode button').forEach(x=>x.classList.toggle('on',x===b));renderReviewDash();
+  rCustomIds=null;rUserPicked=true;rmode=b.dataset.m;
+  $$('#rmode button').forEach(x=>x.classList.toggle('on',x===b));
+  renderReviewBanner(false);
+  rev.reset();
+  updateReviewFooter();
 });
-$('#r-decks').addEventListener('click',e=>{const d=e.target.closest('[data-dm]');if(d)openReviewSession(d.dataset.dm);});
 $('#r-start-btn').onclick=()=>openReviewSession(rmode);
 $('#r-back-dash').onclick=closeReviewSession;
 
 /* ---------- Màn 3: Sổ từ khó & yêu thích ---------- */
 let wbTab='hard',wbSub='marked',wbQuery='';
 function getWordbookList(){
-  let base=WORDS;
-  if(wbTab==='fav')base=WORDS.filter(w=>isFavorite(w.id));
-  else if(wbSub==='marked')base=WORDS.filter(w=>isDifficult(w.id));
-  else if(wbSub==='wrong')base=WORDS.filter(w=>getWordState(w.id).wrongCount>0).sort((a,b)=>getWordState(b.id).wrongCount-getWordState(a.id).wrongCount);
+  const seen=new Set(),pool=[];
+  const add=w=>{if(w&&w.id&&!seen.has(w.id)){seen.add(w.id);pool.push(w);}};
+  ((typeof getReviewWordPool==='function')?getReviewWordPool():WORDS).forEach(add);
+  (store.favoriteIds||[]).forEach(id=>add(wordById(id)));
+  let base=pool;
+  if(wbTab==='fav')base=pool.filter(w=>isFavorite(w.id));
+  else if(wbSub==='marked')base=pool.filter(w=>isDifficult(w.id));
+  else if(wbSub==='wrong')base=pool.filter(w=>getWordState(w.id).wrongCount>0).sort((a,b)=>getWordState(b.id).wrongCount-getWordState(a.id).wrongCount);
   if(wbQuery)base=base.filter(w=>matchWord(w,wbQuery));
   return base;
 }

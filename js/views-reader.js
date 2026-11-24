@@ -51,8 +51,11 @@ function refreshModulesForLesson(){
     }
   }catch(_){}
   try{if(typeof window.refreshDot2Views==='function')window.refreshDot2Views();}catch(_){}
+  try{if(typeof listenCtrl!=='undefined'&&listenCtrl.refresh)listenCtrl.refresh();}catch(_){}
   try{if(typeof speakCtrl!=='undefined'&&speakCtrl.init)speakCtrl.init();}catch(_){}
-  try{if(typeof setupPadForChar==='function'&&CHARS.length)setupPadForChar();}catch(_){}
+  try{if(typeof refreshWritingForLesson==='function')refreshWritingForLesson();else if(typeof setupPadForChar==='function'&&CHARS.length)setupPadForChar();}catch(_){}
+  try{if(typeof renderReviewDash==='function')renderReviewDash();}catch(_){}
+  try{if(typeof renderWordbook==='function')renderWordbook();}catch(_){}
 }
 
 /* ---------- Chi tiết bài học #lesson ---------- */
