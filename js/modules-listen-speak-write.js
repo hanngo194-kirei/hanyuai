@@ -3,6 +3,7 @@ let activeAudio=null;
 function stopListeningAudio(){
   try{if(activeAudio){activeAudio.pause();activeAudio=null;}}catch(_){}
   try{if(typeof speechSynthesis!=='undefined')speechSynthesis.cancel();}catch(_){}
+  try{if(typeof AzureSpeech!=='undefined'&&AzureSpeech.stopAudio)AzureSpeech.stopAudio();}catch(_){}
 }
 function playItemAudio(item,rate,onEnd){
   stopListeningAudio();
@@ -13,25 +14,13 @@ function playItemAudio(item,rate,onEnd){
     try{
       const a=new Audio(url);activeAudio=a;a.playbackRate=spd;
       if(onEnd)a.onended=onEnd;
-      a.onerror=()=>speak(text,spd);
-      const p=a.play();if(p&&p.catch)p.catch(()=>speak(text,spd));
+      a.onerror=()=>speak(text,spd,onEnd);
+      const p=a.play();if(p&&p.catch)p.catch(()=>speak(text,spd,onEnd));
       return;
     }catch(_){}
   }
   if(!text){if(onEnd)onEnd();return;}
-  if(typeof speechSynthesis==='undefined'||typeof SpeechSynthesisUtterance==='undefined'){
-    toast('Thiết bị chưa hỗ trợ đọc mẫu');if(onEnd)onEnd();return;
-  }
-  try{
-    const u=new SpeechSynthesisUtterance(text);u.lang='zh-CN';u.rate=spd;
-    const voices=speechSynthesis.getVoices()||[];
-    const v=voices.find(x=>x.lang&&x.lang.toLowerCase().startsWith('zh'));
-    if(v)u.voice=v;
-    else if(voices.length>0&&!zhWarned){zhWarned=true;toast('Thiết bị chưa có giọng đọc tiếng Trung (zh-CN)');}
-    if(onEnd)u.onend=onEnd;
-    u.onerror=()=>{if(!zhWarned){zhWarned=true;toast('Không thể phát âm thanh tiếng Trung trên thiết bị này');}if(onEnd)onEnd();};
-    speechSynthesis.speak(u);
-  }catch(_){toast('Thiết bị chưa hỗ trợ đọc mẫu');if(onEnd)onEnd();}
+  speak(text,spd,onEnd);
 }
 
 // So sánh ký tự chính tả (LCS) -> phân loại đúng / sai / thiếu / thừa
@@ -591,36 +580,59 @@ const TONE_PATHS={
   5:'M12 8 A2 2 0 1 0 16 8 A2 2 0 1 0 12 8'
 };
 
-// Lớp đánh giá phát âm độc lập (sẵn sàng cho SpeechSuper / TonePerfect qua backend proxy)
+// Lớp đánh giá phát âm: ưu tiên Chivox MCP, tiếp theo Gemini Free, Azure Speech, cuối cùng endpoint tùy biến
 const PronunciationAssessor={
   getConfig(){
+    if(typeof ChivoxSpeech!=='undefined'&&ChivoxSpeech&&ChivoxSpeech.isAssessEnabled&&ChivoxSpeech.isAssessEnabled()){
+      return {configured:true,provider:'chivox',mode:'chivox-mcp',label:'Chivox Mandarin AI'};
+    }
+    if(typeof GeminiSpeech!=='undefined'&&GeminiSpeech&&GeminiSpeech.isAssessEnabled&&GeminiSpeech.isAssessEnabled()){
+      const gm=GeminiSpeech.getConfig();
+      return {configured:true,provider:'gemini',mode:'gemini-rest',model:gm.model,label:'Google Gemini ('+gm.model+')'};
+    }
+    if(typeof AzureSpeech!=='undefined'&&AzureSpeech&&AzureSpeech.isAssessEnabled&&AzureSpeech.isAssessEnabled()){
+      const az=AzureSpeech.getConfig();
+      return {configured:true,provider:'azure-speech',mode:'azure-sdk',region:az.region,label:'Azure AI Speech (zh-CN)'};
+    }
     const cfg=(typeof window!=='undefined'&&window.HANYU_ASSESS_CONFIG)||null;
     if(cfg&&typeof cfg.endpoint==='string'&&cfg.endpoint.trim()){
-      return {configured:true,endpoint:cfg.endpoint.trim(),provider:cfg.provider||'custom'};
+      return {configured:true,endpoint:cfg.endpoint.trim(),provider:cfg.provider||'custom',mode:'custom-http',label:cfg.provider||'custom'};
     }
-    return {configured:false,endpoint:null,provider:null};
+    return {configured:false,endpoint:null,provider:null,mode:null,label:''};
   },
   normalize(raw,meta){
     if(!raw||typeof raw!=='object')return null;
-    const num=v=>Number.isFinite(Number(v))?Math.round(Number(v)):null;
+    const num=v=>(v!==null&&v!==undefined&&Number.isFinite(Number(v)))?Math.round(Number(v)):null;
     const syls=Array.isArray(raw.syllableResults)?raw.syllableResults.map(s=>({
       syllable:s.syllable||'',
       expectedTone:s.expectedTone||null,
       detectedTone:s.detectedTone||null,
       score:num(s.score)
     })):[];
+    const wordResults=Array.isArray(raw.wordResults)?raw.wordResults.map(w=>({
+      word:w.word||'',
+      accuracyScore:num(w.accuracyScore),
+      errorType:w.errorType||'None',
+      syllables:Array.isArray(w.syllables)?w.syllables:[],
+      note:typeof w.note==='string'?w.note:''
+    })):[];
     return {
       exerciseId:meta.id,
       referenceText:meta.zh,
       referencePinyin:meta.py,
+      recognizedText:typeof raw.recognizedText==='string'?raw.recognizedText:'',
       provider:raw.provider||meta.provider||'unknown',
       assessedAt:Date.now(),
       overallScore:num(raw.overallScore),
+      accuracyScore:num(raw.accuracyScore),
       initialScore:num(raw.initialScore),
       finalScore:num(raw.finalScore),
       toneScore:num(raw.toneScore),
       fluencyScore:num(raw.fluencyScore),
+      completenessScore:num(raw.completenessScore),
+      prosodyScore:num(raw.prosodyScore),
       syllableResults:syls,
+      wordResults,
       feedback:typeof raw.feedback==='string'?raw.feedback:'',
       status:'assessed'
     };
@@ -628,6 +640,24 @@ const PronunciationAssessor={
   async assess(blob,item){
     const cfg=this.getConfig();
     if(!cfg.configured)throw new Error('NOT_CONFIGURED');
+    if(cfg.mode==='chivox-mcp'&&typeof ChivoxSpeech!=='undefined'){
+      const data=await ChivoxSpeech.assessPronunciation(blob,item.zh,item.py);
+      const norm=this.normalize(data,{id:item.id,zh:item.zh,py:item.py,provider:'chivox'});
+      if(!norm)throw new Error('INVALID_RESPONSE');
+      return norm;
+    }
+    if(cfg.mode==='gemini-rest'&&typeof GeminiSpeech!=='undefined'){
+      const data=await GeminiSpeech.assessPronunciation(blob,item.zh,item.py);
+      const norm=this.normalize(data,{id:item.id,zh:item.zh,py:item.py,provider:'gemini'});
+      if(!norm)throw new Error('INVALID_RESPONSE');
+      return norm;
+    }
+    if(cfg.mode==='azure-sdk'&&typeof AzureSpeech!=='undefined'){
+      const data=await AzureSpeech.assessPronunciation(blob,item.zh);
+      const norm=this.normalize(data,{id:item.id,zh:item.zh,py:item.py,provider:'azure-speech'});
+      if(!norm)throw new Error('INVALID_RESPONSE');
+      return norm;
+    }
     const fd=new FormData();
     fd.append('audio',blob,'recording');
     fd.append('referenceText',item.zh);
@@ -733,8 +763,9 @@ const speakCtrl=(function(){
   let viewTab='practice',guideTab='tone';
   let idx=0,mediaRec=null,stream=null,audioCtx=null,analyser=null,rafId=null,timerId=null;
   let chunks=[],recBlob=null,recUrl=null,recDuration=0,recStart=0,isRecording=false;
+  let liveRec=null,lastLiveTranscript='';
   let assessInFlight=false,apiCallsInSession=0;
-  const MAX_API_CALLS_SESSION=10;
+  const MAX_API_CALLS_SESSION=60;
 
   // Render 16 thanh đo tín hiệu âm thanh thật
   const meterEl=$('#sp-meter');
@@ -766,6 +797,7 @@ const speakCtrl=(function(){
     isRecording=false;
     clearInterval(timerId);timerId=null;
     if(typeof cancelAnimationFrame==='function'&&rafId)cancelAnimationFrame(rafId);rafId=null;
+    if(liveRec){try{liveRec.stop();}catch(_){}liveRec=null;}
     if(mediaRec&&mediaRec.state!=='inactive'){try{mediaRec.stop();}catch(_){}}
     if(stream){try{stream.getTracks().forEach(t=>t.stop());}catch(_){}stream=null;}
     if(audioCtx){try{audioCtx.close();}catch(_){}audioCtx=null;analyser=null;}
@@ -774,7 +806,7 @@ const speakCtrl=(function(){
   }
   function clearRecBlob(){
     if(recUrl){try{URL.revokeObjectURL(recUrl);}catch(_){}recUrl=null;}
-    recBlob=null;recDuration=0;
+    recBlob=null;recDuration=0;lastLiveTranscript='';
     const au=$('#sp-audio');if(au){au.pause();au.removeAttribute('src');au.load();}
     $('#sp-player').classList.add('hide');
     $('#sp-rec-meta').textContent='';
@@ -879,18 +911,78 @@ const speakCtrl=(function(){
     const cfg=PronunciationAssessor.getConfig();
     const banner=$('#sp-api-banner'),resWrap=$('#sp-result-wrap');
     const saved=getItemRec(item.id).lastResult;
+    const _esc=s=>(typeof escHtml==='function')?escHtml(s):String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    const canLiveRec=(typeof LocalSpeechAnalyzer!=='undefined'&&LocalSpeechAnalyzer.isSpeechRecSupported&&LocalSpeechAnalyzer.isSpeechRecSupported()&&!LocalSpeechAnalyzer.isIOS());
+    const cfgBtn='<button type="button" class="chip" data-open-azure-cfg="1">⚙ Cài đặt AI</button>';
     if(!cfg.configured){
-      banner.innerHTML='<b>Chế độ luyện tập miễn phí (offline):</b> Không dùng API trả phí hay điểm chấm giả. Hãy ghi âm thật, bấm <b>Mẫu ↔ Giọng mình</b> để đối chiếu, xem <b>Hướng dẫn sửa lỗi</b> và tự đánh dấu kết quả.';
+      banner.innerHTML=`<div class="sp-api-top"><div><b>Chấm phát âm trực tiếp trên trình duyệt:</b> Miễn phí · Phân tích đường cong thanh điệu giọng thật${canLiveRec?' + Nhận diện zh-CN':''}. Bấm ghi âm rồi nhấn <b>Kiểm tra phát âm</b>.</div>${cfgBtn}</div>`;
     }else{
-      banner.innerHTML=`<b>Dịch vụ chấm:</b> ${cfg.provider} • Lượt gọi trong phiên: ${apiCallsInSession}/${MAX_API_CALLS_SESSION}`;
+      banner.innerHTML=`<div class="sp-api-top"><div><b>Chấm phát âm:</b> ${_esc(cfg.label||cfg.provider)}${cfg.region?' · '+_esc(cfg.region):''} • Lượt trong phiên: ${apiCallsInSession}/${MAX_API_CALLS_SESSION}</div>${cfgBtn}</div>`;
     }
     if(saved&&saved.status==='assessed'){
       resWrap.classList.remove('hide');
-      const row=(lbl,val)=>val===null?'':`<div class="barrow" style="justify-content:space-between"><span class="small">${lbl}</span><b>${val} / 100</b></div>`;
-      resWrap.innerHTML=`
-        <div class="barrow" style="justify-content:space-between"><b>Kết quả đã lưu</b><b style="color:var(--accent)">${saved.overallScore!==null?saved.overallScore+' / 100':'Đã chấm'}</b></div>
-        ${row('Âm đầu',saved.initialScore)}${row('Vần',saved.finalScore)}${row('Thanh điệu',saved.toneScore)}${row('Độ trôi chảy',saved.fluencyScore)}
-        ${saved.feedback?`<div class="note"><svg class="ic"><use href="#i-bulb"/></svg><div>${saved.feedback}</div></div>`:''}`;
+      const pitchHtml=saved.pitchSvg?`
+        <details class="sp-pitch-details">
+          <summary>📈 Xem biểu đồ đường cong thanh điệu chi tiết</summary>
+          <div class="sp-pitch-card">
+            <div class="sp-pitch-hd">
+              <b>Đường cong thanh điệu</b>
+              <span class="sp-pitch-legend">
+                <span><i class="lg-act"></i>Giọng bạn</span>
+                <span><i class="lg-ref"></i>Mẫu chuẩn</span>
+              </span>
+            </div>
+            ${saved.pitchSvg}
+          </div>
+        </details>`:'';
+
+      if((Array.isArray(saved.wordResults)&&saved.wordResults.length)||saved.provider==='local-browser'){
+        const fmtVal=v=>(v!==null&&v!==undefined&&Number.isFinite(Number(v)))?(v+'/100'):'—';
+        const mBox=(lbl,val)=>`<div class="sp-metric-box"><span>${lbl}</span><b>${fmtVal(val)}</b></div>`;
+        const wordsHtml=(Array.isArray(saved.wordResults)?saved.wordResults:[]).map(w=>{
+          let cls='ok',scTxt=(w.accuracyScore!==null&&w.accuracyScore!==undefined)?(w.accuracyScore+'đ'):'—';
+          if(w.errorType==='Omission'){cls='omit';scTxt='Thiếu';}
+          else if(w.errorType==='Insertion'){cls='ins';scTxt='Dư';}
+          else if(w.errorType==='Mispronunciation'||(w.accuracyScore!==null&&w.accuracyScore<60)){cls='bad';}
+          else if(w.accuracyScore!==null&&w.accuracyScore<80){cls='warn';}
+          const syl=(Array.isArray(w.syllables)&&w.syllables.length)?w.syllables.map(sy=>sy.syllable||'').filter(Boolean).join(''):'';
+          const tipTitle=w.note?`Chạm để nghe lại âm chuẩn · ${w.note}`:'Chạm để nghe lại âm chuẩn';
+          return `<button type="button" class="sp-wchip ${cls}" data-say="${_esc(w.word)}" title="${_esc(tipTitle)}"><span class="sp-wchip-zh">${_esc(w.word)}</span><span class="sp-wchip-sc">${_esc(scTxt)}</span>${syl?`<span class="sp-wchip-syl">${_esc(syl)}</span>`:''}</button>`;
+        }).join('');
+        const isLocal=saved.provider==='local-browser';
+        const sc=saved.overallScore;
+        const verdict=sc===null?'':(sc>=80?' · Đạt tốt':(sc>=65?' · Khá, cần chỉnh nhẹ':' · Cần luyện lại'));
+        const heroTitle=(isLocal?'Kết quả phân tích trên trình duyệt':'Điểm phát âm tổng')+verdict;
+        const heroSub=wordsHtml?'Xanh = Đạt · Cam = Chưa rõ · Đỏ = Sai (chạm thẻ chữ để nghe mẫu)':'Chưa phát hiện rõ giọng nói trong bản ghi';
+        const metricsHtml=wordsHtml?(isLocal?`
+          <div class="sp-metrics-grid sp-metrics-2">
+            ${mBox('Thanh điệu',saved.toneScore!==undefined&&saved.toneScore!==null?saved.toneScore:saved.accuracyScore)}
+            ${mBox('Đầy đủ',saved.completenessScore)}
+          </div>`:`
+          <div class="sp-metrics-grid">
+            ${mBox('Chính xác',saved.accuracyScore)}
+            ${mBox('Trôi chảy',saved.fluencyScore)}
+            ${mBox('Đầy đủ',saved.completenessScore)}
+            ${mBox('Ngữ điệu',saved.prosodyScore)}
+          </div>`):'';
+        resWrap.innerHTML=`
+          <div class="sp-score-hero">
+            <div><b>${heroTitle}</b><div class="small muted">${heroSub}</div></div>
+            <div class="sp-score-num">${saved.overallScore!==null?saved.overallScore:'✓'}<span>${saved.overallScore!==null?' / 100':''}</span></div>
+          </div>
+          ${metricsHtml}
+          ${wordsHtml?`<div class="sp-word-grid">${wordsHtml}</div>`:''}
+          ${pitchHtml}
+          ${saved.recognizedText?`<div class="sp-recog-txt"><b>Máy nghe được:</b> ${_esc(saved.recognizedText)}</div>`:''}
+          ${saved.feedback?`<div class="note"><svg class="ic"><use href="#i-bulb"/></svg><div>${_esc(saved.feedback)}</div></div>`:''}`;
+      }else{
+        const row=(lbl,val)=>val===null?'':`<div class="barrow" style="justify-content:space-between"><span class="small">${lbl}</span><b>${val} / 100</b></div>`;
+        resWrap.innerHTML=`
+          <div class="barrow" style="justify-content:space-between"><b>Kết quả đã lưu</b><b style="color:var(--accent)">${saved.overallScore!==null?saved.overallScore+' / 100':'Đã chấm'}</b></div>
+          ${row('Âm đầu',saved.initialScore)}${row('Vần',saved.finalScore)}${row('Thanh điệu',saved.toneScore)}${row('Độ trôi chảy',saved.fluencyScore)}
+          ${pitchHtml}
+          ${saved.feedback?`<div class="note"><svg class="ic"><use href="#i-bulb"/></svg><div>${_esc(saved.feedback)}</div></div>`:''}`;
+      }
     }else{
       resWrap.classList.add('hide');resWrap.innerHTML='';
     }
@@ -1014,9 +1106,19 @@ const speakCtrl=(function(){
     try{mediaRec=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);}
     catch(_){mediaRec=new MediaRecorder(stream);}
 
-    chunks=[];recStart=Date.now();isRecording=true;
+    chunks=[];recStart=Date.now();isRecording=true;lastLiveTranscript='';
     $('#sp-mic').classList.add('rec');
     $('#sp-rec-state').textContent='Đang ghi âm… Nhấn lại để dừng';
+
+    if(typeof LocalSpeechAnalyzer!=='undefined'&&LocalSpeechAnalyzer.isSpeechRecSupported&&LocalSpeechAnalyzer.isSpeechRecSupported()&&!LocalSpeechAnalyzer.isIOS()){
+      liveRec=LocalSpeechAnalyzer.createLiveRecognizer(txt=>{
+        lastLiveTranscript=txt;
+        if(isRecording&&txt){
+          const st=$('#sp-rec-state');
+          if(st)st.textContent='Đang nghe: '+txt;
+        }
+      });
+    }
 
     try{
       const AC=window.AudioContext||window.webkitAudioContext;
@@ -1116,28 +1218,105 @@ const speakCtrl=(function(){
     if(assessInFlight)return;
     const it=getList()[idx];if(!it||!recBlob)return;
     const cfg=PronunciationAssessor.getConfig();
-    if(!cfg.configured){
-      toast('Đang ở chế độ offline: đối chiếu bằng Hướng dẫn sửa lỗi bên dưới và tự đánh dấu!');
-      const gc=$('#sp-guide-card');if(gc)gc.scrollIntoView({behavior:'smooth',block:'nearest'});
-      return;
-    }
-    if(apiCallsInSession>=MAX_API_CALLS_SESSION){
-      toast('Đã đạt giới hạn số lần chấm trong phiên để tiết kiệm chi phí');
-      return;
-    }
-    assessInFlight=true;apiCallsInSession++;
-    const btn=$('#sp-assess');btn.disabled=true;btn.textContent='Đang chấm…';
+    const trimForStore=res=>{
+      if(!res||typeof res!=='object')return res;
+      const copy=Object.assign({},res);
+      if(copy.pitchData&&copy.pitchData.points){
+        copy.pitchData={hasVoice:copy.pitchData.hasVoice,voicedCount:copy.pitchData.voicedCount,durationSec:copy.pitchData.durationSec,minHz:copy.pitchData.minHz,maxHz:copy.pitchData.maxHz};
+      }
+      return copy;
+    };
+    const runLocal=async ()=>{
+      if(typeof LocalSpeechAnalyzer==='undefined'||!LocalSpeechAnalyzer.assessLocal)throw new Error('LOCAL_ANALYZER_MISSING');
+      return await LocalSpeechAnalyzer.assessLocal(recBlob,it,lastLiveTranscript);
+    };
+
+    assessInFlight=true;
+    const btn=$('#sp-assess');btn.disabled=true;btn.textContent='Đang phân tích…';
+    let countedApi=false;
     try{
       const prev=getItemRec(it.id);
-      const result=await PronunciationAssessor.assess(recBlob,it);
-      saveItemRec(it.id,{assessRequests:prev.assessRequests+1,lastResult:result,needsPractice:(result.overallScore!==null&&result.overallScore<80)});
+      let result=null;
+      let usedLocalFallback=false;
+
+      if(cfg.configured&&apiCallsInSession<MAX_API_CALLS_SESSION){
+        apiCallsInSession++;countedApi=true;
+        try{
+          const [aiRes,pitchRes]=await Promise.all([
+            PronunciationAssessor.assess(recBlob,it),
+            (typeof LocalSpeechAnalyzer!=='undefined'&&LocalSpeechAnalyzer.extractPitchContour)
+              ? LocalSpeechAnalyzer.extractPitchContour(recBlob).catch(()=>null)
+              : Promise.resolve(null)
+          ]);
+          result=aiRes;
+          if(result&&pitchRes&&typeof LocalSpeechAnalyzer!=='undefined'&&LocalSpeechAnalyzer.buildToneContourSvg){
+            const syls=(typeof analyzeExpectedTones==='function')?analyzeExpectedTones(it.zh,it.py):[];
+            result.pitchData=pitchRes;
+            result.pitchSvg=LocalSpeechAnalyzer.buildToneContourSvg(pitchRes,syls);
+          }
+        }catch(aiErr){
+          const code=(aiErr&&aiErr.code)||'';
+          const isFallbackErr=(code==='OVERLOADED'||code==='RATE_LIMIT'||code==='NETWORK_ERROR'||(aiErr&&(aiErr.message==='SDK_LOAD_ERROR'||aiErr.message==='SDK_TIMEOUT')));
+          if(isFallbackErr&&typeof LocalSpeechAnalyzer!=='undefined'&&LocalSpeechAnalyzer.assessLocal){
+            apiCallsInSession=Math.max(0,apiCallsInSession-1);
+            usedLocalFallback=true;
+            result=await runLocal();
+          }else{
+            throw aiErr;
+          }
+        }
+      }else{
+        result=await runLocal();
+      }
+
+      const toStore=trimForStore(result);
+      saveItemRec(it.id,{assessRequests:(prev.assessRequests||0)+1,lastResult:toStore,needsPractice:(toStore.overallScore!==null&&toStore.overallScore<80)});
+      if(typeof recordLearningEvent==='function'){
+        recordLearningEvent({type:'assess',skill:'speak',title:`Chấm phát âm: ${it.zh}`,targetId:it.id,view:'speak',result:toStore.overallScore!==null?`${toStore.overallScore}/100`:'Đã phân tích'});
+      }
+      if(typeof markLessonSectionDone==='function'&&store.activeLessonId){
+        markLessonSectionDone(store.activeLessonId,'speak',true);
+      }
       renderAssessmentArea(it);
+      if(usedLocalFallback){
+        toast('AI đang quá tải — đã tự động chấm bằng bộ phân tích trên trình duyệt');
+      }else if(toStore.overallScore!==null){
+        toast(`Điểm phát âm: ${toStore.overallScore}/100`);
+      }else{
+        toast('Đã hoàn tất phân tích đường cong thanh điệu');
+      }
     }catch(err){
-      toast('Không thể kết nối dịch vụ chấm phát âm');
+      if(countedApi&&err&&(err.message==='SDK_LOAD_ERROR'||err.message==='SDK_TIMEOUT'||err.message==='EMPTY_AUDIO_BLOB'||err.message==='NO_AUDIO_CONTEXT'||err.code==='RATE_LIMIT'||err.code==='OVERLOADED')){
+        apiCallsInSession=Math.max(0,apiCallsInSession-1);
+      }
+      const code=(err&&err.code)||'';
+      if(code==='NO_MATCH'){
+        toast('Không nghe rõ tiếng Trung trong bản ghi, hãy đọc gần micro và rõ hơn');
+      }else if(code==='RATE_LIMIT'||code==='OVERLOADED'){
+        toast('Máy chủ AI đang quá tải hoặc chạm giới hạn, hãy thử lại sau ít giây');
+      }else if(code==='AUTH_ERROR'){
+        toast('API Key chưa đúng hoặc bị từ chối (401/403), hãy kiểm tra lại trong Cài đặt AI');
+      }else if(code==='NETWORK_ERROR'||(err&&(err.message==='SDK_LOAD_ERROR'||err.message==='SDK_TIMEOUT'))){
+        toast('Không kết nối được dịch vụ AI, hãy kiểm tra Wi-Fi/mạng');
+      }else if(err&&(err.message==='EMPTY_AUDIO_BLOB'||err.message==='NO_AUDIO_CONTEXT')){
+        toast('Không giải mã được bản ghi âm trên trình duyệt này');
+      }else{
+        toast('Lỗi chấm phát âm: '+(err&&err.message?err.message:'không thể xử lý bản ghi'));
+      }
     }finally{
       assessInFlight=false;btn.disabled=false;btn.innerHTML='<svg class="ic"><use href="#i-award"/></svg>Kiểm tra phát âm';
     }
   };
+
+  document.addEventListener('click',e=>{
+    if(e.target.closest('#btn-azure-speech-cfg,[data-open-azure-cfg]')){
+      if(typeof AzureSpeech!=='undefined'&&AzureSpeech.openSettingsModal){
+        AzureSpeech.openSettingsModal();
+      }else{
+        toast('Module Azure Speech chưa sẵn sàng');
+      }
+    }
+  });
 
   function syncHeader(){
     const l=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;

@@ -38,10 +38,14 @@ const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelect
 let toastT;
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),2400)}
 let zhWarned=false;
-function speak(text,rate){
-  if(!text)return;
+function speak(text,rate,onEnd){
+  if(!text){if(typeof onEnd==='function')onEnd();return;}
+  if(typeof AzureSpeech!=='undefined'&&AzureSpeech&&AzureSpeech.speak){
+    AzureSpeech.speak(text,rate,onEnd);
+    return;
+  }
   if(typeof speechSynthesis==='undefined'||typeof SpeechSynthesisUtterance==='undefined'){
-    toast('Thiết bị chưa hỗ trợ đọc mẫu');return;
+    toast('Thiết bị chưa hỗ trợ đọc mẫu');if(typeof onEnd==='function')onEnd();return;
   }
   try{
     const u=new SpeechSynthesisUtterance(text);u.lang='zh-CN';u.rate=+rate||.9;
@@ -49,9 +53,10 @@ function speak(text,rate){
     const v=voices.find(x=>x.lang&&x.lang.toLowerCase().startsWith('zh'));
     if(v)u.voice=v;
     else if(voices.length>0&&!zhWarned){zhWarned=true;toast('Thiết bị chưa có giọng đọc tiếng Trung (zh-CN)');}
-    u.onerror=()=>{if(!zhWarned){zhWarned=true;toast('Không thể phát âm thanh tiếng Trung trên thiết bị này');}};
+    if(typeof onEnd==='function')u.onend=onEnd;
+    u.onerror=()=>{if(!zhWarned){zhWarned=true;toast('Không thể phát âm thanh tiếng Trung trên thiết bị này');}if(typeof onEnd==='function')onEnd();};
     speechSynthesis.cancel();speechSynthesis.speak(u);
-  }catch(e){toast('Thiết bị chưa hỗ trợ đọc mẫu')}
+  }catch(e){toast('Thiết bị chưa hỗ trợ đọc mẫu');if(typeof onEnd==='function')onEnd();}
 }
 if(typeof speechSynthesis!=='undefined'&&speechSynthesis.addEventListener){
   try{speechSynthesis.addEventListener('voiceschanged',()=>{zhWarned=false});}catch(e){}

@@ -224,6 +224,7 @@
     };
     // 1. Từ vựng trong bài đang học (ưu tiên cao nhất)
     (typeof WORDS !== 'undefined' ? WORDS : []).forEach(w => put(w.zh, w.py, w.vi, w.pos, 10));
+    (typeof CHARS !== 'undefined' ? CHARS : []).forEach(c => { if(c && c.ch && (c.py || c.vi)) put(c.ch, c.py, c.vi, CORE_POS_MAP[c.ch], 8); });
     // 2. Kho từ vựng toàn app
     try{
       Object.values((store && store.vocabBank) || {}).forEach(w => put(w.zh, w.py, w.vi, w.pos, 7));
@@ -316,7 +317,6 @@
   /* ---------- 3. MODULE BÀI KHÓA (#dialog) ---------- */
   const dialogCtrl = (function(){
     let curTab = 'content';
-    let showPinyin = true;
     let speed = 1.0;
     let playing = false;
     let shadowMode = false;
@@ -336,6 +336,7 @@
       curLineIdx = -1;
       try{ if(activeAudioEl){ activeAudioEl.pause(); activeAudioEl = null; } }catch(_){}
       try{ if(typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); }catch(_){}
+      try{ if(typeof AzureSpeech !== 'undefined' && AzureSpeech.stopAudio) AzureSpeech.stopAudio(); }catch(_){}
       const btn = $('#bk-play-btn');
       if(btn) btn.innerHTML = '<svg class="ic f"><use href="#i-play"></use></svg>';
       const actP = $('#bk-act-play'), actS = $('#bk-act-shadow');
@@ -371,8 +372,6 @@
       if(timeEl && !activeAudioEl && !playing){
         timeEl.textContent = `0 / ${dlgs.length} câu`;
       }
-      const volBtn = $('#bk-vol-btn');
-      if(volBtn) volBtn.classList.toggle('off', !showPinyin);
       const saveBtn = $('#bk-act-save');
       if(saveBtn && l){
         const saved = Array.isArray(store.savedLessonIds) && store.savedLessonIds.includes(l.id);
@@ -459,7 +458,16 @@
           idx++;
           setTimeout(step, delayMs);
         };
-        if(typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined' && line.zh){
+        if(typeof AzureSpeech !== 'undefined' && AzureSpeech.speak && line.zh){
+          const maxWait = AzureSpeech.isTtsEnabled && AzureSpeech.isTtsEnabled()
+            ? Math.max(8000, (line.zh.length || 6) * 800)
+            : Math.max(2800, (line.zh.length || 6) * 480);
+          const fbTimer = setTimeout(nextLine, maxWait);
+          AzureSpeech.speak(line.zh, effSpeed, () => {
+            clearTimeout(fbTimer);
+            nextLine();
+          });
+        }else if(typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined' && line.zh){
           try{
             const u = new SpeechSynthesisUtterance(line.zh);
             u.lang = 'zh-CN';
@@ -535,8 +543,6 @@
               <button aria-label="Nghe câu ${i + 1}" class="bk-spk${isB ? ' b' : ''}" data-say="${esc(d.zh)}" type="button">${spk}</button>
               <div class="bk-line-body">
                 <div class="bk-zh-row">${toks}</div>
-                ${showPinyin && d.py ? `<div class="bk-py">${esc(d.py)}</div>` : ''}
-                ${d.vi ? `<div class="bk-vi">${esc(d.vi)}</div>` : ''}
               </div>
               <button aria-label="Đọc câu ${i + 1}" class="bk-line-say" data-say="${esc(d.zh)}" type="button"><svg class="ic"><use href="#i-vol"></use></svg></button>
             </div>`;
@@ -610,10 +616,6 @@
       speed = order[(order.indexOf(speed) + 1) % order.length];
       if(activeAudioEl) activeAudioEl.playbackRate = speed;
       syncPlayerUI();
-    };
-    if($('#bk-vol-btn')) $('#bk-vol-btn').onclick = () => {
-      showPinyin = !showPinyin;
-      render();
     };
     if($('#bk-seek')) $('#bk-seek').addEventListener('input', e => {
       const pct = Number(e.target.value) || 0;

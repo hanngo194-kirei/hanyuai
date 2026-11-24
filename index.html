@@ -421,10 +421,10 @@
 <input aria-label="Tiến độ bài khóa" class="bk-seek" id="bk-seek" max="100" min="0" type="range" value="0"/>
 </div>
 <button class="bk-spd-btn" id="bk-speed-btn" type="button">1.0×</button>
-<button aria-label="Bật hoặc tắt Pinyin" class="bk-vol-btn" id="bk-vol-btn" title="Ẩn / Hiện Pinyin" type="button"><svg class="ic"><use href="#i-vol"></use></svg></button>
 </div>
 <div class="bk-card" id="bk-card">
 <div id="bk-pane-content">
+<div class="bk-hint">Chạm vào từ hoặc cụm từ để xem Pinyin và nghĩa tiếng Việt</div>
 <div class="bk-lines" id="bk-lines"></div>
 <div class="bk-pop hide" id="bk-pop">
 <div class="bk-pop-zh" id="bk-pop-zh">你好</div>
@@ -997,6 +997,7 @@
 <div class="card" style="display:grid;gap:10px">
   <div class="themebtn"><span style="display:flex;gap:8px;align-items:center"><svg class="ic" style="color:var(--accent)"><use href="#i-moon"></use></svg>Giao diện sáng / tối</span><button class="chip" id="themebtn" type="button">Đổi</button></div>
   <div class="me-util-acts">
+    <button class="chip" id="btn-azure-speech-cfg" type="button">🎙 AI Chấm phát âm &amp; Giọng đọc (Gemini)</button>
     <button class="chip" data-open-setup="1" type="button">Đổi trình độ HSK &amp; giáo trình</button>
     <button class="chip" data-open-backup="1" type="button">Sao lưu / Khôi phục JSON</button>
   </div>
@@ -1182,6 +1183,8 @@ B: 我去图书馆。 | Wǒ qù túshūguǎn. | Tôi đi thư viện." style="wi
 <script src="data/hanzi-ext-db.js"></script>
 <script src="data/course-covers.js"></script>
 <script src="js/core-storage.js"></script>
+<script src="js/azure-speech.js"></script>
+<script src="js/local-speech-analyzer.js"></script>
 <script src="js/modules-vocab-grammar.js"></script>
 <script src="js/modules-listen-speak-write.js"></script>
 <script src="js/curriculum-idb-seed.js"></script>

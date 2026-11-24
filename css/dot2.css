@@ -62,43 +62,35 @@
   padding:5px 10px;border-radius:999px;border:1px solid #E5CFC2;background:#FFF7F2;
   color:#7B2219;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;
 }
-.bk-vol-btn{
-  width:34px;height:34px;border-radius:50%;border:1px solid #E5CFC2;background:#FFF7F2;
-  color:#B93F34;display:grid;place-items:center;cursor:pointer;flex-shrink:0;
-}
-.bk-vol-btn .ic{width:16px;height:16px}
-.bk-vol-btn.off{opacity:.48}
-
 /* --- Dialog lines + Clickable words + Popover --- */
 .bk-card{
   background:rgba(255,253,251,.97);border:1px solid #EAD3C4;border-radius:20px;
   padding:12px 14px;box-shadow:var(--shadow);margin-bottom:12px;
 }
+.bk-hint{font-size:12px;color:var(--muted);margin:0 0 8px;padding:0 4px;line-height:1.35}
 .bk-lines{display:grid;gap:12px}
 .bk-line{
-  display:flex;align-items:flex-start;gap:10px;padding:6px 8px;border-radius:14px;
+  display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:14px;
   transition:background .15s,border-color .15s;border:1px solid transparent;
 }
 .bk-line.speaking{background:#FDF1E6;border-color:#F0C9B6}
 .bk-spk{
   width:34px;height:34px;border-radius:11px;flex-shrink:0;display:grid;place-items:center;
-  background:#FCE2D2;color:#B3412C;font-size:16px;font-weight:800;cursor:pointer;margin-top:2px;
+  background:#FCE2D2;color:#B3412C;font-size:16px;font-weight:800;cursor:pointer;
 }
 .bk-spk.b{background:#F5E5DA;color:#8E5141}
 .bk-line-body{flex:1;min-width:0}
 .bk-zh-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:1px;line-height:1.45}
 .bk-tok{
   font-family:var(--han);font-size:21px;font-weight:600;color:#2B1B15;
-  padding:1px 4px;border-radius:6px;background:transparent;cursor:pointer;
+  padding:2px 5px;border-radius:6px;background:transparent;cursor:pointer;
   transition:background .12s,color .12s;line-height:1.25;
 }
 .bk-tok:hover,.bk-tok.on{background:#FCE2D2;color:#8B2E2E}
 .bk-sep{font-family:var(--han);font-size:20px;color:#3D2820;padding:0 1px}
-.bk-py{font-size:13px;font-weight:600;color:#5D463D;margin-top:2px;line-height:1.35}
-.bk-vi{font-size:13px;color:var(--muted);margin-top:2px;line-height:1.35}
 .bk-line-say{
   width:30px;height:30px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;
-  background:#FDF2EB;color:#C7463B;cursor:pointer;margin-top:3px;
+  background:#FDF2EB;color:#C7463B;cursor:pointer;
 }
 .bk-line-say .ic{width:15px;height:15px}
 

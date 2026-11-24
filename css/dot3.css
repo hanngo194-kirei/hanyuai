@@ -504,3 +504,133 @@ body.view-writing .app>.top{display:none}
 :root[data-theme="dark"] #review .flash.rv-card .vi{background:var(--surface2);color:var(--accent)}
 :root[data-theme="dark"] .rv-rate3 .r0{background:rgba(224,78,57,.18);color:#FF9C8E;border-color:var(--line)}
 :root[data-theme="dark"] .rv-rate3 .r1{background:rgba(240,177,90,.18);color:#FFD180;border-color:var(--line)}
+
+/* ---------- Azure Pronunciation Assessment & Modal ---------- */
+.sp-api-top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.sp-score-hero{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:12px 14px;border-radius:16px;background:var(--surface2);border:1px solid var(--line);
+}
+.sp-score-num{font-size:28px;font-weight:800;color:var(--accent);line-height:1}
+.sp-score-num span{font-size:13px;font-weight:700;color:var(--muted)}
+.sp-metrics-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media (min-width:520px){.sp-metrics-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.sp-metric-box{
+  padding:8px 10px;border-radius:12px;background:var(--surface2);border:1px solid var(--line);
+  text-align:center;
+}
+.sp-metric-box span{display:block;font-size:11.5px;color:var(--muted);margin-bottom:2px}
+.sp-metric-box b{font-size:15px;color:var(--ink)}
+
+.sp-word-grid{display:flex;flex-wrap:wrap;gap:7px;align-items:stretch}
+.sp-wchip{
+  display:inline-flex;flex-direction:column;align-items:center;justify-content:center;
+  min-width:52px;padding:7px 9px;border-radius:12px;border:1.5px solid var(--line);
+  background:var(--surface);cursor:pointer;text-align:center;transition:transform .1s;
+}
+.sp-wchip:active{transform:scale(.96)}
+.sp-wchip-zh{font-family:var(--han);font-size:22px;font-weight:700;line-height:1.15}
+.sp-wchip-sc{font-size:11px;font-weight:700;margin-top:3px;line-height:1.15}
+.sp-wchip-syl{font-size:10.5px;color:var(--muted);margin-top:1px}
+.sp-wchip.ok{border-color:#8BC49A;background:#EDF8F0;color:#1D6530}
+.sp-wchip.ok .sp-wchip-zh{color:#1D6530}
+.sp-wchip.warn{border-color:#E7B86A;background:#FFF7E6;color:#935808}
+.sp-wchip.warn .sp-wchip-zh{color:#935808}
+.sp-wchip.bad{border-color:#E48B82;background:#FDECEB;color:#A12319}
+.sp-wchip.bad .sp-wchip-zh{color:#A12319}
+.sp-wchip.omit{border-style:dashed;border-color:#BBAFA6;background:#F6F1EC;color:#6E5F55}
+.sp-wchip.omit .sp-wchip-zh{text-decoration:line-through;color:#6E5F55}
+.sp-wchip.ins{border-color:#B59AD8;background:#F4EEFC;color:#5B3A8C}
+.sp-wchip.ins .sp-wchip-zh{color:#5B3A8C}
+.sp-recog-txt{font-size:12.5px;color:var(--muted);padding:2px 2px 0;text-align:left}
+
+.az-form{display:grid;gap:10px;text-align:left}
+.az-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.az-head h3{margin:0;font-size:17px;color:var(--ink)}
+.az-tabs{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:4px;border-radius:14px;
+  background:var(--surface2);border:1px solid var(--line);
+}
+.az-tabs button{
+  padding:7px 4px;border-radius:10px;border:none;background:transparent;
+  font-size:11.5px;font-weight:700;color:var(--muted);cursor:pointer;line-height:1.25;
+}
+.az-tabs button.on{
+  background:linear-gradient(180deg,var(--btn-a),var(--btn-b));color:#fff;
+  box-shadow:0 3px 8px rgba(199,70,59,.2);
+}
+.az-local-box{
+  padding-top:10px;border-top:1px dashed var(--line);
+}
+.az-status{
+  padding:8px 10px;border-radius:10px;font-size:12.5px;font-weight:600;
+  background:var(--surface2);border:1px solid var(--line);color:var(--muted);
+}
+.az-status.ok{background:#EAF6ED;border-color:#B7DFC1;color:#1D6530}
+.az-status.err{background:#FDECEC;border-color:#F2BFBF;color:#9B1C1C}
+.az-warn{
+  padding:8px 10px;border-radius:10px;font-size:12px;line-height:1.45;
+  background:#FFF7E6;border:1px solid #F0D29A;color:#7A4B08;
+}
+.az-key-row{display:flex;gap:6px;align-items:center}
+.az-key-row input{flex:1;min-width:0}
+.az-chk{display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--ink);cursor:pointer}
+.az-chk input{margin-top:3px;width:auto;flex-shrink:0}
+.az-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+.az-help{font-size:12.5px;color:var(--muted);padding:8px 10px;border-radius:12px;background:var(--surface2);border:1px solid var(--line)}
+.az-help summary{cursor:pointer;font-weight:700;color:var(--ink)}
+.az-help ol{margin:6px 0 0;padding-left:18px;display:grid;gap:4px;line-height:1.4}
+
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .sp-wchip.ok{background:rgba(46,125,50,.22);border-color:#4E9A62;color:#9EE0AF}
+  :root:not([data-theme="light"]) .sp-wchip.ok .sp-wchip-zh{color:#9EE0AF}
+  :root:not([data-theme="light"]) .sp-wchip.warn{background:rgba(240,177,90,.2);border-color:#D69E4E;color:#FFD58A}
+  :root:not([data-theme="light"]) .sp-wchip.warn .sp-wchip-zh{color:#FFD58A}
+  :root:not([data-theme="light"]) .sp-wchip.bad{background:rgba(224,78,57,.22);border-color:#E06D60;color:#FFA396}
+  :root:not([data-theme="light"]) .sp-wchip.bad .sp-wchip-zh{color:#FFA396}
+  :root:not([data-theme="light"]) .sp-wchip.omit{background:rgba(160,145,135,.18);border-color:#7A6D65;color:#C5B9B0}
+  :root:not([data-theme="light"]) .sp-wchip.omit .sp-wchip-zh{color:#C5B9B0}
+  :root:not([data-theme="light"]) .sp-wchip.ins{background:rgba(155,114,207,.2);border-color:#9C7EC8;color:#D6BDF7}
+  :root:not([data-theme="light"]) .sp-wchip.ins .sp-wchip-zh{color:#D6BDF7}
+  :root:not([data-theme="light"]) .az-status.ok{background:rgba(46,125,50,.22);border-color:#4E9A62;color:#9EE0AF}
+  :root:not([data-theme="light"]) .az-status.err{background:rgba(224,78,57,.22);border-color:#E06D60;color:#FFA396}
+  :root:not([data-theme="light"]) .az-warn{background:rgba(240,177,90,.18);border-color:#B58642;color:#FFD58A}
+}
+:root[data-theme="dark"] .sp-wchip.ok{background:rgba(46,125,50,.22);border-color:#4E9A62;color:#9EE0AF}
+:root[data-theme="dark"] .sp-wchip.ok .sp-wchip-zh{color:#9EE0AF}
+:root[data-theme="dark"] .sp-wchip.warn{background:rgba(240,177,90,.2);border-color:#D69E4E;color:#FFD58A}
+:root[data-theme="dark"] .sp-wchip.warn .sp-wchip-zh{color:#FFD58A}
+:root[data-theme="dark"] .sp-wchip.bad{background:rgba(224,78,57,.22);border-color:#E06D60;color:#FFA396}
+:root[data-theme="dark"] .sp-wchip.bad .sp-wchip-zh{color:#FFA396}
+:root[data-theme="dark"] .sp-wchip.omit{background:rgba(160,145,135,.18);border-color:#7A6D65;color:#C5B9B0}
+:root[data-theme="dark"] .sp-wchip.omit .sp-wchip-zh{color:#C5B9B0}
+:root[data-theme="dark"] .sp-wchip.ins{background:rgba(155,114,207,.2);border-color:#9C7EC8;color:#D6BDF7}
+:root[data-theme="dark"] .sp-wchip.ins .sp-wchip-zh{color:#D6BDF7}
+:root[data-theme="dark"] .az-status.ok{background:rgba(46,125,50,.22);border-color:#4E9A62;color:#9EE0AF}
+:root[data-theme="dark"] .az-status.err{background:rgba(224,78,57,.22);border-color:#E06D60;color:#FFA396}
+:root[data-theme="dark"] .az-warn{background:rgba(240,177,90,.18);border-color:#B58642;color:#FFD58A}
+
+/* ---------- Biểu đồ đường cong thanh điệu (Web Audio Pitch Contour) ---------- */
+.sp-pitch-card{
+  padding:10px 12px;border-radius:14px;background:var(--surface2);border:1px solid var(--line);
+  text-align:left;
+}
+.sp-pitch-hd{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;
+  margin-bottom:6px;
+}
+.sp-pitch-hd b{font-size:13px;color:var(--ink)}
+.sp-pitch-legend{
+  display:inline-flex;align-items:center;gap:10px;font-size:11.5px;color:var(--muted);
+}
+.sp-pitch-legend i{
+  display:inline-block;width:14px;height:0;vertical-align:middle;margin-right:4px;
+}
+.sp-pitch-legend .lg-act{border-top:2.5px solid var(--accent)}
+.sp-pitch-legend .lg-ref{border-top:2px dashed var(--muted)}
+.sp-pitch-svg{width:100%;height:auto;max-height:165px;display:block;color:var(--ink)}
+.sp-pitch-details{border-radius:14px;background:var(--surface2);border:1px solid var(--line);padding:8px 10px}
+.sp-pitch-details summary{cursor:pointer;font-size:12.5px;font-weight:700;color:var(--ink);user-select:none}
+.sp-pitch-details[open] summary{margin-bottom:8px}
+.sp-pitch-details .sp-pitch-card{padding:4px 0 0;border:none;background:transparent}
+@media (min-width:520px){.sp-metrics-grid.sp-metrics-2{grid-template-columns:repeat(2,minmax(0,1fr))}}
