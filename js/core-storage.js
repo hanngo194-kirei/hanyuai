@@ -146,7 +146,7 @@ function defaultStore(){
     goals:{minutes:20,newWords:5,reviews:10,listen:1,speak:3,write:2},
     daily:{},
     events:[],
-    downloadedLessonIds:['lesson_hn1_b1','lesson_hn1_b2'],
+    downloadedLessonIds:(typeof DEFAULT_PRELOADED_LESSON_IDS!=='undefined'&&Array.isArray(DEFAULT_PRELOADED_LESSON_IDS))?DEFAULT_PRELOADED_LESSON_IDS.slice():['lesson_hn1_b1','lesson_hn1_b2','lesson_hsk30_1_b1','lesson_hsk30_1_b2'],
     lazyPrunedV1:false,
     lessonSections:{},
     lessonNotes:{},
@@ -295,7 +295,8 @@ function migrateStore(raw){
   if(typeof raw.freeExplore==='boolean')base.freeExplore=raw.freeExplore;
   if(raw.courseProgress&&typeof raw.courseProgress==='object')base.courseProgress=raw.courseProgress;
   if(Array.isArray(raw.downloadedLessonIds)){
-    base.downloadedLessonIds=[...new Set(['lesson_hn1_b1','lesson_hn1_b2',...raw.downloadedLessonIds.filter(x=>typeof x==='string'&&x)])];
+    const defPre=(typeof DEFAULT_PRELOADED_LESSON_IDS!=='undefined'&&Array.isArray(DEFAULT_PRELOADED_LESSON_IDS))?DEFAULT_PRELOADED_LESSON_IDS:['lesson_hn1_b1','lesson_hn1_b2','lesson_hsk30_1_b1','lesson_hsk30_1_b2'];
+    base.downloadedLessonIds=[...new Set([...defPre,...raw.downloadedLessonIds.filter(x=>typeof x==='string'&&x)])];
   }
   if(typeof raw.lazyPrunedV1==='boolean')base.lazyPrunedV1=raw.lazyPrunedV1;
   if(raw.lessonSections&&typeof raw.lessonSections==='object'&&!Array.isArray(raw.lessonSections)){

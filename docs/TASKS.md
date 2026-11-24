@@ -42,7 +42,7 @@
 
 ## Milestone 3 — Nạp NEW HSK 3.0 (Cấp 1–3 + SBT 1–2 + Đáp án + Lời thoại)
 *(Khớp với 407 track MP3 đã khai báo sẵn trong `HSK_AUDIO_MANIFEST`)*
-- [ ] Cấp 1 (15 bài + Đề thi thử `模拟测试` + SBT 1 + Đáp án)
+- [x] Cấp 1 (15 bài + Đề thi thử `模拟测试` + SBT 1 + Đáp án): trích xuất trực quan 100% từ `HSK1 - Tiếng Việt (3.0).pdf`, `SBT HSK1 - Tiếng Việt (3.0).pdf` & `Đáp án SBT HSK 1.pdf` (`330` từ vựng, `42` điểm ngữ pháp, `65` câu `综合练习` + Đề thi thử Đọc hiểu `15` câu tương tác + đáp án 40 câu & 15 bài SBT); nạp sẵn Bài 1–2 (`data/hsk30-starter.js`), các bài 3–15 & Đề thi thử tải theo yêu cầu từ `data/hsk30-1-full.js` (hỗ trợ cả `index.html` lẫn `dist/hanyu-ai.html`)
 - [ ] Cấp 2 (15 bài + Đề thi thử `模拟测试` + SBT 2 + Đáp án + Lời thoại nghe)
 - [ ] Cấp 3 (18 bài)
 

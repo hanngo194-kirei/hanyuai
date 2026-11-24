@@ -172,7 +172,12 @@
   const POS_MAP = {
     'danh': 'danh từ', 'động': 'động từ', 'tính': 'tính từ', 'đại': 'đại từ',
     'phó': 'phó từ', 'trợ': 'trợ từ', 'lượng': 'lượng từ', 'số': 'số từ',
-    'liên': 'liên từ', 'giới': 'giới từ', 'thán': 'thán từ', 'cụm': 'cụm từ'
+    'liên': 'liên từ', 'giới': 'giới từ', 'thán': 'thán từ', 'cụm': 'cụm từ',
+    'dt.': 'danh từ', 'đgt.': 'động từ', 'tt.': 'tính từ', 'đt.': 'đại từ',
+    'phó.': 'phó từ', 'trợ.': 'trợ từ', 'lượng.': 'lượng từ', 'số.': 'số từ',
+    'sl.': 'số lượng từ', 'liên.': 'liên từ', 'giới.': 'giới từ', 'ct.': 'thán từ',
+    'đtnn.': 'động từ năng nguyện', 'ttố.': 'tiền tố', 'htố.': 'hậu tố',
+    'tượng.': 'từ tượng thanh', 'dt. riêng': 'danh từ riêng'
   };
   const CORE_POS_MAP = {
     '你好':'cụm từ','你':'đại từ','好':'tính từ','一':'số từ','五':'số từ','八':'số từ',
@@ -198,6 +203,7 @@
   function formatPos(rawPos, zh){
     const raw = String(rawPos || '').trim();
     if(raw){
+      if(POS_MAP[raw]) return POS_MAP[raw];
       return raw.split('/').map(p => POS_MAP[p.trim()] || p.trim()).join(' / ');
     }
     return CORE_POS_MAP[zh] || 'từ vựng';
@@ -235,6 +241,8 @@
     if(typeof HN_STARTER_DATA !== 'undefined') ingestVol(HN_STARTER_DATA);
     if(typeof HN1_FULL_DATA !== 'undefined') ingestVol({1: HN1_FULL_DATA});
     if(typeof HN2_FULL_DATA !== 'undefined') ingestVol({2: HN2_FULL_DATA});
+    if(typeof HSK30_STARTER_DATA !== 'undefined') ingestVol(HSK30_STARTER_DATA);
+    if(typeof HSK30_1_FULL_DATA !== 'undefined') ingestVol({1: HSK30_1_FULL_DATA});
     // 4. Dữ liệu chữ Hán & từ ghép trong Hack não / Sơ đồ tư duy
     if(typeof HANZI_HACKNAO_DB !== 'undefined'){
       Object.entries(HANZI_HACKNAO_DB).forEach(([ch, e]) => {
@@ -260,7 +268,19 @@
       ['经常','jīngcháng','thường xuyên','phó từ'],
       ['常常','chángcháng','thường thường','phó từ'],
       ['太难','tài nán','khó quá','cụm từ'],
-      ['不太难','bú tài nán','không khó lắm','cụm từ']
+      ['不太难','bú tài nán','không khó lắm','cụm từ'],
+      ['小语','Xiǎoyǔ','AI Tiểu Ngữ (trợ giảng thông minh)','danh từ riêng'],
+      ['王一飞','Wáng Yīfēi','Vương Nhất Phi (giảng viên)','danh từ riêng'],
+      ['李文','Lǐ Wén','Lý Văn (du học sinh)','danh từ riêng'],
+      ['白家月','Bái Jiāyuè','Bạch Gia Nguyệt (sinh viên)','danh từ riêng'],
+      ['安妮','Ānnī','Annie (sinh viên)','danh từ riêng'],
+      ['陈天中','Chén Tiānzhōng','Trần Thiên Trung (sinh viên)','danh từ riêng'],
+      ['王一雪','Wáng Yīxuě','Vương Nhất Tuyết (nhân viên công ty)','danh từ riêng'],
+      ['刘明','Liú Míng','Lưu Minh (bác sĩ)','danh từ riêng'],
+      ['刘小雪','Liú Xiǎoxuě','Lưu Tiểu Tuyết','danh từ riêng'],
+      ['刘小明','Liú Xiǎomíng','Lưu Tiểu Minh','danh từ riêng'],
+      ['杨同乐','Yáng Tónglè','Dương Đồng Lạc','danh từ riêng'],
+      ['胡医生','Hú yīshēng','bác sĩ Hồ','danh từ riêng']
     ].forEach(([zh, py, vi, pos]) => {
       if(!map.has(zh)) put(zh, py, vi, pos, 5);
     });
@@ -496,7 +516,13 @@
         if(!dlgs.length){
           linesEl.innerHTML = '<p class="muted small" style="padding:12px">Bài học này chưa có hội thoại bài khóa.</p>';
         }else{
+          let prevSec = '';
           linesEl.innerHTML = dlgs.map((d, i) => {
+            let secHd = '';
+            if(d.section && d.section !== prevSec){
+              prevSec = d.section;
+              secHd = `<div class="bk-sec-hd"><div class="bk-sec-top"><b>${esc(d.section)}</b>${d.audio ? `<span class="bk-sec-aud">${esc(d.audio)}</span>` : ''}</div>${d.context ? `<div class="bk-sec-ctx">${esc(d.context)}</div>` : ''}</div>`;
+            }
             const spk = esc(d.speaker || (i % 2 === 0 ? 'A' : 'B'));
             const isB = spk === 'B' || i % 2 === 1;
             const toks = tokenizeDialogLine(d.zh, lexMap).map(tk =>
@@ -504,7 +530,7 @@
                 ? `<button class="bk-tok" data-bktok="${esc(tk.text)}" type="button">${esc(tk.text)}</button>`
                 : `<span class="bk-sep">${esc(tk.text)}</span>`
             ).join('');
-            return `<div class="bk-line" data-bkline="${i}">
+            return secHd + `<div class="bk-line" data-bkline="${i}">
               <button aria-label="Nghe câu ${i + 1}" class="bk-spk${isB ? ' b' : ''}" data-say="${esc(d.zh)}" type="button">${spk}</button>
               <div class="bk-line-body">
                 <div class="bk-zh-row">${toks}</div>

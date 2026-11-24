@@ -502,3 +502,11 @@
 :root[data-theme="dark"] .d2-np-ta,
 :root[data-theme="dark"] .tr-type-box textarea{background:var(--surface2);border-color:var(--line);color:var(--ink)}
 :root[data-theme="dark"] .bk-pop{background:var(--surface);border-color:var(--accent)}
+
+/* Phân đoạn bài khóa (Bài khóa 1 / 2 / 3 - HSK 3.0) */
+.bk-sec-hd{margin:10px 0 6px;padding:8px 11px;border-radius:12px;background:var(--surface2,#F8E8DE);border:1px solid var(--line,#EAD3C4)}
+.bk-sec-hd:first-child{margin-top:0}
+.bk-sec-top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.bk-sec-top b{font-size:12.5px;color:var(--accent,#C7463B);letter-spacing:.2px}
+.bk-sec-aud{font-size:11px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--surface,#fff);border:1px solid var(--line,#EAD3C4);color:var(--muted,#6b5b53)}
+.bk-sec-ctx{font-size:12px;color:var(--muted,#6b5b53);margin-top:3px;line-height:1.4}

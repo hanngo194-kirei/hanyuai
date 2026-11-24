@@ -1,8 +1,9 @@
-const DEFAULT_PRELOADED_LESSON_IDS = ['lesson_hn1_b1', 'lesson_hn1_b2'];
+const DEFAULT_PRELOADED_LESSON_IDS = ['lesson_hn1_b1', 'lesson_hn1_b2', 'lesson_hsk30_1_b1', 'lesson_hsk30_1_b2'];
 
 const LESSON_PACK_MANIFEST = {
   1: { packId: 'hn1', src: 'data/hn1-full.js', varName: 'HN1_FULL_DATA', lessons: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] },
-  2: { packId: 'hn2', src: 'data/hn2-full.js', varName: 'HN2_FULL_DATA', lessons: [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30] }
+  2: { packId: 'hn2', src: 'data/hn2-full.js', varName: 'HN2_FULL_DATA', lessons: [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30] },
+  'hsk30_1': { packId: 'hsk30_1', src: 'data/hsk30-1-full.js', varName: 'HSK30_1_FULL_DATA', lessons: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 'mock'] }
 };
 
 const HN_STARTER_DATA = {

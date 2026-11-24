@@ -664,7 +664,14 @@ function buildLessonOrderBank(){
 }
 
 function buildExerciseQuestions(mode){
-  if(!WORDS.length)return [];
+  if(!WORDS.length){
+    if(typeof GRAMMAR_QUIZ!=='undefined'&&Array.isArray(GRAMMAR_QUIZ)&&GRAMMAR_QUIZ.length){
+      return GRAMMAR_QUIZ.filter(q=>Array.isArray(q.opts)&&q.opts.length).map((q,idx)=>({
+        type:'gquiz',id:q.id||'ex_gq_'+idx,prompt:q.prompt||'Chọn đáp án đúng:',qText:q.q||'',opts:q.opts,exp:q.exp||''
+      }));
+    }
+    return [];
+  }
   const makeMeaning=w=>{
     const opts=shuffle([w,...pickDistractors(w,WORDS,3)]).map(x=>({id:x.id,label:x.vi,ok:x.id===w.id}));
     return {type:'meaning',wordId:w.id,prompt:'Chọn nghĩa đúng của từ:',zh:w.zh,py:w.py,opts,exp:`${w.zh} (${w.py}): ${w.vi}.`};
@@ -793,9 +800,21 @@ const exCtrl=(function(){
     $('#ex-bar').style.width=((qi+1)/qs.length*100)+'%';
 
     const pbox=$('#ex-prompt-box'),stage=$('#ex-stage');
-    const ABC=['A','B','C','D'];
+    const ABC=['A','B','C','D','E','F'];
 
-    if(q.type==='meaning'){
+    if(q.type==='gquiz'){
+      const esc=s=>(typeof escHtml==='function')?escHtml(s):String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      pbox.innerHTML=`<p class="muted small">${esc(q.prompt)}</p><div style="font-size:18px;font-weight:700;margin-top:8px;line-height:1.45">${esc(q.qText)}</div>`;
+      stage.innerHTML=`<div class="opt-list">${q.opts.map((o,idx)=>`<button type="button" class="opt" data-idx="${idx}"><i>${ABC[idx]||idx+1}</i><span class="zh">${esc(o.t)}</span><span class="st-ic"></span></button>`).join('')}</div>`;
+      $$('.opt',stage).forEach(btn=>btn.onclick=()=>{
+        if(answered)return;
+        const idx=+btn.dataset.idx,ok=q.opts[idx].ok;
+        btn.classList.add(ok?'ok':'no');
+        $('.st-ic',btn).textContent=ok?'✓':'✕';
+        if(!ok){const oi=q.opts.findIndex(x=>x.ok);if(oi>=0){const ob=$$('.opt',stage)[oi];ob.classList.add('ok');$('.st-ic',ob).textContent='✓';}}
+        gradeSimple(ok,q);
+      });
+    }else if(q.type==='meaning'){
       pbox.innerHTML=`<p class="muted small">${q.prompt}</p><div class="q-han" style="margin-top:8px"><span>${q.zh}</span><button type="button" class="playbtn" data-say="${q.zh}" aria-label="Nghe ${q.zh}"><svg class="ic"><use href="#i-vol"/></svg></button></div><div class="q-sub">${q.py}</div>`;
       stage.innerHTML=`<div class="opt-list">${q.opts.map((o,idx)=>`<button type="button" class="opt" data-idx="${idx}"><i>${ABC[idx]}</i><span>${o.label}</span><span class="st-ic"></span></button>`).join('')}</div>`;
       $$('.opt',stage).forEach(btn=>btn.onclick=()=>{
@@ -950,18 +969,28 @@ const gramCtrl=(function(){
   function buildDynamicGrammarQuiz(){
     const lid=store.activeLessonId;
     if(lid&&HN_GRAMMAR_QUIZ_BANK[lid])return HN_GRAMMAR_QUIZ_BANK[lid].slice();
-    if(typeof GRAMMAR_QUIZ!=='undefined'&&Array.isArray(GRAMMAR_QUIZ)&&GRAMMAR_QUIZ.length){
-      return GRAMMAR_QUIZ.map(q=>Object.assign({},q,{qtype:q.qtype||(q.q&&q.q.includes('____')?'fill':'correct')}));
-    }
     const out=[];
+    let hasSeedFill=false,hasSeedCorrect=false,hasSeedOrder=false;
+    if(typeof GRAMMAR_QUIZ!=='undefined'&&Array.isArray(GRAMMAR_QUIZ)&&GRAMMAR_QUIZ.length){
+      GRAMMAR_QUIZ.forEach(q=>{
+        const qt=q.qtype||(q.q&&(q.q.includes('____')||q.q.includes('（　）')||q.q.includes('( )'))?'fill':'correct');
+        const normQt=(qt==='choice')?'correct':qt;
+        if(normQt==='fill')hasSeedFill=true;
+        else if(normQt==='correct')hasSeedCorrect=true;
+        else if(normQt==='order')hasSeedOrder=true;
+        out.push(Object.assign({},q,{qtype:normQt}));
+      });
+    }
     const gpVals=Object.values(GRAMMAR_POINTS||{});
     const exPool=[];
     gpVals.forEach(gp=>{
       if(Array.isArray(gp.examples))gp.examples.forEach(ex=>{if(ex&&ex.zh)exPool.push({zh:ex.zh,py:ex.py||'',vi:ex.vi||'',hl:ex.hl||'',gpTitle:gp.title||''});});
       if(gp.ex)exPool.push({zh:gp.ex,py:'',vi:gp.explain||gp.desc||'',hl:'',gpTitle:gp.title||''});
     });
-    (LISTEN_DIALOG||[]).forEach(d=>{if(d&&d.zh)exPool.push({zh:d.zh,py:d.py||'',vi:d.vi||'',hl:'',gpTitle:''});});
-    (SENT||[]).forEach(s=>{if(s&&s.zh)exPool.push({zh:s.zh,py:s.py||'',vi:s.vi||'',hl:'',gpTitle:''});});
+    if(WORDS&&WORDS.length){
+      (LISTEN_DIALOG||[]).forEach(d=>{if(d&&d.zh)exPool.push({zh:d.zh,py:d.py||'',vi:d.vi||'',hl:'',gpTitle:''});});
+      (SENT||[]).forEach(s=>{if(s&&s.zh)exPool.push({zh:s.zh,py:s.py||'',vi:s.vi||'',hl:'',gpTitle:''});});
+    }
 
     const funcWords=[
       {w:'吗',alt:['呢','很']},
@@ -984,49 +1013,55 @@ const gramCtrl=(function(){
     exPool.forEach(item=>{
       String(item.zh).split(/[·。！？!?]/).map(x=>x.trim()).forEach(seg=>{
         const han=(seg.match(/[\u4e00-\u9fff]/g)||[]).length;
-        if(han>=3&&!seenSent.has(seg)){seenSent.add(seg);cleanSentences.push({zh:seg+(String(item.zh).includes('？')&&seg.includes('吗')?'？':(/[吗谁什么哪几多少呢]$/.test(seg)?'？':'。')),py:item.py,vi:item.vi,gpTitle:item.gpTitle});}
+        if(han>=3&&han<=18&&!seenSent.has(seg)){seenSent.add(seg);cleanSentences.push({zh:seg+(String(item.zh).includes('？')&&seg.includes('吗')?'？':(/[吗谁什么哪几多少呢]$/.test(seg)?'？':'。')),py:item.py,vi:item.vi,gpTitle:item.gpTitle});}
       });
     });
 
-    // 1. Chọn từ vào chỗ trống (fill)
-    for(const s of cleanSentences){
-      if(seenFill.size>=3)break;
-      let matchedFw=funcWords.find(fw=>s.zh.includes(fw.w));
-      let tok=matchedFw?matchedFw.w:null;
-      let alts=matchedFw?matchedFw.alt:null;
-      if(!tok){
-        const wHit=(WORDS||[]).find(w=>w.zh&&s.zh.includes(w.zh));
-        if(wHit){
-          tok=wHit.zh;
-          alts=shuffle((WORDS||[]).filter(x=>x.zh!==tok)).slice(0,2).map(x=>x.zh);
+    // 1. Chọn từ vào chỗ trống (fill) nếu chưa có sẵn từ GRAMMAR_QUIZ
+    if(!hasSeedFill){
+      for(const s of cleanSentences){
+        if(seenFill.size>=3)break;
+        let matchedFw=funcWords.find(fw=>s.zh.includes(fw.w));
+        let tok=matchedFw?matchedFw.w:null;
+        let alts=matchedFw?matchedFw.alt:null;
+        if(!tok&&WORDS&&WORDS.length){
+          const wHit=(WORDS||[]).find(w=>w.zh&&s.zh.includes(w.zh));
+          if(wHit){
+            tok=wHit.zh;
+            alts=shuffle((WORDS||[]).filter(x=>x.zh!==tok)).slice(0,2).map(x=>x.zh);
+          }
         }
-      }
-      if(tok&&alts&&alts.length>=2&&!seenFill.has(s.zh)){
-        seenFill.add(s.zh);
-        const blank=s.zh.replace(tok,'____');
-        const opts=shuffle([{t:tok,ok:true},{t:alts[0],ok:false},{t:alts[1],ok:false}]);
-        out.push({id:'dyn_f_'+out.length,qtype:'fill',prompt:'Chọn từ thích hợp điền vào chỗ trống:',q:`${blank}${s.vi?' ('+s.vi+')':''}`,opts,ansZh:s.zh,exp:`Câu hoàn chỉnh đúng ngữ pháp là “${s.zh}”${s.vi?' ('+s.vi+')':''}.`});
+        if(tok&&alts&&alts.length>=2&&!seenFill.has(s.zh)){
+          seenFill.add(s.zh);
+          const blank=s.zh.replace(tok,'____');
+          const opts=shuffle([{t:tok,ok:true},{t:alts[0],ok:false},{t:alts[1],ok:false}]);
+          out.push({id:'dyn_f_'+out.length,qtype:'fill',prompt:'Chọn từ thích hợp điền vào chỗ trống:',q:`${blank}${s.vi?' ('+s.vi+')':''}`,opts,ansZh:s.zh,exp:`Câu hoàn chỉnh đúng ngữ pháp là “${s.zh}”${s.vi?' ('+s.vi+')':''}.`});
+        }
       }
     }
 
     // 2. Chọn câu đúng ngữ pháp (correct)
-    cleanSentences.slice(0,3).forEach((s,idx)=>{
-      const base=s.zh.replace(/[。！？?!]+$/,'');
-      const endP=s.zh.slice(base.length)||'。';
-      const chars=[...base];
-      if(chars.length<3)return;
-      const w1=[...chars.slice(1),chars[0]].join('')+endP;
-      const w2=chars.slice().reverse().join('')+endP;
-      if(w1===s.zh||w2===s.zh||w1===w2)return;
-      const opts=shuffle([{t:s.zh,ok:true},{t:w1,ok:false},{t:w2,ok:false}]);
-      out.push({id:'dyn_c_'+idx,qtype:'correct',prompt:'Chọn câu viết đúng trật tự ngữ pháp:',q:s.vi||`Áp dụng ngữ pháp ${s.gpTitle||'của bài'}`,opts,ansZh:s.zh,exp:`Câu chuẩn theo giáo trình: “${s.zh}”${s.vi?' — '+s.vi:''}.`});
-    });
+    if(!hasSeedCorrect){
+      cleanSentences.slice(0,3).forEach((s,idx)=>{
+        const base=s.zh.replace(/[。！？?!]+$/,'');
+        const endP=s.zh.slice(base.length)||'。';
+        const chars=[...base];
+        if(chars.length<3)return;
+        const w1=[...chars.slice(1),chars[0]].join('')+endP;
+        const w2=chars.slice().reverse().join('')+endP;
+        if(w1===s.zh||w2===s.zh||w1===w2)return;
+        const opts=shuffle([{t:s.zh,ok:true},{t:w1,ok:false},{t:w2,ok:false}]);
+        out.push({id:'dyn_c_'+idx,qtype:'correct',prompt:'Chọn câu viết đúng trật tự ngữ pháp:',q:s.vi||`Áp dụng ngữ pháp ${s.gpTitle||'của bài'}`,opts,ansZh:s.zh,exp:`Câu chuẩn theo giáo trình: “${s.zh}”${s.vi?' — '+s.vi:''}.`});
+      });
+    }
 
     // 3. Sắp xếp câu ngữ pháp (order)
-    const ordBank=buildLessonOrderBank();
-    ordBank.slice(0,3).forEach((o,idx)=>{
-      out.push({id:'dyn_o_'+idx,qtype:'order',prompt:'Sắp xếp các từ theo đúng cấu trúc câu:',tokens:o.tokens.slice(),ans:o.ans,py:o.py,vi:o.vi,exp:`Trật tự đúng: ${o.ans}${o.py?' ('+o.py+')':''}`});
-    });
+    if(!hasSeedOrder&&(WORDS&&WORDS.length)){
+      const ordBank=buildLessonOrderBank();
+      ordBank.slice(0,3).forEach((o,idx)=>{
+        out.push({id:'dyn_o_'+idx,qtype:'order',prompt:'Sắp xếp các từ theo đúng cấu trúc câu:',tokens:o.tokens.slice(),ans:o.ans,py:o.py,vi:o.vi,exp:`Trật tự đúng: ${o.ans}${o.py?' ('+o.py+')':''}`});
+      });
+    }
 
     return out;
   }
@@ -1122,7 +1157,7 @@ const gramCtrl=(function(){
     }
     wrap.classList.remove('hide');sum.classList.add('hide');
     answered=false;placed=[];
-    const q=quizList[qi],ABC=['A','B','C'];
+    const q=quizList[qi],ABC=['A','B','C','D','E','F'];
     $('#gq-count').textContent=`${qi+1} / ${quizList.length}`;
     $('#gq-bar').style.width=((qi+1)/quizList.length*100)+'%';
     $('#gq-prompt').textContent=q.prompt;

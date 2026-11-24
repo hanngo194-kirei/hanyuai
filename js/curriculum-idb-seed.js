@@ -141,17 +141,27 @@ function parseHnLessonId(lessonId){
   const m=/^lesson_hn(\d+)_b(\d+)$/.exec(String(lessonId||''));
   return m?{vol:Number(m[1]),num:Number(m[2])}:null;
 }
+function parseLessonPackRef(lessonId){
+  const s=String(lessonId||'');
+  const hn=/^lesson_hn(\d+)_b(\d+)$/.exec(s);
+  if(hn)return {system:'hanngu',packKey:String(hn[1]),vol:Number(hn[1]),num:Number(hn[2]),dataKey:String(hn[2])};
+  const hskB=/^lesson_hsk30_(\d+)_b(\d+)$/.exec(s);
+  if(hskB)return {system:'hsk30',packKey:`hsk30_${hskB[1]}`,lvl:Number(hskB[1]),num:Number(hskB[2]),dataKey:String(hskB[2])};
+  const hskM=/^lesson_hsk30_(\d+)_mock$/.exec(s);
+  if(hskM)return {system:'hsk30',packKey:`hsk30_${hskM[1]}`,lvl:Number(hskM[1]),num:'mock',dataKey:'mock'};
+  return null;
+}
 function getPackManifestForVol(vol){
   return (typeof LESSON_PACK_MANIFEST!=='undefined'&&LESSON_PACK_MANIFEST[vol])||null;
 }
 function hasPackForLesson(lessonId){
-  const info=parseHnLessonId(lessonId);
-  if(!info)return false;
-  const m=getPackManifestForVol(info.vol);
-  return Boolean(m&&Array.isArray(m.lessons)&&m.lessons.includes(info.num));
+  const ref=parseLessonPackRef(lessonId);
+  if(!ref)return false;
+  const m=getPackManifestForVol(ref.packKey);
+  return Boolean(m&&Array.isArray(m.lessons)&&(m.lessons.includes(ref.num)||m.lessons.includes(ref.dataKey)));
 }
 function isLessonContentLoaded(l){
-  return Boolean(l&&((l.wordIds&&l.wordIds.length>0)||(l.dialog&&l.dialog.length>0)||Object.keys(l.grammarPoints||{}).length>0));
+  return Boolean(l&&((l.wordIds&&l.wordIds.length>0)||(l.dialog&&l.dialog.length>0)||Object.keys(l.grammarPoints||{}).length>0||(l.grammarQuiz&&l.grammarQuiz.length>0)));
 }
 function getLessonDownloadState(l){
   if(!l)return 'unavailable';
@@ -175,19 +185,20 @@ function readGlobalPackVar(varName){
   catch(_){return null;}
 }
 async function loadVolumePack(volNum){
-  if(_loadedVolumePacks[volNum])return _loadedVolumePacks[volNum];
-  const meta=getPackManifestForVol(volNum);
+  const key=String(volNum||'');
+  if(_loadedVolumePacks[key])return _loadedVolumePacks[key];
+  const meta=getPackManifestForVol(volNum)||getPackManifestForVol(key);
   if(!meta)return null;
-  if(_pendingPackLoads[volNum])return _pendingPackLoads[volNum];
-  _pendingPackLoads[volNum]=(async()=>{
+  if(_pendingPackLoads[key])return _pendingPackLoads[key];
+  _pendingPackLoads[key]=(async()=>{
     const existing=readGlobalPackVar(meta.varName);
-    if(existing){_loadedVolumePacks[volNum]=existing;return existing;}
+    if(existing){_loadedVolumePacks[key]=existing;return existing;}
     const lazyEl=document.querySelector(`script[type="text/plain"][data-lazy-pack="${meta.src}"]`);
     if(lazyEl){
       const code=lazyEl.textContent||'';
       const data=(new Function(code+'\nreturn typeof '+meta.varName+'!=="undefined"?'+meta.varName+':null;'))();
       if(data){
-        _loadedVolumePacks[volNum]=data;
+        _loadedVolumePacks[key]=data;
         try{window[meta.varName]=data;}catch(_){}
       }
       return data;
@@ -206,10 +217,10 @@ async function loadVolumePack(volNum){
       s.onerror=()=>{clearTimeout(timer);s.remove();reject(new Error('Failed loading '+meta.src));};
       document.body.appendChild(s);
     });
-    if(loaded)_loadedVolumePacks[volNum]=loaded;
+    if(loaded)_loadedVolumePacks[key]=loaded;
     return loaded;
-  })().finally(()=>{delete _pendingPackLoads[volNum];});
-  return _pendingPackLoads[volNum];
+  })().finally(()=>{delete _pendingPackLoads[key];});
+  return _pendingPackLoads[key];
 }
 function getExtMapForVol(volNum){
   const map={
@@ -223,6 +234,9 @@ function getExtMapForVol(volNum){
   return map[volNum]||null;
 }
 function populateLessonFromPackData(l,full,volNum,bNum){
+  const ref=(volNum&&typeof volNum==='object')
+    ?volNum
+    :{system:'hanngu',packKey:String(volNum||''),vol:Number(volNum),num:bNum,dataKey:String(bNum||'')};
   const wordIds=[];
   if(full&&Array.isArray(full.words)){
     full.words.forEach(w=>{const wid=registerVocabWord(w);if(wid&&!wordIds.includes(wid))wordIds.push(wid);});
@@ -231,43 +245,74 @@ function populateLessonFromPackData(l,full,volNum,bNum){
   const chars=(full&&Array.isArray(full.chars))?full.chars.map(ch=>({id:'c_'+ch.charCodeAt(0),ch,py:'',vi:'',rad:'',strokes:0})):[];
   l.wordIds=wordIds;
   l.dialog=dlg;
-  l.sentences=dlg.map(d=>({zh:d.zh,py:d.py,vi:d.vi}));
+  if(ref.system==='hsk30'&&ref.num==='mock'){
+    l.sentences=[];
+  }else{
+    l.sentences=dlg.map(d=>({zh:d.zh,py:d.py||'',vi:d.vi||''}));
+  }
+  l.dialogQuestions=(full&&Array.isArray(full.dialogQuestions))?full.dialogQuestions:(l.dialogQuestions||[]);
   l.grammarPoints=(full&&full.grammar)?full.grammar:{};
+  l.grammarQuiz=(full&&Array.isArray(full.grammarQuiz))?full.grammarQuiz:(l.grammarQuiz||[]);
+  l.orderBank=(full&&Array.isArray(full.orderBank))?full.orderBank:(l.orderBank||[]);
   l.chars=chars;
+  if(full&&full.titleZh)l.titleZh=full.titleZh;
+  if(full&&full.titlePy)l.py=full.titlePy;
+  if(full&&full.titleVi)l.titleVi=full.titleVi;
   l.status='published';
   l.downloaded=true;
-  l.sourceRef={fileName:`GT Hán Ngữ ${volNum}.pdf`,fileHash:'',pageRange:(full&&full.pages)||'—'};
-  l.goals=[`Đối chiếu audio: Quyển ${volNum} Bài ${bNum}.mp3`,'Đã tải từ vựng, bài khóa, ngữ pháp & tập viết'];
-  l.updatedAt=Date.now();
-  const extMap=getExtMapForVol(volNum);
-  const ext=extMap&&(extMap[bNum]||extMap[String(bNum)]);
-  if(ext&&(!l.optionalExtensions||(!(l.optionalExtensions.hackNaoIds||[]).length&&!(l.optionalExtensions.mindMapRootChars||[]).length))){
-    l.optionalExtensions=ext;
+  if(ref.system==='hsk30'){
+    const trCnt=Array.isArray(l.audioTracks)?l.audioTracks.length:0;
+    l.sourceRef={fileName:ref.num==='mock'?`SBT HSK${ref.lvl} - Tiếng Việt (3.0).pdf`:`HSK${ref.lvl} - Tiếng Việt (3.0).pdf`,fileHash:'',pageRange:(full&&full.pages)||'—'};
+    if(full&&Array.isArray(full.goals)&&full.goals.length){
+      l.goals=full.goals.slice();
+    }else{
+      l.goals=[trCnt?`Đã gắn ${trCnt} file MP3 chuẩn HSK ${ref.lvl} (3.0)`:`Giáo trình NEW HSK ${ref.lvl} (3.0)`,'Đã tải từ vựng, bài khóa, ngữ pháp, bài tập & SBT'];
+    }
+    if(full&&full.workbook)l.workbook=Object.assign({},l.workbook||{},full.workbook);
+    const suppParts=[];
+    if(full&&full.rhyme&&full.rhyme.zh){
+      suppParts.push(`Bài vè luyện âm (${full.rhyme.audio||'audio'}):\n${full.rhyme.zh}${full.rhyme.py?'\n'+full.rhyme.py:''}${full.rhyme.vi?'\n'+full.rhyme.vi:''}`);
+    }
+    if(full&&Array.isArray(full.notes)&&full.notes.length){
+      suppParts.push(full.notes.join('\n'));
+    }
+    if(suppParts.length)l.supplementalContent=suppParts.join('\n\n');
+    if(full&&full.rhyme)l.rhyme=full.rhyme;
+    if(full&&Array.isArray(full.notes))l.notes=full.notes.slice();
+  }else{
+    l.sourceRef={fileName:`GT Hán Ngữ ${ref.vol}.pdf`,fileHash:'',pageRange:(full&&full.pages)||'—'};
+    l.goals=[`Đối chiếu audio: Quyển ${ref.vol} Bài ${ref.num}.mp3`,'Đã tải từ vựng, bài khóa, ngữ pháp & tập viết'];
+    const extMap=getExtMapForVol(ref.vol);
+    const ext=extMap&&(extMap[ref.num]||extMap[String(ref.num)]);
+    if(ext&&(!l.optionalExtensions||(!(l.optionalExtensions.hackNaoIds||[]).length&&!(l.optionalExtensions.mindMapRootChars||[]).length))){
+      l.optionalExtensions=ext;
+    }
   }
+  l.updatedAt=Date.now();
   return l;
 }
 async function downloadLessonById(lessonId){
   const l=LESSONS.find(x=>x.id===lessonId);
-  const info=parseHnLessonId(lessonId);
-  if(!l||!info||!hasPackForLesson(lessonId)){
+  const ref=parseLessonPackRef(lessonId);
+  if(!l||!ref||!hasPackForLesson(lessonId)){
     toast('Bài học này chưa có dữ liệu để tải');
     return false;
   }
   if(isLessonContentLoaded(l))return true;
   let volData=null;
   try{
-    volData=await loadVolumePack(info.vol);
+    volData=await loadVolumePack(ref.packKey);
   }catch(err){
     console.error('Load pack error:',err);
     toast('Không thể tải dữ liệu bài học. Hãy kiểm tra thư mục data/.');
     return false;
   }
-  const full=volData&&(volData[info.num]||volData[String(info.num)]);
+  const full=volData&&(volData[ref.dataKey]||volData[ref.num]||volData[String(ref.num)]);
   if(!full){
     toast('Không thể tải dữ liệu bài học. Hãy kiểm tra thư mục data/.');
     return false;
   }
-  populateLessonFromPackData(l,full,info.vol,info.num);
+  populateLessonFromPackData(l,full,ref);
   if(!Array.isArray(store.downloadedLessonIds))store.downloadedLessonIds=[];
   if(!store.downloadedLessonIds.includes(lessonId))store.downloadedLessonIds.push(lessonId);
   saveStore(store);
@@ -275,8 +320,10 @@ async function downloadLessonById(lessonId){
   const c=COURSES.find(x=>x.id===l.courseId);
   if(c)await HanyuIDB.put('courses',c);
   if(store.activeLessonId===lessonId)applyActiveLesson();
+  if(typeof refreshDashboards==='function')refreshDashboards();
   renderRoadmap();
   renderLibrary();
+  if(curView==='learn'&&typeof renderLearnRoadmap==='function')renderLearnRoadmap();
   if(curView==='course-detail')renderCourseDetail();
   if(curView==='lesson')renderLessonDetail();
   if(curView==='textbook-reader')renderTextbookReader();
@@ -370,6 +417,11 @@ function buildStandardCatalogSeed(){
     const cId=`course_hsk30_lv${h.lvl}`,order=[];
     const mainMap=HSK_AUDIO_MANIFEST[`hsk${h.lvl}`]||{};
     const sbtMap=h.hasSbt?(HSK_AUDIO_MANIFEST[`sbt${h.lvl}`]||{}):{};
+    const packKey=`hsk30_${h.lvl}`;
+    const packMeta=getPackManifestForVol(packKey);
+    const starterLv=(typeof HSK30_STARTER_DATA!=='undefined'&&(HSK30_STARTER_DATA[h.lvl]||HSK30_STARTER_DATA[String(h.lvl)]))||null;
+    const packLv=_loadedVolumePacks[packKey]||readGlobalPackVar(`HSK30_${h.lvl}_FULL_DATA`)||null;
+    const catList=(typeof HSK30_CATALOG_TITLES!=='undefined'&&(HSK30_CATALOG_TITLES[h.lvl]||HSK30_CATALOG_TITLES[String(h.lvl)]))||[];
     for(let b=1;b<=h.cnt;b++){
       const lId=`lesson_hsk30_${h.lvl}_b${b}`;
       const pad=String(b).padStart(2,'0');
@@ -385,35 +437,59 @@ function buildStandardCatalogSeed(){
         const lbl=fn.includes('语音')?'SBT Ngữ âm':fn.includes('听读')?'SBT Nghe đọc':fn.includes('模拟')?'SBT Thi thử':'SBT Nghe';
         tracks.push(makeAudioTrack(`sbt${h.lvl}/${fn}`,'workbook',`${lbl} (${fn})`));
       });
-      lessons.push({
-        id:lId,courseId:cId,code:`Bài ${b}`,titleVi:`HSK ${h.lvl} (3.0) · Bài ${b}`,titleZh:'',py:'',
-        goals:[`Đã gắn ${tracks.length} file MP3 (${mainFiles.length} giáo trình${sbtFiles.length?` + ${sbtFiles.length} SBT`:''})`,h.hasSbt?`Kèm SBT HSK ${h.lvl} & Đáp án`:'Nhập nội dung chi tiết từ PDF HSK 3.0'],
+      const catRow=catList.find(x=>Number(x[0])===b);
+      const titleZh=catRow?(catRow[1]||''):'';
+      const py=catRow?(catRow[2]||''):'';
+      const titleVi=catRow?(catRow[3]||`HSK ${h.lvl} (3.0) · Bài ${b}`):`HSK ${h.lvl} (3.0) · Bài ${b}`;
+      const hasPack=hasPackForLesson(lId);
+      const shouldPreload=preloadedSet.has(lId)||!packMeta;
+      const full=shouldPreload?((starterLv&&(starterLv[b]||starterLv[String(b)]))||(packLv&&(packLv[b]||packLv[String(b)]))||null):null;
+      const lObj={
+        id:lId,courseId:cId,code:`Bài ${b}`,titleVi,titleZh,py,
+        goals:[`Đã gắn ${tracks.length} file MP3 (${mainFiles.length} giáo trình${sbtFiles.length?` + ${sbtFiles.length} SBT`:''})`,hasPack?'Bấm “Tải bài” để tải từ vựng, bài khóa, ngữ pháp, bài tập & đáp án SBT':(h.hasSbt?`Kèm SBT HSK ${h.lvl} & Đáp án`:'Nhập nội dung chi tiết từ PDF HSK 3.0')],
         status:'draft',
+        downloaded:false,
         sourceRef:{fileName:`HSK${h.lvl} - Tiếng Việt (3.0).pdf`,fileHash:'',pageRange:'—'},
         audioTracks:tracks,
         workbook:h.hasSbt?{exercisesNote:`Tham chiếu SBT HSK${h.lvl} - Tiếng Việt (3.0).pdf (Bài ${b})`,answerKeyNote:`Tham chiếu Đáp án SBT HSK ${h.lvl}.pdf`,transcriptNote:h.lvl===2?'Tham chiếu Lời thoại phần nghe SBT HSK2.pdf':''}:null,
         optionalExtensions:{hackNaoIds:[],mindMapRootChars:[]},
         originalContent:'',supplementalContent:'',wordIds:[],sentences:[],dialog:[],dialogQuestions:[],grammarPoints:{},grammarQuiz:[],orderBank:[],chars:[],updatedAt:now
-      });
+      };
+      if(full){
+        populateLessonFromPackData(lObj,full,{system:'hsk30',packKey,lvl:h.lvl,num:b,dataKey:String(b)});
+        lObj.updatedAt=now;
+      }
+      lessons.push(lObj);
     }
     if(h.hasSbt&&Array.isArray(sbtMap['mock'])&&sbtMap['mock'].length){
       const mockId=`lesson_hsk30_${h.lvl}_mock`;
       order.push(mockId);
       const mockTracks=sbtMap['mock'].map(fn=>makeAudioTrack(`sbt${h.lvl}/${fn}`,'workbook',`Đề thi thử HSK ${h.lvl} (${fn})`));
-      lessons.push({
-        id:mockId,courseId:cId,code:'Thi thử',titleVi:`Đề thi thử Nghe HSK ${h.lvl} (SBT ${h.lvl})`,titleZh:'模拟测试',py:'Mónǐ cèshì',
-        goals:[`Audio đề thi thử chính thức từ HSK SBT ${h.lvl} (HSK3.0) Audio.zip`],
+      const hasMockPack=hasPackForLesson(mockId);
+      const mockFull=(preloadedSet.has(mockId)||!packMeta)?((starterLv&&starterLv.mock)||(packLv&&packLv.mock)||null):null;
+      const mockObj={
+        id:mockId,courseId:cId,code:'Thi thử',titleVi:`Đề thi thử HSK ${h.lvl} (SBT ${h.lvl})`,titleZh:'模拟测试',py:'Mónǐ cèshì',
+        goals:[`Audio đề thi thử chính thức từ HSK SBT ${h.lvl} (HSK3.0) Audio.zip`,hasMockPack?'Bấm “Tải bài” để tải Đề thi thử Đọc hiểu & Đáp án 40 câu':`Đáp án SBT HSK ${h.lvl}.pdf`],
         status:'draft',
+        downloaded:false,
         sourceRef:{fileName:`SBT HSK${h.lvl} - Tiếng Việt (3.0).pdf`,fileHash:'',pageRange:'Cuối sách'},
         audioTracks:mockTracks,
         workbook:{exercisesNote:`Đề thi thử trong SBT HSK${h.lvl} - Tiếng Việt (3.0).pdf`,answerKeyNote:`Đáp án SBT HSK ${h.lvl}.pdf`,transcriptNote:h.lvl===2?'Lời thoại phần nghe SBT HSK2.pdf':''},
         optionalExtensions:{hackNaoIds:[],mindMapRootChars:[]},
         originalContent:'',supplementalContent:'',wordIds:[],sentences:[],dialog:[],dialogQuestions:[],grammarPoints:{},grammarQuiz:[],orderBank:[],chars:[],updatedAt:now
-      });
+      };
+      if(mockFull){
+        populateLessonFromPackData(mockObj,mockFull,{system:'hsk30',packKey,lvl:h.lvl,num:'mock',dataKey:'mock'});
+        mockObj.updatedAt=now;
+      }
+      lessons.push(mockObj);
     }
+    const courseDesc=packMeta
+      ?`Hệ thống NEW HSK 3.0 Cấp ${h.lvl} độc lập (${h.cnt} bài${h.hasSbt?' + Đề thi thử + SBT & Đáp án':''}). Đã nạp sẵn Bài 1–2; các bài khác bấm Tải khi cần học để giữ ứng dụng gọn nhẹ.`
+      :`Hệ thống NEW HSK 3.0 Cấp ${h.lvl} độc lập. Đã ánh xạ đủ toàn bộ track MP3 giáo trình & SBT; hỗ trợ nạp thẳng file .zip/.mp3 từ máy.`;
     courses.push({
       id:cId,title:h.title,group:'hsk',systemTrack:'hsk30',versionLabel:h.ver,source:h.src,level:`HSK ${h.lvl} (3.0)`,
-      desc:`Hệ thống NEW HSK 3.0 Cấp ${h.lvl} độc lập. Đã ánh xạ đủ toàn bộ track MP3 giáo trình & SBT; hỗ trợ nạp thẳng file .zip/.mp3 từ máy.`,
+      desc:courseDesc,
       status:'published',lessonOrder:order,createdAt:now,updatedAt:now
     });
   });
@@ -516,10 +592,19 @@ async function seedStandardCatalog(interactive=true){
       if(ex.status==='draft'&&!isLessonContentLoaded(ex)){
         if(isLessonContentLoaded(l)){
           LESSONS[idx]=l;await HanyuIDB.put('lessons',l);updatedL++;
-        }else if(Array.isArray(l.goals)&&JSON.stringify(ex.goals||[])!==JSON.stringify(l.goals)){
-          ex.goals=l.goals.slice();
-          await HanyuIDB.put('lessons',ex);
-          updatedL++;
+        }else{
+          const isLegacySeed=!ex.updatedAt||ex.updatedAt===SEED_TS||/^HSK \d+ \(3\.0\) · Bài \d+$/.test(ex.titleVi||'')||/^Đề thi thử Nghe HSK \d+/.test(ex.titleVi||'');
+          let lChg=false;
+          if(Array.isArray(l.goals)&&JSON.stringify(ex.goals||[])!==JSON.stringify(l.goals)){ex.goals=l.goals.slice();lChg=true;}
+          if(isLegacySeed){
+            if(l.titleVi&&ex.titleVi!==l.titleVi){ex.titleVi=l.titleVi;lChg=true;}
+            if(l.titleZh&&ex.titleZh!==l.titleZh){ex.titleZh=l.titleZh;lChg=true;}
+            if(l.py&&ex.py!==l.py){ex.py=l.py;lChg=true;}
+            if(l.sourceRef&&JSON.stringify(ex.sourceRef||{})!==JSON.stringify(l.sourceRef)){ex.sourceRef=Object.assign({},l.sourceRef);lChg=true;}
+            if(l.workbook&&!ex.workbook){ex.workbook=Object.assign({},l.workbook);lChg=true;}
+            if(Array.isArray(l.audioTracks)&&l.audioTracks.length&&(!Array.isArray(ex.audioTracks)||!ex.audioTracks.length)){ex.audioTracks=l.audioTracks.slice();lChg=true;}
+          }
+          if(lChg){await HanyuIDB.put('lessons',ex);updatedL++;}
         }
       }else if(l.optionalExtensions&&((!ex.optionalExtensions||!(ex.optionalExtensions.hackNaoIds||[]).length)&&((l.optionalExtensions.hackNaoIds||[]).length||(l.optionalExtensions.mindMapRootChars||[]).length))){
         ex.optionalExtensions=l.optionalExtensions;
@@ -585,7 +670,7 @@ async function pruneLegacyUnstudiedLessons(){
     }
   });
   const preDefault=(typeof DEFAULT_PRELOADED_LESSON_IDS!=='undefined'&&Array.isArray(DEFAULT_PRELOADED_LESSON_IDS))
-    ?DEFAULT_PRELOADED_LESSON_IDS:['lesson_hn1_b1','lesson_hn1_b2'];
+    ?DEFAULT_PRELOADED_LESSON_IDS:['lesson_hn1_b1','lesson_hn1_b2','lesson_hsk30_1_b1','lesson_hsk30_1_b2'];
   const keepLessonIds=new Set(preDefault);
   for(const l of LESSONS){
     const info=parseHnLessonId(l.id);

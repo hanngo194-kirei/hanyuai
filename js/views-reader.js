@@ -15,7 +15,7 @@ function applyActiveLesson(){
   }else{
     WORDS=(l.wordIds||[]).map(id=>store.vocabBank[id]).filter(Boolean);
     const dlg=(l.dialog||[]);
-    LISTEN_DIALOG=dlg.map((d,i)=>({speaker:d.speaker||(i%2===0?'A':'B'),name:d.name||(i%2===0?'Người A':'Người B'),zh:d.zh||'',py:d.py||'',vi:d.vi||''})).filter(d=>d.zh);
+    LISTEN_DIALOG=dlg.map((d,i)=>({section:d.section||'',context:d.context||'',audio:d.audio||'',speaker:d.speaker||(i%2===0?'A':'B'),name:d.name||(i%2===0?'Người A':'Người B'),zh:d.zh||'',py:d.py||'',vi:d.vi||''})).filter(d=>d.zh);
     SENT=(l.sentences&&l.sentences.length)?l.sentences:LISTEN_DIALOG.map(d=>({zh:d.zh,py:d.py,vi:d.vi}));
     DIALOG_QUESTIONS=l.dialogQuestions||[];
     GRAMMAR_POINTS=l.grammarPoints||{};
@@ -268,7 +268,7 @@ function renderLessonDetail(){
     if(!wb||(!wb.exercisesNote&&!wb.answerKeyNote&&!wb.transcriptNote)){wbCard.classList.add('hide');wbCard.innerHTML='';}
     else{
       wbCard.classList.remove('hide');
-      wbCard.innerHTML=`<details><summary style="cursor:pointer;font-weight:700">Sách bài tập &amp; Đáp án đối chiếu</summary><div class="small" style="margin-top:8px;line-height:1.5">${wb.exercisesNote?`<div><b>Bài tập:</b> ${escHtml(wb.exercisesNote)}</div>`:''}${wb.answerKeyNote?`<div style="margin-top:4px"><b>Đáp án:</b> ${escHtml(wb.answerKeyNote)}</div>`:''}${wb.transcriptNote?`<div style="margin-top:4px"><b>Lời thoại nghe:</b> ${escHtml(wb.transcriptNote)}</div>`:''}</div></details>`;
+      wbCard.innerHTML=`<details><summary style="cursor:pointer;font-weight:700">Sách bài tập &amp; Đáp án đối chiếu</summary><div class="small" style="margin-top:8px;line-height:1.55;white-space:pre-line">${wb.exercisesNote?`<div><b>Bài tập:</b> ${escHtml(wb.exercisesNote)}</div>`:''}${wb.answerKeyNote?`<div style="margin-top:6px"><b>Đáp án:</b>\n${escHtml(wb.answerKeyNote)}</div>`:''}${wb.transcriptNote?`<div style="margin-top:6px"><b>Lời thoại nghe:</b>\n${escHtml(wb.transcriptNote)}</div>`:''}</div></details>`;
     }
   }
   // Mở rộng tùy chọn Hack não & Sơ đồ tư duy (8D)
@@ -308,7 +308,8 @@ function renderLessonDetail(){
   setAct('ls-act-gram', gCnt?`${gCnt} cấu trúc và cách sử dụng`:'Cấu trúc và cách sử dụng', gCnt>0, prog.doneMap.grammar, 'Chưa học', false);
   setAct('ls-act-lis', (WORDS.length||LISTEN_DIALOG.length)?'Nghe hội thoại · Bài tập nghe hiểu':'Chưa có dữ liệu nghe', (WORDS.length+LISTEN_DIALOG.length)>0, prog.doneMap.listen, 'Chưa học', false);
   setAct('ls-act-spk', (WORDS.length||SENT.length)?'Phát âm · Đọc theo · Ghi âm':'Chưa có câu luyện đọc', (WORDS.length+SENT.length)>0, prog.doneMap.speak, 'Chưa học', false);
-  setAct('ls-act-ex', WORDS.length?`Luyện tập tổng hợp · Kiểm tra (${WORDS.length} từ)`:'Cần có ít nhất 2 từ vựng', WORDS.length>=2, prog.doneMap.exercise, 'Chưa làm', false);
+  const gqCnt=(typeof GRAMMAR_QUIZ!=='undefined'&&Array.isArray(GRAMMAR_QUIZ))?GRAMMAR_QUIZ.length:0;
+  setAct('ls-act-ex', WORDS.length?`Luyện tập tổng hợp · Kiểm tra (${WORDS.length} từ)`:(gqCnt?`Đề trắc nghiệm tổng hợp (${gqCnt} câu)`:'Cần có ít nhất 2 từ vựng'), WORDS.length>=2||gqCnt>0, prog.doneMap.exercise, 'Chưa làm', false);
 
   setAct('ls-act-dlg', LISTEN_DIALOG.length?`Đọc · Nghe · ${LISTEN_DIALOG.length} câu`:'Đọc · Nghe · Hiểu hội thoại', LISTEN_DIALOG.length>0, prog.doneMap.dialog, '', true);
   setAct('ls-act-copy', LISTEN_DIALOG.length?`Chép ${LISTEN_DIALOG.length} câu · Bút / Tẩy`:'Nghe và chép · Chép theo mẫu', (LISTEN_DIALOG.length+SENT.length)>0, prog.doneMap.copy, '', true);
@@ -955,7 +956,8 @@ function renderTextbookReader(){
   const dlg = l.dialog || [];
   const grams = Object.values(l.grammarPoints||{});
   const chars = l.chars || [];
-  const hasBody = words.length > 0 || dlg.length > 0 || grams.length > 0;
+  const quizzes = Array.isArray(l.grammarQuiz) ? l.grammarQuiz : [];
+  const hasBody = words.length > 0 || dlg.length > 0 || grams.length > 0 || quizzes.length > 0;
   const prevL = idx > 0 ? ls[idx-1] : null;
   const nextL = idx < ls.length - 1 ? ls[idx+1] : null;
 
@@ -968,7 +970,7 @@ function renderTextbookReader(){
           ${(l.py||l.titlePy)?`<div class="small muted">${escHtml(l.py||l.titlePy)}</div>`:''}
           <div style="font-weight:600;margin-top:2px">${escHtml(l.titleVi||'')}</div>
           ${l.sourceRef&&l.sourceRef.pageRange?`<div class="small muted" style="margin-top:4px">Nguồn: ${escHtml(l.sourceRef.fileName||'')} · Trang ${escHtml(l.sourceRef.pageRange)}</div>`:''}
-          ${((l.audioTracks&&l.audioTracks[0]&&l.audioTracks[0].fileName)||(l.audio&&l.audio.trackName))?`<div class="small muted" style="margin-top:2px">Audio đối chiếu: <code>${escHtml((l.audioTracks&&l.audioTracks[0]&&l.audioTracks[0].fileName)||l.audio.trackName)}</code></div>`:''}
+          ${((l.audioTracks&&l.audioTracks[0]&&l.audioTracks[0].fileName)||(l.audio&&l.audio.trackName))?`<div class="small muted" style="margin-top:2px">Audio đối chiếu: <code>${escHtml((l.audioTracks&&l.audioTracks[0]&&l.audioTracks[0].fileName)||l.audio.trackName)}</code>${l.audioTracks&&l.audioTracks.length>1?` (+${l.audioTracks.length-1} track)`:''}</div>`:''}
         </div>
         <button type="button" class="btn sm" data-tb-study="${escHtml(l.id)}">Học bài này →</button>
       </div>
@@ -1015,21 +1017,29 @@ function renderTextbookReader(){
       `;
     }
     if(dlg.length){
+      let prevSec = '';
       bodyHtml += `
         <div class="card" style="margin-bottom:12px">
           <h3 style="margin:0 0 8px;font-size:16px">2. Bài khóa / Hội thoại (${dlg.length} câu)</h3>
           <div style="display:grid;gap:8px">
-            ${dlg.map(d=>`
+            ${dlg.map(d=>{
+              let secHtml = '';
+              if(d.section && d.section !== prevSec){
+                prevSec = d.section;
+                secHtml = `<div style="padding:7px 10px;border-radius:9px;background:var(--surface2,#F8E8DE);border:1px solid var(--line,#eadfd3);margin-top:4px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b class="small" style="color:var(--accent)">${escHtml(d.section)}</b>${d.audio?`<code class="small muted">${escHtml(d.audio)}</code>`:''}</div>${d.context?`<div class="small muted" style="margin-top:2px">${escHtml(d.context)}</div>`:''}</div>`;
+              }
+              return secHtml + `
               <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--line,#eadfd3);border-radius:10px">
                 <div style="min-width:0">
                   ${d.name||d.speaker?`<div class="small muted" style="font-weight:600">${escHtml(d.name||d.speaker)}</div>`:''}
-                  <div style="font-size:16px;font-weight:600;margin-top:2px">${escHtml(d.zh)}</div>
-                  ${d.py?`<div class="small muted">${escHtml(d.py)}</div>`:''}
-                  ${d.vi?`<div class="small" style="margin-top:2px">${escHtml(d.vi)}</div>`:''}
+                  <div style="font-size:16px;font-weight:600;margin-top:2px;white-space:pre-line">${escHtml(d.zh)}</div>
+                  ${d.py?`<div class="small muted" style="white-space:pre-line">${escHtml(d.py)}</div>`:''}
+                  ${d.vi?`<div class="small" style="margin-top:2px;white-space:pre-line">${escHtml(d.vi)}</div>`:''}
                 </div>
                 <button type="button" class="ico-btn" data-say="${escHtml(d.zh)}" title="Đọc câu">🔊</button>
               </div>
-            `).join('')}
+            `;
+            }).join('')}
           </div>
         </div>
       `;
@@ -1039,13 +1049,18 @@ function renderTextbookReader(){
         <div class="card" style="margin-bottom:12px">
           <h3 style="margin:0 0 8px;font-size:16px">3. Ngữ pháp trọng điểm (${grams.length})</h3>
           <div style="display:grid;gap:8px">
-            ${grams.map(g=>`
-              <div style="padding:8px 10px;border:1px solid var(--line,#eadfd3);border-radius:10px">
+            ${grams.map(g=>{
+              const exItems = Array.isArray(g.examples) ? g.examples : [];
+              return `
+              <div style="padding:10px 12px;border:1px solid var(--line,#eadfd3);border-radius:10px">
                 <b>${escHtml(g.title||'')}</b>
-                ${g.explain?`<p class="small muted" style="margin:4px 0 0">${escHtml(g.explain)}</p>`:''}
-                ${g.ex?`<div class="small" style="margin-top:4px"><i>VD: ${escHtml(g.ex)}</i></div>`:''}
+                ${g.struct?`<div class="small" style="margin-top:4px;color:var(--accent)"><b>Cấu trúc:</b> ${escHtml(g.struct)}</div>`:''}
+                ${g.explain?`<p class="small muted" style="margin:4px 0 0;white-space:pre-line">${escHtml(g.explain)}</p>`:''}
+                ${exItems.length?`<div style="display:grid;gap:4px;margin-top:6px">${exItems.map(ex=>`<div class="small" style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:5px 8px;border-radius:8px;background:var(--surface2,#FAF0E8)"><div><b>${escHtml(ex.zh||'')}</b>${ex.py?` <span class="muted">(${escHtml(ex.py)})</span>`:''}${ex.vi?` — ${escHtml(ex.vi)}`:''}</div>${ex.zh?`<button type="button" class="ico-btn" data-say="${escHtml(ex.zh)}" title="Nghe ví dụ">🔊</button>`:''}</div>`).join('')}</div>`:(g.ex?`<div class="small" style="margin-top:4px"><i>VD: ${escHtml(g.ex)}</i></div>`:'')}
+                ${g.note?`<div class="small muted" style="margin-top:5px"><i>Lưu ý: ${escHtml(g.note)}</i></div>`:''}
               </div>
-            `).join('')}
+            `;
+            }).join('')}
           </div>
         </div>
       `;
@@ -1057,6 +1072,23 @@ function renderTextbookReader(){
           <div style="display:flex;flex-wrap:wrap;gap:8px">
             ${chars.map(ch=>`<span style="display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;border:1px solid var(--line,#eadfd3);border-radius:10px;font-size:20px;font-weight:600">${escHtml(typeof ch==='string'?ch:(ch.ch||''))}</span>`).join('')}
           </div>
+        </div>
+      `;
+    }
+    if(l.supplementalContent){
+      bodyHtml += `
+        <div class="card" style="margin-bottom:12px">
+          <h3 style="margin:0 0 6px;font-size:15px">Ghi chú bổ trợ &amp; Luyện âm</h3>
+          <div class="small" style="white-space:pre-line;line-height:1.55">${escHtml(l.supplementalContent)}</div>
+        </div>
+      `;
+    }
+    if(quizzes.length || (l.workbook && (l.workbook.exercisesNote || l.workbook.answerKeyNote))){
+      bodyHtml += `
+        <div class="card" style="margin-bottom:12px">
+          <h3 style="margin:0 0 8px;font-size:16px">5. Bài tập tổng hợp &amp; Sách bài tập (SBT)</h3>
+          ${quizzes.length?`<div style="display:grid;gap:8px;margin-bottom:10px">${quizzes.map((q,qi)=>`<div style="padding:8px 10px;border:1px solid var(--line,#eadfd3);border-radius:10px"><div class="small" style="font-weight:600">${qi+1}. ${escHtml(q.q||'')}</div>${Array.isArray(q.opts)?`<div class="small muted" style="margin-top:4px">${q.opts.map((o,oi)=>`${['A','B','C','D','E','F'][oi]||oi+1}. ${escHtml(o.t||'')}`).join(' · ')}</div>`:''}${q.exp?`<details style="margin-top:4px"><summary class="small" style="cursor:pointer;color:var(--accent);font-weight:600">Xem đáp án &amp; giải thích</summary><div class="small" style="margin-top:3px">${escHtml(q.exp)}</div></details>`:''}</div>`).join('')}</div>`:''}
+          ${l.workbook&&(l.workbook.exercisesNote||l.workbook.answerKeyNote)?`<details ${!quizzes.length?'open':''}><summary style="cursor:pointer;font-weight:700" class="small">SBT &amp; Đáp án chi tiết</summary><div class="small" style="margin-top:6px;line-height:1.55;white-space:pre-line">${l.workbook.exercisesNote?`<div><b>Nội dung SBT:</b> ${escHtml(l.workbook.exercisesNote)}</div>`:''}${l.workbook.answerKeyNote?`<div style="margin-top:6px"><b>Đáp án SBT:</b>\n${escHtml(l.workbook.answerKeyNote)}</div>`:''}</div></details>`:''}
         </div>
       `;
     }
