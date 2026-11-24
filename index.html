@@ -12,6 +12,7 @@
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&amp;family=Noto+Serif+SC:wght@500;700&amp;display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="css/tokens-core.css"/>
+<link rel="stylesheet" href="css/dot4.css"/>
 </head><body>
 <svg aria-hidden="true" focusable="false" height="0" style="position:absolute" width="0">
 <defs>
@@ -88,6 +89,7 @@
 <!-- ================= TRANG CHỦ ================= -->
 <section class="view on" data-view="home">
 <div><h1 class="hello">Chào mi! 👋</h1><p class="sub">Sẵn sàng cho bài học hôm nay?</p></div>
+<div class="hm-streak-strip" id="hm-streak-strip" data-go="me"></div>
 <div class="grid2">
 <article class="card">
 <div class="head"><svg class="ic"><use href="#i-target"></use></svg><div><h3>Mục tiêu hôm nay</h3><span class="muted small" id="hm-goal-txt">0 / 20 phút</span></div></div>
@@ -874,46 +876,47 @@
 <div class="sp-hist-list" id="sp-hist-list"></div>
 </div>
 </section>
-<!-- ================= CÁ NHÂN (THỐNG KÊ THẬT) ================= -->
+<!-- ================= CÁ NHÂN (THỐNG KÊ THẬT 4 TAB) ================= -->
 <section class="view" data-view="me" id="me">
-<div><h1 class="hello" style="font-size:28px">Tiến độ học tập</h1><span class="sub">Dữ liệu thực tế từ hoạt động học của bạn</span></div>
+<div class="me-head">
+  <div><h1 class="hello">Cá nhân &amp; Tiến độ</h1><span class="sub">Dữ liệu thực tế từ hoạt động học cục bộ của bạn</span></div>
+</div>
 <div class="segs" id="mtabs">
 <button class="on" data-m="ov" type="button"><svg class="ic"><use href="#i-bars"></use></svg>Tổng quan</button>
 <button data-m="sk" type="button"><svg class="ic"><use href="#i-layers"></use></svg>Kỹ năng</button>
+<button data-m="gl" type="button"><svg class="ic"><use href="#i-target"></use></svg>Mục tiêu</button>
 <button data-m="hi" type="button"><svg class="ic"><use href="#i-clock"></use></svg>Lịch sử</button>
 </div>
 <div data-pane="ov">
-<div class="card overview">
+<div class="card me-profile-card">
+  <div class="me-prof-top">
+    <img alt="Hanyu AI" class="me-avatar" id="me-avatar-img"/>
+    <div class="me-prof-mid">
+      <div class="me-prof-title"><b>Học viên Hanyu AI</b><span class="me-lvl-pill" id="me-level-badge">Cấp 1</span></div>
+      <div class="me-prof-sub" id="me-profile-sub">Mới bắt đầu · Duy trì học mỗi ngày</div>
+    </div>
+    <span class="me-streak-chip" id="me-streak-pill"><svg class="ic f"><use href="#i-flame"></use></svg><span>0 ngày</span></span>
+  </div>
+  <div class="me-xp-wrap">
+    <div class="me-xp-row"><span class="muted">Kinh nghiệm cục bộ (XP)</span><b id="me-xp-txt">0 XP · Còn 250 XP lên Cấp 2</b></div>
+    <div class="me-xp-bar"><i id="me-xp-bar" style="width:0%"></i></div>
+  </div>
+</div>
+<div class="stats4">
+<div><svg class="ic"><use href="#i-book"></use></svg><b id="me-done-lessons">0 bài</b><span>Bài hoàn thành</span><small class="me-kpi-sub"><i id="me-sessions">0</i> phiên luyện</small></div>
+<div><svg class="ic"><use href="#i-layers"></use></svg><b id="me-learned">0</b><span>Từ vựng đã học</span><small class="me-kpi-sub" id="me-learned-sub">0 ghi nhớ tốt</small></div>
+<div><svg class="ic" style="color:#E8702A"><use href="#i-flame"></use></svg><b id="me-streak">0 ngày</b><span>Ngày liên tiếp</span><small class="me-kpi-sub" id="me-streak-sub">Chuỗi hiện tại</small></div>
+<div><svg class="ic"><use href="#i-clock"></use></svg><b id="me-time">0 phút</b><span>Thời gian học</span><small class="me-kpi-sub" id="me-time-sub">Hôm nay: 0 phút</small></div>
+</div>
+<div class="card">
+<div class="overview">
 <div class="ring"><svg viewbox="0 0 120 120"><circle cx="60" cy="60" fill="none" r="52" stroke="var(--surface2)" stroke-width="12"></circle><circle cx="60" cy="60" fill="none" id="me-ring" r="52" stroke="var(--accent)" stroke-dasharray="326.7" stroke-dashoffset="326.7" stroke-linecap="round" stroke-width="12"></circle></svg><div><b id="me-pct">0%</b><span>Hoàn thành</span></div></div>
-<div style="flex:1;min-width:0;display:grid;gap:8px"><span class="lvl" style="justify-self:start"><svg class="ic"><use href="#i-bars"></use></svg>Bài 4 • Sở thích</span><div id="me-lesson-txt">Đã hoàn thành 0 / 5 phần</div><div class="bar"><i id="me-lesson-bar" style="width:0%"></i></div><div class="small muted" id="me-due-txt">0 từ đến hạn • 0 từ ghi nhớ tốt</div></div>
+<div style="flex:1;min-width:0;display:grid;gap:7px"><span class="lvl" id="me-active-lvl" style="justify-self:start"><svg class="ic"><use href="#i-bars"></use></svg><span>Giáo trình hiện tại</span></span><div id="me-lesson-txt">Đã hoàn thành 0 / 15 bài</div><div class="bar"><i id="me-lesson-bar" style="width:0%"></i></div><div class="small muted" id="me-due-txt">0 từ đến hạn • 0 từ ghi nhớ tốt</div></div>
 </div>
-<div class="stats4" style="margin-top:14px">
-<div><svg class="ic" style="color:#E8702A"><use href="#i-flame"></use></svg><b id="me-streak">0 ngày</b><span>Chuỗi học liên tiếp</span></div>
-<div><svg class="ic"><use href="#i-layers"></use></svg><b id="me-sessions">0</b><span>Phiên đã học</span></div>
-<div><svg class="ic"><use href="#i-book"></use></svg><b id="me-learned">0 / 10</b><span>Từ vựng đã học</span></div>
-<div><svg class="ic"><use href="#i-clock"></use></svg><b id="me-time">0 phút</b><span>Thời gian đã đo</span></div>
-</div>
-<!-- Gợi ý ôn luyện dựa trên dữ liệu thật -->
-<div class="h2"><h2>Gợi ý ôn luyện</h2></div>
-<div class="list" id="me-recs"></div>
-<!-- Mục tiêu hằng ngày -->
-<div class="card" style="margin-top:14px">
-<div class="barrow" style="justify-content:space-between"><div class="head" style="align-items:center"><svg class="ic" style="width:1.4em;height:1.4em"><use href="#i-target"></use></svg><h3>Mục tiêu hôm nay</h3></div><button class="chip" id="me-goal-edit" type="button">Tùy chỉnh</button></div>
-<div class="list" id="me-goal-list"></div>
-<div class="hide" id="me-goal-form" style="display:grid;gap:8px;margin-top:8px">
-<div class="goal-grid">
-<label class="goal-inp"><span>Phút học</span><input id="g-min" max="180" min="5" type="number"/></label>
-<label class="goal-inp"><span>Từ mới</span><input id="g-new" max="50" min="1" type="number"/></label>
-<label class="goal-inp"><span>Từ ôn SRS</span><input id="g-rev" max="100" min="1" type="number"/></label>
-<label class="goal-inp"><span>Bài nghe</span><input id="g-lis" max="20" min="1" type="number"/></label>
-<label class="goal-inp"><span>Lượt nói</span><input id="g-spk" max="30" min="1" type="number"/></label>
-<label class="goal-inp"><span>Chữ viết</span><input id="g-wri" max="30" min="1" type="number"/></label>
-</div>
-<button class="btn sm" id="me-goal-save" type="button">Lưu mục tiêu</button>
-</div>
+<div class="me-parallel-mini hide" id="me-parallel-mini"></div>
 </div>
 <!-- Biểu đồ thống kê thật -->
-<div class="card" style="margin-top:14px">
+<div class="card">
 <div class="barrow" style="justify-content:space-between"><div class="head" style="align-items:center"><svg class="ic" style="width:1.4em;height:1.4em"><use href="#i-cal"></use></svg><h3>Biểu đồ hoạt động</h3></div></div>
 <div class="subchips" id="ch-range">
 <button class="chip on" data-cr="7" type="button">7 ngày</button>
@@ -935,25 +938,73 @@
 <div class="chart" id="wk-chart" role="img"><div class="yax" id="wk-yax"><span>0</span><span>5</span><span>10</span><span>15</span><span>20</span></div><div class="cols" id="wk-cols"></div></div>
 </div>
 </div>
+<!-- Gợi ý ôn luyện dựa trên dữ liệu thật -->
+<div class="h2"><h2>Gợi ý hôm nay</h2></div>
+<div class="list" id="me-recs"></div>
 </div>
-<div class="hide" data-pane="sk" id="me-skills-pane"></div>
+<div class="hide" data-pane="sk">
+<div class="card me-sk-summary">
+  <div class="head" style="align-items:center"><svg class="ic" style="width:1.3em;height:1.3em"><use href="#i-layers"></use></svg><h3>Tổng hợp 4 kỹ năng</h3></div>
+  <div class="me-sk-rings" id="me-sk-rings"></div>
+</div>
+<div class="me-sk-grid" id="me-skills-pane"></div>
+<div class="card me-improve-card" id="me-sk-improve"></div>
+</div>
+<div class="hide" data-pane="gl">
+<div class="card me-gl-hero">
+  <div class="me-gl-top">
+    <div><div class="head" style="align-items:center"><svg class="ic" style="width:1.4em;height:1.4em"><use href="#i-target"></use></svg><h3>Mục tiêu hôm nay</h3></div><div class="me-gl-date" id="me-gl-date">Hôm nay</div></div>
+    <button class="chip" id="me-goal-edit" type="button">Tùy chỉnh</button>
+  </div>
+  <div class="me-gl-overview">
+    <div class="me-gl-ringbox">
+      <svg viewbox="0 0 100 100"><circle cx="50" cy="50" fill="none" r="42" stroke="var(--surface2)" stroke-width="10"></circle><circle cx="50" cy="50" fill="none" id="me-gl-ring" r="42" stroke="var(--accent)" stroke-dasharray="263.9" stroke-dashoffset="263.9" stroke-linecap="round" stroke-width="10"></circle></svg>
+      <div class="me-gl-ringtxt"><b id="me-gl-pct">0%</b><span id="me-gl-done">0 / 6</span></div>
+    </div>
+    <div class="me-gl-sum3" id="me-gl-sum3"></div>
+  </div>
+  <div class="hide" id="me-goal-form" style="display:grid;gap:8px;padding-top:8px;border-top:1px dashed var(--line)">
+  <div class="goal-grid">
+  <label class="goal-inp"><span>Phút học</span><input id="g-min" max="180" min="5" type="number"/></label>
+  <label class="goal-inp"><span>Từ mới</span><input id="g-new" max="50" min="1" type="number"/></label>
+  <label class="goal-inp"><span>Từ ôn SRS</span><input id="g-rev" max="100" min="1" type="number"/></label>
+  <label class="goal-inp"><span>Bài nghe</span><input id="g-lis" max="20" min="1" type="number"/></label>
+  <label class="goal-inp"><span>Lượt nói</span><input id="g-spk" max="30" min="1" type="number"/></label>
+  <label class="goal-inp"><span>Chữ viết</span><input id="g-wri" max="30" min="1" type="number"/></label>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" id="me-goal-save" type="button">Lưu mục tiêu</button><button class="btn ghost sm" id="me-goal-reset" type="button">Đặt lại mặc định</button></div>
+  </div>
+</div>
+<div class="card"><div class="me-gl-list" id="me-goal-list"></div></div>
+<div class="card me-quote-card">
+  <span style="font-size:26px;line-height:1">🏮</span>
+  <div><div class="me-quote-zh">千里之行，始于足下。</div><div class="me-quote-vi">Hành trình vạn dặm bắt đầu từ một bước chân — duy trì mỗi ngày một chút sẽ tiến xa.</div></div>
+</div>
+</div>
 <div class="hide" data-pane="hi">
 <div class="subchips" id="hi-skill-flt">
 <button class="chip on" data-hs="all" type="button">Tất cả</button>
 <button class="chip" data-hs="vocab" type="button">Từ vựng/SRS</button>
-<button class="chip" data-hs="read" type="button">Bài tập/Ngữ pháp</button>
+<button class="chip" data-hs="read" type="button">Bài học/Ngữ pháp</button>
 <button class="chip" data-hs="listen" type="button">Nghe</button>
 <button class="chip" data-hs="write" type="button">Viết</button>
 <button class="chip" data-hs="speak" type="button">Nói</button>
 </div>
-<div class="subchips" id="hi-date-flt" style="margin-top:8px">
+<div class="subchips" id="hi-date-flt" style="margin-top:0">
 <button class="chip on" data-hd="all" type="button">Mọi ngày</button>
 <button class="chip" data-hd="today" type="button">Hôm nay</button>
 <button class="chip" data-hd="7" type="button">7 ngày qua</button>
 </div>
-<div class="card" style="margin-top:10px"><div class="hist" id="me-hist-list"></div></div>
+<div class="small muted" id="me-hi-summary"></div>
+<div class="card"><div class="me-tl" id="me-hist-list"></div></div>
 </div>
-<div class="card themebtn" style="margin-top:14px"><span style="display:flex;gap:8px;align-items:center"><svg class="ic" style="color:var(--accent)"><use href="#i-moon"></use></svg>Giao diện sáng / tối</span><button class="chip" id="themebtn" type="button">Đổi</button></div>
+<div class="card" style="display:grid;gap:10px">
+  <div class="themebtn"><span style="display:flex;gap:8px;align-items:center"><svg class="ic" style="color:var(--accent)"><use href="#i-moon"></use></svg>Giao diện sáng / tối</span><button class="chip" id="themebtn" type="button">Đổi</button></div>
+  <div class="me-util-acts">
+    <button class="chip" data-open-setup="1" type="button">Đổi trình độ HSK &amp; giáo trình</button>
+    <button class="chip" data-open-backup="1" type="button">Sao lưu / Khôi phục JSON</button>
+  </div>
+</div>
 </section>
 
 <section class="view" data-view="course-detail" id="course-detail">

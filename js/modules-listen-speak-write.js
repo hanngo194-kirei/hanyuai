@@ -1669,9 +1669,9 @@ function recordLearningEvent(ev){
   d.events=(d.events||0)+1;
   if(rec.type==='vocab')d.newWords=(d.newWords||0)+1;
   else if(rec.type==='srs')d.reviews=(d.reviews||0)+1;
-  else if(rec.type==='listen'||rec.type==='dictation')d.listen=(d.listen||0)+1;
+  else if(rec.type==='listen'||rec.type==='dictation'||rec.type==='tone')d.listen=(d.listen||0)+1;
   else if(rec.type==='record'||rec.type==='assess')d.speak=(d.speak||0)+1;
-  else if(rec.type==='writing')d.write=(d.write||0)+1;
+  else if(rec.type==='writing'||rec.type==='write'||rec.type==='copy')d.write=(d.write||0)+1;
   if(rec.meta&&Number.isFinite(rec.meta.correct))d.correct=(d.correct||0)+rec.meta.correct;
   if(typeof markLessonSectionDone==='function'&&store.activeLessonId){
     const mapType={exercise:'exercise',grammar:'grammar',listen:'listen',dictation:'listen',record:'speak',assess:'speak',writing:'writing'};
@@ -1706,47 +1706,94 @@ function computeStreak(now=Date.now()){
   return streak;
 }
 
+const XP_PER_LEVEL=250;
+function formatDurationVi(min){
+  const m=Math.max(0,Math.round(Number(min)||0));
+  if(m<60)return `${m} phút`;
+  const h=Math.floor(m/60),rem=m%60;
+  return rem?`${h}g ${rem}p`:`${h} giờ`;
+}
+
+function computeXpStats(s){
+  const xp=(s.totalLearnedWords*10)+(s.totalSrsReviews*5)+(s.totalCompletedLessons*50)
+    +(s.lisSessCnt*15)+(s.quizSessCnt*15)+(s.spkOk*15)+(s.spkRecs*5)
+    +(s.wriTotalPracticed*10)+(s.wriTotalGuided*5);
+  const level=Math.floor(xp/XP_PER_LEVEL)+1;
+  const inLevel=xp%XP_PER_LEVEL;
+  const toNext=XP_PER_LEVEL-inLevel;
+  const pct=Math.min(100,Math.round(inLevel*100/XP_PER_LEVEL));
+  const ranks=['Nhập môn','Sơ cấp','Tiến bộ','Vững vàng','Thành thạo','Tinh thông','Cao thủ'];
+  const rank=ranks[Math.min(ranks.length-1,Math.floor((level-1)/2))];
+  return {xp,level,inLevel,toNext,pct,rank};
+}
+
 function computeStats(){
   const now=Date.now(),todayKey=localDateKey(now);
   const td=store.daily[todayKey]||{minutes:0,seconds:0,newWords:0,reviews:0,listen:0,speak:0,write:0,events:0};
-  const learnedWords=WORDS.filter(w=>getWordState(w.id).status!=='new').length;
-  const dueWords=WORDS.filter(w=>isDue(w.id,now)).length;
-  const wellKnownWords=WORDS.filter(w=>{const s=getWordState(w.id);return s.status==='review'&&s.intervalDays>=3&&s.ease>=2.3;}).length;
+  const allWordStates=Object.values(store.words||{});
+  const totalLearnedWords=allWordStates.filter(s=>s&&s.status&&s.status!=='new').length;
+  const totalWellKnownWords=allWordStates.filter(s=>s&&s.status==='review'&&s.intervalDays>=3&&s.ease>=2.3).length;
+  const activeLessonLearnedWords=WORDS.filter(w=>getWordState(w.id).status!=='new').length;
+
+  const pool=typeof getReviewWordPool==='function'?getReviewWordPool():WORDS;
+  const dueWords=pool.filter(w=>isDue(w.id,now)).length;
 
   let srsTotalRatings=0,srsGoodRatings=0;
-  WORDS.forEach(w=>{
-    const h=getWordState(w.id).history||[];
+  const wordHistSrc=allWordStates.length?allWordStates:WORDS.map(w=>getWordState(w.id));
+  wordHistSrc.forEach(s=>{
+    const h=(s&&s.history)||[];
     h.forEach(x=>{srsTotalRatings++;if(x.rating>=1)srsGoodRatings++;});
   });
   const retentionPct=srsTotalRatings>0?Math.round(srsGoodRatings/srsTotalRatings*100):null;
 
-  // Bài 4 có 5 phần thực hành đo được: từ vựng, bài tập, ngữ pháp, nghe, viết
-  const lessonParts=[
-    learnedWords>0,
-    store.exercises.attempts>0,
-    store.grammarQuiz.attempts>0,
-    store.listening.attempts>0,
-    CHARS.some(c=>getWriteRec(c.id).attempts>0)
-  ];
-  const lessonDone=lessonParts.filter(Boolean).length;
-  const lessonPct=Math.round(lessonDone/lessonParts.length*100);
+  // Tổng số bài đã hoàn thành độc lập trên tất cả giáo trình
+  const cpMap=store.courseProgress||{};
+  let totalCompletedLessons=0;
+  Object.values(cpMap).forEach(cp=>{
+    const ids=(cp&&Array.isArray(cp.completedLessonIds))?cp.completedLessonIds:[];
+    totalCompletedLessons+=ids.filter(id=>!/^lesson_hsk30_\d+_mock$/.test(id)).length;
+  });
+
+  // Tiến độ giáo trình đang chọn và bài học đang chọn
+  const actL=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
+  const activeLessonProg=(typeof getLessonSectionProgress==='function'&&actL)
+    ?getLessonSectionProgress(actL)
+    :{totalDone:0,pct:0};
+  const activeCourseStats=(typeof getCourseProgressStats==='function'&&store.activeCourseId)
+    ?getCourseProgressStats(store.activeCourseId)
+    :{doneCnt:0,total:0,pct:0};
+
+  const wriStoreAll=Object.values((store.writing&&store.writing.chars)||{});
+  const wriTotalPracticed=wriStoreAll.filter(x=>x&&x.attempts>0).length;
+  const wriTotalGuided=wriStoreAll.reduce((s,x)=>s+((x&&x.guidedCompleted)||0),0);
 
   const totalSec=Object.values(store.daily).reduce((s,d)=>s+(d.seconds||0),0);
   const totalMin=Math.round(totalSec/60);
-  const totalSessions=store.exercises.attempts+store.grammarQuiz.attempts+store.listening.attempts+CHARS.reduce((s,c)=>s+getWriteRec(c.id).attempts,0)+Object.values(store.speaking.items).reduce((s,v)=>s+(v.attempts||0),0);
 
-  // 4 kỹ năng từ dữ liệu thật
+  const spkItemsObj=store.speaking.items||{};
+  const spkItems=Object.values(spkItemsObj);
+  const spkRecs=spkItems.reduce((s,x)=>s+(x.attempts||0),0);
+  const spkAssessed=spkItems.filter(x=>x.lastResult&&x.lastResult.overallScore!==null);
+  const spkOk=spkItems.filter(x=>x&&x.selfStatus==='ok').length;
+  const spkRetryList=Object.entries(spkItemsObj).filter(([,v])=>v&&v.selfStatus==='retry');
+  const spkSelfTotal=spkOk+spkRetryList.length;
+  let spkPct=null,spkIsSelf=false;
+  if(spkAssessed.length){
+    spkPct=Math.round(spkAssessed.reduce((s,x)=>s+x.lastResult.overallScore,0)/spkAssessed.length);
+  }else if(spkSelfTotal>0){
+    spkPct=Math.round(spkOk*100/spkSelfTotal);
+    spkIsSelf=true;
+  }
+
   const lisSessions=store.listening.sessions||[];
   const lisTotalQ=lisSessions.reduce((s,x)=>s+(x.total||0),0);
   const lisOkQ=lisSessions.reduce((s,x)=>s+(x.correct||0),0);
   const lisPct=lisTotalQ>0?Math.round(lisOkQ/lisTotalQ*100):null;
+  const toneMistakes=(store.listening&&store.listening.toneMistakes)||{};
 
-  const spkItems=Object.values(store.speaking.items||{});
-  const spkRecs=spkItems.reduce((s,x)=>s+(x.attempts||0),0);
-  const spkAssessed=spkItems.filter(x=>x.lastResult&&x.lastResult.overallScore!==null);
-  const spkAvg=spkAssessed.length?Math.round(spkAssessed.reduce((s,x)=>s+x.lastResult.overallScore,0)/spkAssessed.length):null;
-
-  const readSess=[...(store.exercises.sessions||[]),...(store.grammarQuiz.sessions||[])];
+  const exSess=store.exercises.sessions||[];
+  const grSess=store.grammarQuiz.sessions||[];
+  const readSess=[...exSess,...grSess];
   const readTotalQ=readSess.reduce((s,x)=>s+(x.total||0),0);
   const readOkQ=readSess.reduce((s,x)=>s+(x.correct||0),0);
   const readPct=readTotalQ>0?Math.round(readOkQ/readTotalQ*100):null;
@@ -1756,21 +1803,79 @@ function computeStats(){
   const wriRetry=CHARS.filter(c=>getWriteRec(c.id).needsPractice);
   const wriPct=CHARS.length?Math.round(wriPracticed/CHARS.length*100):null;
 
+  const totalSessions=store.exercises.attempts+store.grammarQuiz.attempts+store.listening.attempts+wriStoreAll.reduce((s,x)=>s+((x&&x.attempts)||0),0)+spkRecs;
+
+  const xp=computeXpStats({
+    totalLearnedWords,
+    totalSrsReviews:srsTotalRatings,
+    totalCompletedLessons,
+    lisSessCnt:lisSessions.length,
+    quizSessCnt:readSess.length,
+    spkOk,
+    spkRecs,
+    wriTotalPracticed,
+    wriTotalGuided
+  });
+
   return {
-    todayKey,td,streak:computeStreak(now),
-    learnedWords,dueWords,wellKnownWords,retentionPct,
-    lessonDone,lessonTotal:lessonParts.length,lessonPct,
+    todayKey,td,streak:computeStreak(now),xp,
+    learnedWords:totalLearnedWords,
+    activeLessonLearnedWords,
+    dueWords,
+    wellKnownWords:totalWellKnownWords,
+    retentionPct,
+    totalCompletedLessons,
+    activeCourseStats,
+    lessonDone:activeCourseStats.total?activeCourseStats.doneCnt:activeLessonProg.totalDone,
+    lessonTotal:activeCourseStats.total?activeCourseStats.total:9,
+    lessonPct:activeCourseStats.total?activeCourseStats.pct:activeLessonProg.pct,
+    activeLessonProg,
     totalMin,totalSessions,
     skills:{
-      listen:{pct:lisPct,attempts:store.listening.attempts,ok:lisOkQ,total:lisTotalQ},
-      speak:{pct:spkAvg,recs:spkRecs,practiced:spkItems.length,assessed:spkAssessed.length},
-      read:{pct:readPct,attempts:readSess.length,ok:readOkQ,total:readTotalQ,words:learnedWords},
-      write:{pct:wriPracticed>0?wriPct:null,practiced:wriPracticed,guided:wriGuided,retry:wriRetry}
+      listen:{pct:lisPct,attempts:store.listening.attempts,ok:lisOkQ,total:lisTotalQ,toneMistakes,wrongCount:(store.listening.wrongIds||[]).length},
+      speak:{pct:spkPct,isSelfCheck:spkIsSelf,recs:spkRecs,practiced:spkItems.length,assessed:spkAssessed.length,okCount:spkOk,retryCount:spkRetryList.length,retryList:spkRetryList},
+      read:{pct:readPct,attempts:readSess.length,ok:readOkQ,total:readTotalQ,words:activeLessonLearnedWords},
+      write:{pct:wriPracticed>0?wriPct:null,practiced:wriPracticed,totalPracticed:wriTotalPracticed,guided:wriGuided,retry:wriRetry}
     }
   };
 }
 
-let chartRange='7',chartMetric='minutes',hiSkill='all',hiDate='all';
+let chartRange='7',chartMetric='minutes',hiSkill='all',hiDate='all',focusedSkillKey='';
+
+function renderHomeStreakStrip(st){
+  const box=$('#hm-streak-strip');
+  if(!box)return;
+  const now=new Date();
+  const dow=now.getDay(); // 0=CN, 1=T2..6=T7
+  const diffToMon=dow===0?-6:1-dow;
+  const mon=new Date(now.getFullYear(),now.getMonth(),now.getDate()+diffToMon);
+  const labels=['T2','T3','T4','T5','T6','T7','CN'];
+  const todayDk=st.todayKey;
+  let activeThisWeek=0;
+  const daysHtml=labels.map((lbl,i)=>{
+    const d=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+i);
+    const dk=localDateKey(d.getTime());
+    const rec=store.daily[dk];
+    const hasAct=Boolean(rec&&(rec.events>0||rec.newWords>0||rec.reviews>0||rec.listen>0||rec.speak>0||rec.write>0));
+    if(hasAct)activeThisWeek++;
+    const isToday=dk===todayDk;
+    const isFuture=dk>todayDk;
+    const cls=`hm-ss-day${hasAct?' done':''}${isToday?' today':''}${isFuture?' future':''}`;
+    const inner=hasAct?'✓':String(d.getDate());
+    return `<div class="${cls}" title="${dk}"><span class="hm-ss-lbl">${lbl}</span><span class="hm-ss-dot">${inner}</span></div>`;
+  }).join('');
+  box.innerHTML=`<div class="hm-ss-top">
+    <div class="hm-ss-left">
+      <span class="hm-ss-flame"><svg class="ic f"><use href="#i-flame"/></svg></span>
+      <div>
+        <div class="hm-ss-title">Chuỗi ${st.streak} ngày liên tiếp</div>
+        <div class="small muted">Tuần này đã học ${activeThisWeek}/7 ngày</div>
+      </div>
+    </div>
+    <span class="hm-ss-xp">Cấp ${st.xp.level} · ${st.xp.xp} XP ›</span>
+  </div>
+  <div class="hm-ss-week">${daysHtml}</div>`;
+}
 
 function renderChart(st){
   const colsEl=$('#wk-cols'),yaxEl=$('#wk-yax');if(!colsEl||!yaxEl)return;
@@ -1807,30 +1912,70 @@ function renderChart(st){
   colsEl.innerHTML=days.map(x=>`<div class="col${x.today?' today':''}"><div class="z"><span>${x.val}${unit}</span><i style="height:${Math.round(x.val/maxVal*100)}%"></i></div><div class="d">${x.lbl}</div></div>`).join('');
 }
 
+function formatDayGroupTitle(dk){
+  const now=new Date();
+  const todayDk=localDateKey(now.getTime());
+  const yest=new Date(now.getFullYear(),now.getMonth(),now.getDate()-1);
+  const yestDk=localDateKey(yest.getTime());
+  const [y,m,d]=dk.split('-').map(Number);
+  const dtStr=`${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}/${y}`;
+  if(dk===todayDk)return `Hôm nay · ${dtStr}`;
+  if(dk===yestDk)return `Hôm qua · ${dtStr}`;
+  const dt=new Date(y,m-1,d);
+  const wd=['Chủ nhật','Thứ Hai','Thứ Ba','Thứ Tư','Thứ Năm','Thứ Sáu','Thứ Bảy'][dt.getDay()];
+  return `${wd} · ${dtStr}`;
+}
+
 function renderHistory(){
-  const el=$('#me-hist-list');if(!el)return;
+  const el=$('#me-hist-list'),sumEl=$('#me-hi-summary');if(!el)return;
   const today=localDateKey(),now=Date.now();
   let list=store.events.slice().reverse();
   if(hiDate==='today')list=list.filter(e=>localDateKey(e.endedAt)===today);
   else if(hiDate==='7')list=list.filter(e=>now-e.endedAt<=7*DAY_MS);
   if(hiSkill!=='all'){
-    const map={vocab:['vocab','srs'],read:['exercise','grammar'],listen:['listen','dictation'],write:['writing'],speak:['record','assess']};
+    const map={
+      vocab:['vocab','srs'],
+      read:['exercise','grammar','dialog','trans'],
+      listen:['listen','dictation','tone'],
+      write:['writing','write','copy'],
+      speak:['record','assess']
+    };
     const allowed=map[hiSkill]||[];
-    list=list.filter(e=>allowed.includes(e.type));
+    list=list.filter(e=>allowed.includes(e.type)||e.skill===hiSkill);
   }
-  if(!list.length){el.innerHTML='<p class="muted small" style="text-align:center;padding:12px 0">Chưa có hoạt động nào khớp bộ lọc.</p>';return;}
-  const iconOf={vocab:'book',srs:'refresh',exercise:'pencil',grammar:'layers',listen:'head',dictation:'pencil',writing:'brush',record:'mic',assess:'award'};
-  el.innerHTML=list.slice(0,40).map(e=>{
-    const d=new Date(e.endedAt);
-    const ts=`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')} · ${d.getDate()}/${d.getMonth()+1}`;
-    return `<div class="hi" data-go="${e.view||'home'}" style="cursor:pointer"><span class="ib"><svg class="ic"><use href="#i-${iconOf[e.type]||'book'}"/></svg></span><div><b>${e.title}</b><span>${ts}${e.result?' • '+e.result:''}</span></div><em>${e.durationSec?e.durationSec+'s':'Xem'}</em></div>`;
+  if(sumEl)sumEl.textContent=list.length?`Hiển thị ${Math.min(60,list.length)} / ${list.length} hoạt động gần nhất`:'';
+  if(!list.length){el.innerHTML='<p class="muted small" style="text-align:center;padding:14px 0">Chưa có hoạt động nào khớp bộ lọc. Hãy học một bài để ghi nhận nhật ký thật.</p>';return;}
+  const iconOf={vocab:'book',srs:'refresh',exercise:'pencil',grammar:'layers',dialog:'book',trans:'lang',listen:'head',dictation:'pencil',tone:'head',writing:'brush',write:'brush',copy:'brush',record:'mic',assess:'award'};
+  const groups=[];
+  const groupMap=new Map();
+  list.slice(0,60).forEach(e=>{
+    const dk=localDateKey(e.endedAt);
+    if(!groupMap.has(dk)){const g={dk,items:[]};groupMap.set(dk,g);groups.push(g);}
+    groupMap.get(dk).items.push(e);
+  });
+  el.innerHTML=groups.map(g=>{
+    const itemsHtml=g.items.map(e=>{
+      const d=new Date(e.endedAt);
+      const hhmm=`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      const dur=e.durationSec?`${e.durationSec}s`:'';
+      const titleSafe=typeof escHtml==='function'?escHtml(e.title||''):e.title;
+      const resSafe=typeof escHtml==='function'?escHtml(e.result||''):e.result;
+      return `<div class="me-tl-item" data-go="${e.view||'home'}">
+        <span class="me-tl-dot" aria-hidden="true"></span>
+        <span class="me-tl-ic"><svg class="ic"><use href="#i-${iconOf[e.type]||'book'}"/></svg></span>
+        <div class="me-tl-mid"><b>${titleSafe}</b><span>${resSafe||'Đã ghi nhận hoạt động'}</span></div>
+        <div class="me-tl-right"><em>${hhmm}</em>${dur?`<small>${dur}</small>`:'<small>Mở</small>'}</div>
+      </div>`;
+    }).join('');
+    return `<div class="me-tl-group"><div class="me-tl-day"><b>${formatDayGroupTitle(g.dk)}</b><span>${g.items.length} hoạt động</span></div><div class="me-tl-list">${itemsHtml}</div></div>`;
   }).join('');
 }
 
 function refreshDashboards(){
   const st=computeStats(),g=store.goals;
-  // Header streak
+  // Header streak & Home 7-day streak strip
   const hs=$('#hdr-streak');if(hs)hs.innerHTML=`<svg class="ic f"><use href="#i-flame"/></svg>${st.streak} ngày`;
+  renderHomeStreakStrip(st);
 
   // Home cards
   const gm=Math.min(100,Math.round((st.td.minutes||0)/g.minutes*100));
@@ -1844,15 +1989,10 @@ function refreshDashboards(){
   if(taskLis[1])taskLis[1].classList.toggle('done',(st.td.reviews||0)>=g.reviews);
   if(taskLis[2])taskLis[2].classList.toggle('done',(st.td.speak||0)>=g.speak);
 
-  let cPct=st.lessonPct,cDoneStr=`${st.lessonDone}/${st.lessonTotal}`,cDoneLbl='hoạt động';
-  if(typeof getCourseProgressStats==='function'&&store.activeCourseId){
-    const cp=getCourseProgressStats(store.activeCourseId);
-    if(cp&&cp.total>0){
-      cPct=cp.pct;
-      cDoneStr=`${cp.doneCnt}/${cp.total}`;
-      cDoneLbl='bài đã học';
-    }
-  }
+  const cp=st.activeCourseStats;
+  const cPct=cp&&cp.total>0?cp.pct:st.lessonPct;
+  const cDoneStr=cp&&cp.total>0?`${cp.doneCnt}/${cp.total}`:`${st.lessonDone}/${st.lessonTotal}`;
+  const cDoneLbl=cp&&cp.total>0?'bài đã học':'hoạt động';
   if($('#hm-prog-bar'))$('#hm-prog-bar').style.width=cPct+'%';
   if($('#hm-prog-pct'))$('#hm-prog-pct').textContent=cPct+'%';
   if($('#hm-lessons'))$('#hm-lessons').textContent=cDoneStr;
@@ -1860,61 +2000,187 @@ function refreshDashboards(){
   if($('#hm-words'))$('#hm-words').textContent=st.learnedWords;
   if($('#hm-ret'))$('#hm-ret').textContent=st.retentionPct!==null?st.retentionPct+'%':'—';
 
-  // Me Overview
+  // Me Overview — Profile, XP, KPIs, Active course progress
+  const setup=store.learningSetup||{level:1,mode:'hanngu'};
+  const actC=(typeof COURSES!=='undefined'&&Array.isArray(COURSES))?COURSES.find(x=>x.id===store.activeCourseId):null;
+  const actL=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
+  if($('#me-level-badge'))$('#me-level-badge').textContent=`Cấp ${st.xp.level}`;
+  if($('#me-profile-sub'))$('#me-profile-sub').textContent=`HSK ${setup.level||1} · ${st.xp.rank} · ${(setup.mode==='parallel'?'Song song Hán ngữ & HSK 3.0':(actC?actC.title:'Hanyu AI'))}`;
+  if($('#me-streak-pill'))$('#me-streak-pill').innerHTML=`<svg class="ic f"><use href="#i-flame"/></svg><span>${st.streak} ngày</span>`;
+  if($('#me-xp-txt'))$('#me-xp-txt').textContent=`${st.xp.xp} XP · Còn ${st.xp.toNext} XP lên Cấp ${st.xp.level+1}`;
+  if($('#me-xp-bar'))$('#me-xp-bar').style.width=st.xp.pct+'%';
+
+  if($('#me-done-lessons'))$('#me-done-lessons').textContent=`${st.totalCompletedLessons} bài`;
+  if($('#me-sessions'))$('#me-sessions').textContent=st.totalSessions;
+  if($('#me-learned'))$('#me-learned').textContent=`${st.learnedWords}`;
+  if($('#me-learned-sub'))$('#me-learned-sub').textContent=`${st.wellKnownWords} ghi nhớ tốt`;
+  if($('#me-streak'))$('#me-streak').textContent=`${st.streak} ngày`;
+  if($('#me-time'))$('#me-time').textContent=formatDurationVi(st.totalMin);
+  if($('#me-time-sub'))$('#me-time-sub').textContent=`Hôm nay: ${st.td.minutes||0} phút`;
+
   if($('#me-pct'))$('#me-pct').textContent=st.lessonPct+'%';
   if($('#me-ring'))$('#me-ring').setAttribute('stroke-dashoffset',String((326.7*(1-st.lessonPct/100)).toFixed(1)));
-  if($('#me-lesson-txt'))$('#me-lesson-txt').textContent=`Đã hoàn thành ${st.lessonDone} / ${st.lessonTotal} phần`;
+  if($('#me-active-lvl')){
+    const lvlTitle=actC?actC.title:'Giáo trình hiện tại';
+    const lTag=actL?(actL.code||''):'';
+    $('#me-active-lvl').innerHTML=`<svg class="ic"><use href="#i-bars"/></svg><span>${typeof escHtml==='function'?escHtml(lvlTitle+(lTag?' · '+lTag:'')):lvlTitle}</span>`;
+  }
+  if($('#me-lesson-txt')){
+    $('#me-lesson-txt').textContent=(cp&&cp.total>0)
+      ?`Hoàn thành ${cp.doneCnt} / ${cp.total} bài (${actL&&actL.code?actL.code+': '+st.activeLessonProg.totalDone+'/9 phần':cp.pct+'%'})`
+      :`Đã hoàn thành ${st.activeLessonProg.totalDone} / 9 phần bài học`;
+  }
   if($('#me-lesson-bar'))$('#me-lesson-bar').style.width=st.lessonPct+'%';
   if($('#me-due-txt'))$('#me-due-txt').textContent=`${st.dueWords} từ đến hạn • ${st.wellKnownWords} từ ghi nhớ tốt`;
-  if($('#me-streak'))$('#me-streak').textContent=`${st.streak} ngày`;
-  if($('#me-sessions'))$('#me-sessions').textContent=st.totalSessions;
-  if($('#me-learned'))$('#me-learned').textContent=`${st.learnedWords} / ${WORDS.length}`;
-  if($('#me-time'))$('#me-time').textContent=`${st.totalMin} phút`;
 
-  // Daily goals checklist in #me
+  // Parallel mini comparison inside #me overview
+  const pmEl=$('#me-parallel-mini');
+  if(pmEl){
+    if(setup.mode==='parallel'&&typeof getCourseIdForTrack==='function'&&typeof getCourseProgressStats==='function'){
+      const lv=Math.min(6,Math.max(1,Number(setup.level)||1));
+      const hnId=getCourseIdForTrack(lv,'hanngu'),hskId=getCourseIdForTrack(lv,'hsk30');
+      const hnSt=getCourseProgressStats(hnId),hskSt=getCourseProgressStats(hskId);
+      pmEl.classList.remove('hide');
+      pmEl.innerHTML=`
+        <div class="me-pm-item ${store.activeCourseId===hnId?'on':''}">
+          <div class="me-pm-row"><span>Hán ngữ · Quyển ${lv}</span><b>${hnSt.doneCnt}/${hnSt.total} (${hnSt.pct}%)</b></div>
+          <div class="me-pm-bar"><i style="width:${hnSt.pct}%"></i></div>
+        </div>
+        <div class="me-pm-item ${store.activeCourseId===hskId?'on':''}">
+          <div class="me-pm-row"><span>NEW HSK 3.0 · Cấp ${lv}</span><b>${hskSt.doneCnt}/${hskSt.total} (${hskSt.pct}%)</b></div>
+          <div class="me-pm-bar"><i style="width:${hskSt.pct}%"></i></div>
+        </div>`;
+    }else{
+      pmEl.classList.add('hide');
+      pmEl.innerHTML='';
+    }
+  }
+
+  // Daily goals — dedicated Mục tiêu tab (#me data-pane="gl")
+  const glDate=$('#me-gl-date');
+  if(glDate){
+    const dNow=new Date();
+    const wd=['Chủ nhật','Thứ Hai','Thứ Ba','Thứ Tư','Thứ Năm','Thứ Sáu','Thứ Bảy'][dNow.getDay()];
+    glDate.textContent=`${wd}, ${String(dNow.getDate()).padStart(2,'0')}/${String(dNow.getMonth()+1).padStart(2,'0')}/${dNow.getFullYear()}`;
+  }
+  const goalRows=[
+    ['Thời gian học',st.td.minutes||0,g.minutes,'phút','vocab','clock'],
+    ['Học từ mới',st.td.newWords||0,g.newWords,'từ','vocab','book'],
+    ['Ôn tập SRS',st.td.reviews||0,g.reviews,'lượt','review','refresh'],
+    ['Luyện nghe',st.td.listen||0,g.listen,'bài','listen','head'],
+    ['Luyện nói',st.td.speak||0,g.speak,'lượt','speak','mic'],
+    ['Luyện viết',st.td.write||0,g.write,'chữ','writing','brush']
+  ];
+  const doneGoals=goalRows.filter(([,cur,tgt])=>cur>=tgt).length;
+  const glPct=Math.round(doneGoals*100/goalRows.length);
+  if($('#me-gl-pct'))$('#me-gl-pct').textContent=glPct+'%';
+  if($('#me-gl-done'))$('#me-gl-done').textContent=`${doneGoals} / ${goalRows.length}`;
+  if($('#me-gl-ring'))$('#me-gl-ring').setAttribute('stroke-dashoffset',String((263.9*(1-glPct/100)).toFixed(1)));
+  if($('#me-gl-sum3')){
+    $('#me-gl-sum3').innerHTML=`
+      <div class="me-gl-pill"><b>${st.td.minutes||0}/${g.minutes}p</b><span>Phút học</span></div>
+      <div class="me-gl-pill"><b>${st.td.newWords||0}/${g.newWords}</b><span>Từ mới</span></div>
+      <div class="me-gl-pill"><b>${st.td.reviews||0}/${g.reviews}</b><span>Ôn SRS</span></div>`;
+  }
   const gl=$('#me-goal-list');
   if(gl){
-    const rows=[
-      ['Thời gian học',st.td.minutes||0,g.minutes,'phút','vocab'],
-      ['Từ mới',st.td.newWords||0,g.newWords,'từ','vocab'],
-      ['Ôn tập SRS',st.td.reviews||0,g.reviews,'lượt','review'],
-      ['Luyện nghe',st.td.listen||0,g.listen,'bài','listen'],
-      ['Luyện nói',st.td.speak||0,g.speak,'lượt','speak'],
-      ['Luyện viết',st.td.write||0,g.write,'chữ','writing']
-    ];
-    gl.innerHTML=rows.map(([lbl,cur,tgt,unit,go])=>{
-      const status=cur>=tgt?'Đã hoàn thành':cur>0?'Đang thực hiện':'Chưa bắt đầu';
-      const cls=cur>=tgt?'done':cur>0?'doing':'todo';
-      return `<div class="barrow" style="justify-content:space-between;cursor:pointer" data-go="${go}"><span class="small"><b>${lbl}:</b> ${cur} / ${tgt} ${unit}</span><span class="st ${cls}">${status}</span></div>`;
+    gl.innerHTML=goalRows.map(([lbl,cur,tgt,unit,go,ic])=>{
+      const pct=tgt?Math.min(100,Math.round(cur*100/tgt)):0;
+      const isDone=cur>=tgt;
+      const cls=isDone?'done':cur>0?'doing':'todo';
+      const status=isDone?'✓ Đã xong':cur>0?'Đang làm':'Bắt đầu ›';
+      return `<div class="me-gl-row ${isDone?'done':''}" data-go="${go}">
+        <span class="me-gl-ic"><svg class="ic"><use href="#i-${ic}"/></svg></span>
+        <div class="me-gl-mid">
+          <div class="me-gl-lbl"><b>${lbl}</b><span>${cur} / ${tgt} ${unit}</span></div>
+          <div class="me-gl-bar"><i style="width:${pct}%"></i></div>
+        </div>
+        <span class="me-gl-st ${cls}">${status}</span>
+      </div>`;
     }).join('');
   }
 
   // Recommendations (rule-based from real data)
   const recs=[];
   if(st.dueWords>0)recs.push({t:'Ôn tập từ vựng đến hạn',d:`Có ${st.dueWords} từ đến hạn theo lịch SRS`,go:'review',btn:'Ôn ngay'});
+  const toneEntries=Object.entries(st.skills.listen.toneMistakes||{}).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  if(toneEntries.length)recs.push({t:'Củng cố phân biệt thanh điệu',d:`Hay nhầm nhóm thanh ${toneEntries[0][0].replace('->',' ↔ ')} (${toneEntries[0][1]} lần)`,go:'listen',btn:'Luyện thanh'});
   if(store.listening.wrongIds.length)recs.push({t:'Luyện lại câu nghe sai',d:`${store.listening.wrongIds.length} câu nghe cần củng cố`,go:'listen',btn:'Mở Nghe'});
   if(st.skills.write.retry.length)recs.push({t:'Chữ Hán cần luyện viết thêm',d:st.skills.write.retry.map(c=>c.ch).join(' · '),go:'writing',btn:'Luyện viết'});
-  const _actL=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
-  const _actTitle=_actL?`Tiếp tục ${_actL.code||''}${_actL.titleVi?' · '+_actL.titleVi:''}`:'Tiếp tục bài học hôm nay';
+  const _actTitle=actL?`Tiếp tục ${actL.code||''}${actL.titleVi?' · '+actL.titleVi:''}`:'Tiếp tục bài học hôm nay';
   if(!recs.length)recs.push({t:_actTitle,d:'Học từ mới, làm bài tập hoặc luyện nghe/viết để tích lũy tiến độ',go:'lesson',btn:'Vào học'});
   const recEl=$('#me-recs');
   if(recEl)recEl.innerHTML=recs.map(r=>`<div class="rec-item"><div class="mid"><b>${r.t}</b><span>${r.d}</span></div><button type="button" class="chip on" data-go="${r.go}">${r.btn}</button></div>`).join('');
 
-  // 4 Skills pane
+  // 4 Skills pane (#me data-pane="sk")
+  const s=st.skills;
+  const ringsEl=$('#me-sk-rings');
+  if(ringsEl){
+    const rList=[
+      ['listen','Nghe',s.listen.pct,`${s.listen.attempts} phiên`,'#C7463B'],
+      ['speak','Nói',s.speak.pct,s.speak.assessed?'Chấm điểm':(s.speak.isSelfCheck?'Tự kiểm tra':`${s.speak.recs} ghi âm`),'#E0852B'],
+      ['read','Đọc & NP',s.read.pct,`${s.read.words}/${WORDS.length} từ`,'#9E3228'],
+      ['write','Viết',s.write.pct,`${s.write.practiced}/${CHARS.length} chữ`,'#5C8A38']
+    ];
+    ringsEl.innerHTML=rList.map(([key,lbl,pct,sub,col])=>{
+      const valPct=pct!==null?pct:0;
+      const off=(163.4*(1-valPct/100)).toFixed(1);
+      const disp=pct!==null?pct+'%':'—';
+      return `<button type="button" class="me-sk-ring-btn ${focusedSkillKey===key?'on':''}" data-sk-focus="${key}">
+        <div class="me-sk-ring-svg">
+          <svg viewbox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="none" stroke="var(--surface)" stroke-width="6"/><circle cx="32" cy="32" r="26" fill="none" stroke="${col}" stroke-width="6" stroke-linecap="round" stroke-dasharray="163.4" stroke-dashoffset="${off}"/></svg>
+          <b>${disp}</b>
+        </div>
+        <span class="me-sk-ring-lbl">${lbl}</span>
+        <span class="me-sk-ring-sub">${sub}</span>
+      </button>`;
+    }).join('');
+  }
+
   const skEl=$('#me-skills-pane');
   if(skEl){
-    const s=st.skills;
-    const card=(ic,name,pct,lines,go)=>`<div class="card">
-      <div class="barrow" style="justify-content:space-between"><div class="head" style="align-items:center"><svg class="ic" style="width:1.4em;height:1.4em"><use href="#i-${ic}"/></svg><h3>${name}</h3></div><b>${pct!==null?pct+'%':'Chưa có dữ liệu'}</b></div>
+    const card=(key,ic,name,pct,subPctLbl,lines,go)=>`<div class="card me-sk-card ${focusedSkillKey===key?'focus':''}" data-sk-card="${key}">
+      <div class="barrow" style="justify-content:space-between"><div class="head" style="align-items:center"><svg class="ic" style="width:1.4em;height:1.4em"><use href="#i-${ic}"/></svg><h3>${name}</h3></div><b>${pct!==null?(pct+'%'+(subPctLbl?' <small class="muted">('+subPctLbl+')</small>':'')):'Chưa có dữ liệu'}</b></div>
       <div class="bar"><i style="width:${pct||0}%"></i></div>
       <div class="sk-detail">${lines.map(([a,b])=>`<div class="sk-row"><span class="muted">${a}</span><b>${b}</b></div>`).join('')}</div>
       <button type="button" class="btn ghost sm" data-go="${go}">Luyện ${name.toLowerCase()}</button>
     </div>`;
+    const toneMistakeCnt=Object.values(s.listen.toneMistakes||{}).reduce((a,b)=>a+(b||0),0);
     skEl.innerHTML=
-      card('head','Nghe',s.listen.pct,[['Bài nghe đã làm',`${s.listen.attempts} phiên`],['Câu trả lời đúng',`${s.listen.ok} / ${s.listen.total}`]],'listen')+
-      card('mic','Nói',s.speak.pct,[['Lượt ghi âm thật',`${s.speak.recs} lượt`],['Từ/câu đã luyện',`${s.speak.practiced} mục`],['Đánh giá dịch vụ',s.speak.assessed?`${s.speak.assessed} lượt (TB ${s.speak.pct}%)`:'Chưa kết nối dịch vụ chấm']],'speak')+
-      card('book','Đọc & Ngữ pháp',s.read.pct,[['Bài tập & ngữ pháp',`${s.read.attempts} phiên`],['Câu đúng',`${s.read.ok} / ${s.read.total}`],['Từ vựng đã học',`${s.read.words} / ${WORDS.length}`]],'exercise')+
-      card('brush','Viết',s.write.pct,[['Chữ Hán đã luyện',`${s.write.practiced} / ${CHARS.length} chữ`],['Hoàn thành có hướng dẫn',`${s.write.guided} lần`],['Cần luyện lại',s.write.retry.length?s.write.retry.map(c=>c.ch).join(' '):'Không có']],'writing');
+      card('listen','head','Nghe',s.listen.pct,'',[
+        ['Bài nghe đã làm',`${s.listen.attempts} phiên`],
+        ['Câu trả lời đúng',`${s.listen.ok} / ${s.listen.total}`],
+        ['Nhầm thanh điệu',toneMistakeCnt?`${toneMistakeCnt} lượt`:'Chưa ghi nhận']
+      ],'listen')+
+      card('speak','mic','Nói',s.speak.pct,s.speak.isSelfCheck?'tự đánh giá':'',[
+        ['Lượt ghi âm thật',`${s.speak.recs} lượt`],
+        ['Tự đánh giá đạt / luyện lại',`${s.speak.okCount} đạt · ${s.speak.retryCount} luyện lại`],
+        ['Chấm điểm tự động',s.speak.assessed?`${s.speak.assessed} lượt (TB ${s.speak.pct}%)`:'Ngoại tuyến (tự nghe & đối chiếu)']
+      ],'speak')+
+      card('read','book','Đọc & Ngữ pháp',s.read.pct,'',[
+        ['Bài tập & ngữ pháp',`${s.read.attempts} phiên`],
+        ['Câu đúng',`${s.read.ok} / ${s.read.total}`],
+        ['Từ vựng bài này',`${s.read.words} / ${WORDS.length} từ`]
+      ],'exercise')+
+      card('write','brush','Viết',s.write.pct,'',[
+        ['Chữ Hán bài này',`${s.write.practiced} / ${CHARS.length} chữ`],
+        ['Tổng số chữ đã luyện',`${s.write.totalPracticed} chữ · ${s.write.guided} lần hướng dẫn`],
+        ['Cần luyện lại',s.write.retry.length?s.write.retry.map(c=>c.ch).join(' '):'Không có']
+      ],'writing');
+  }
+
+  const impEl=$('#me-sk-improve');
+  if(impEl){
+    const imps=[];
+    if(toneEntries.length)imps.push({b:'Thanh điệu dễ nhầm (Luyện nghe)',d:`Nhầm nhiều nhất: ${toneEntries.slice(0,2).map(([k,v])=>k.replace('->',' → ')+` (${v})`).join(', ')}`,go:'listen',cta:'Luyện thanh'});
+    if(s.listen.wrongCount>0)imps.push({b:`${s.listen.wrongCount} câu nghe từng trả lời sai`,d:'Mở Luyện nghe để nghe lại và củng cố phản xạ.',go:'listen',cta:'Nghe lại'});
+    if(s.write.retry.length)imps.push({b:`Chữ Hán đánh dấu luyện lại`,d:s.write.retry.map(c=>`${c.ch} (${c.py||''})`).join(' · '),go:'writing',cta:'Viết ngay'});
+    if(s.speak.retryCount>0)imps.push({b:`${s.speak.retryCount} mục phát âm tự đánh dấu cần luyện lại`,d:'Mở Hướng dẫn sửa lỗi 3 tab để luyện âm đầu, vần và thanh điệu.',go:'speak',cta:'Luyện nói'});
+    if(st.dueWords>0)imps.push({b:`${st.dueWords} thẻ từ vựng đã đến hạn SRS`,d:'Ôn đúng hạn giúp giữ tỷ lệ ghi nhớ dài hạn.',go:'review',cta:'Ôn SRS'});
+    impEl.innerHTML=`<div class="me-imp-hd"><h3>Cần cải thiện (từ dữ liệu thật)</h3><span class="small muted">${imps.length?imps.length+' mục ưu tiên':'Tốt lắm!'}</span></div>`+
+      (imps.length
+        ?`<div class="me-imp-list">${imps.map(x=>`<div class="me-imp-row"><div class="me-imp-txt"><b>${x.b}</b><span>${x.d}</span></div><button type="button" class="chip on" data-go="${x.go}">${x.cta}</button></div>`).join('')}</div>`
+        :'<div class="me-imp-empty">Chưa ghi nhận lỗi thanh điệu hay mục đánh dấu luyện lại. Hãy tiếp tục học để hệ thống theo dõi chi tiết hơn.</div>');
   }
 
   renderChart(st);
@@ -1932,7 +2198,17 @@ recordWord=function(id,rating,mode){
 };
 
 $('#mtabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
-  $$('#mtabs button').forEach(x=>x.classList.toggle('on',x===b));$$('[data-pane]').forEach(p=>p.classList.toggle('hide',p.dataset.pane!==b.dataset.m));});
+  $$('#mtabs button').forEach(x=>x.classList.toggle('on',x===b));$$('#me [data-pane]').forEach(p=>p.classList.toggle('hide',p.dataset.pane!==b.dataset.m));});
+const _skRings=$('#me-sk-rings');
+if(_skRings)_skRings.addEventListener('click',e=>{
+  const b=e.target.closest('[data-sk-focus]');if(!b)return;
+  const k=b.dataset.skFocus||'';
+  focusedSkillKey=focusedSkillKey===k?'':k;
+  $$('#me-sk-rings .me-sk-ring-btn').forEach(x=>x.classList.toggle('on',x.dataset.skFocus===focusedSkillKey));
+  $$('#me-skills-pane [data-sk-card]').forEach(x=>x.classList.toggle('focus',x.dataset.skCard===focusedSkillKey));
+  const target=focusedSkillKey?$(`#me-skills-pane [data-sk-card="${focusedSkillKey}"]`):null;
+  if(target&&target.scrollIntoView)target.scrollIntoView({behavior:'smooth',block:'nearest'});
+});
 $('#ch-range').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;chartRange=b.dataset.cr;$$('#ch-range button').forEach(x=>x.classList.toggle('on',x===b));renderChart(computeStats());});
 $('#ch-metric').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;chartMetric=b.dataset.cm;$$('#ch-metric button').forEach(x=>x.classList.toggle('on',x===b));renderChart(computeStats());});
 $('#hi-skill-flt').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;hiSkill=b.dataset.hs;$$('#hi-skill-flt button').forEach(x=>x.classList.toggle('on',x===b));renderHistory();});
@@ -1947,6 +2223,10 @@ $('#me-goal-save').onclick=()=>{
   g.minutes=v('#g-min',5,180,20);g.newWords=v('#g-new',1,50,5);g.reviews=v('#g-rev',1,100,10);
   g.listen=v('#g-lis',1,20,1);g.speak=v('#g-spk',1,30,3);g.write=v('#g-wri',1,30,2);
   saveStore(store);$('#me-goal-form').classList.add('hide');refreshDashboards();toast('Đã lưu mục tiêu hằng ngày');
+};
+if($('#me-goal-reset'))$('#me-goal-reset').onclick=()=>{
+  store.goals={minutes:20,newWords:5,reviews:10,listen:1,speak:3,write:2};
+  saveStore(store);$('#me-goal-form').classList.add('hide');refreshDashboards();toast('Đã đặt lại mục tiêu mặc định');
 };
 function syncSidebarThemeLabel(){
   const r=document.documentElement;

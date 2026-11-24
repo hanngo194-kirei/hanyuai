@@ -385,7 +385,11 @@ function onViewEntered(id){
   }
   if(id==='course-detail')renderCourseDetail();
   if(id==='pdf-import')refreshPdfCourseSelect();
-  if(id==='home')renderRoadmap();
+  if(id==='home'){
+    renderRoadmap();
+    if(typeof refreshDashboards==='function')refreshDashboards();
+  }
+  if(id==='me'&&typeof refreshDashboards==='function')refreshDashboards();
   if(id==='roadmap'&&typeof renderFullRoadmap==='function')renderFullRoadmap();
   if(id==='lesson')renderLessonDetail();
   if(id==='vocab'&&typeof syncMindMapLines==='function')requestAnimationFrame(syncMindMapLines);
@@ -412,12 +416,51 @@ document.addEventListener('click',async e=>{
     setLearnTab(lTab.dataset.learntab);
     return;
   }
+  // Switch HSK 1-6 level directly from Hub / Learn bar
+  const lvlBtn=e.target.closest('[data-hub-lvl]');
+  if(lvlBtn&&typeof getCourseIdForTrack==='function'&&typeof switchToCourse==='function'){
+    e.preventDefault();
+    const lv=Math.min(6,Math.max(1,Number(lvlBtn.dataset.hubLvl)||1));
+    const cur=store.learningSetup&&typeof store.learningSetup==='object'?store.learningSetup:{completed:false,level:1,mode:'parallel',activeTrack:'hanngu'};
+    const mode=['hanngu','hsk30','parallel'].includes(cur.mode)?cur.mode:'parallel';
+    const track=mode==='hsk30'?'hsk30':(mode==='hanngu'?'hanngu':(cur.activeTrack==='hsk30'?'hsk30':'hanngu'));
+    store.learningSetup={completed:true,level:lv,mode,activeTrack:track,updatedAt:Date.now()};
+    const targetCid=getCourseIdForTrack(lv,track);
+    switchToCourse(targetCid);
+    toast(`Đã chuyển sang HSK ${lv}`);
+    return;
+  }
+  // Enable parallel mode in 1 tap
+  const parBtn=e.target.closest('[data-enable-parallel]');
+  if(parBtn){
+    e.preventDefault();
+    const cur=store.learningSetup&&typeof store.learningSetup==='object'?store.learningSetup:{completed:true,level:1,mode:'hanngu',activeTrack:'hanngu'};
+    const lv=Math.min(6,Math.max(1,Number(cur.level)||1));
+    const track=cur.activeTrack==='hsk30'?'hsk30':'hanngu';
+    store.learningSetup={completed:true,level:lv,mode:'parallel',activeTrack:track,updatedAt:Date.now()};
+    saveStore(store);
+    if(typeof renderHomeTrackHub==='function')renderHomeTrackHub();
+    if(typeof renderLearnTrackSwitcher==='function')renderLearnTrackSwitcher();
+    if(typeof refreshDashboards==='function')refreshDashboards();
+    toast('Đã bật chế độ học song song Hán ngữ & NEW HSK 3.0');
+    return;
+  }
+  // Open backup modal shortcut
+  const bkBtn=e.target.closest('[data-open-backup]');
+  if(bkBtn){
+    e.preventDefault();
+    if(typeof openBackupModal==='function')openBackupModal();
+    else if($('#btn-backup-json'))$('#btn-backup-json').click();
+    return;
+  }
   // Switch track / course in parallel or single mode
   const swBtn=e.target.closest('[data-switch-course]');
   if(swBtn&&typeof switchToCourse==='function'){
     e.preventDefault();
     switchToCourse(swBtn.dataset.switchCourse);
-    if(swBtn.dataset.openLearn==='1'){
+    if(swBtn.dataset.openLessonNow==='1'){
+      goView('lesson');
+    }else if(swBtn.dataset.openLearn==='1'){
       if(typeof curLearnTab!=='undefined')curLearnTab='lessons';
       goView('learn');
     }
@@ -744,9 +787,9 @@ $('#cd-add-lesson').onclick=()=>openLessonEditor(null,{courseId:curDetailCourseI
 $('#cd-import-pdf').onclick=()=>{refreshPdfCourseSelect();goView('pdf-import');};
 $('#cd-view-textbook').onclick=()=>{openTextbookReader(curDetailCourseId);};
 $('#ls-edit-btn').onclick=()=>{if(store.activeLessonId)openLessonEditor(store.activeLessonId);};
-const _sbLogo=$('#sb-logo-img'),_rmfLogo=$('#rmf-logo-img'),_lsLogo=$('#ls-logo-img'),_topLogo=$('.top .logo');
+const _sbLogo=$('#sb-logo-img'),_rmfLogo=$('#rmf-logo-img'),_lsLogo=$('#ls-logo-img'),_meLogo=$('#me-avatar-img'),_topLogo=$('.top .logo');
 if(_topLogo&&_topLogo.src){
-  [_sbLogo,_rmfLogo,_lsLogo].forEach(im=>{if(im){im.src=_topLogo.src;im.style.display='';}});
+  [_sbLogo,_rmfLogo,_lsLogo,_meLogo].forEach(im=>{if(im){im.src=_topLogo.src;im.style.display='';}});
 }
 [$('#ls-top-dl-btn'),$('#ls-status-pill')].forEach(el=>{
   if(!el)return;
