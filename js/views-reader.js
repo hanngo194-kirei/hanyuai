@@ -1083,12 +1083,12 @@ function renderTextbookReader(){
         </div>
       `;
     }
-    if(quizzes.length || (l.workbook && (l.workbook.exercisesNote || l.workbook.answerKeyNote))){
+    if(quizzes.length || (l.workbook && (l.workbook.exercisesNote || l.workbook.answerKeyNote || l.workbook.transcriptNote))){
       bodyHtml += `
         <div class="card" style="margin-bottom:12px">
           <h3 style="margin:0 0 8px;font-size:16px">5. Bài tập tổng hợp &amp; Sách bài tập (SBT)</h3>
           ${quizzes.length?`<div style="display:grid;gap:8px;margin-bottom:10px">${quizzes.map((q,qi)=>`<div style="padding:8px 10px;border:1px solid var(--line,#eadfd3);border-radius:10px"><div class="small" style="font-weight:600">${qi+1}. ${escHtml(q.q||'')}</div>${Array.isArray(q.opts)?`<div class="small muted" style="margin-top:4px">${q.opts.map((o,oi)=>`${['A','B','C','D','E','F'][oi]||oi+1}. ${escHtml(o.t||'')}`).join(' · ')}</div>`:''}${q.exp?`<details style="margin-top:4px"><summary class="small" style="cursor:pointer;color:var(--accent);font-weight:600">Xem đáp án &amp; giải thích</summary><div class="small" style="margin-top:3px">${escHtml(q.exp)}</div></details>`:''}</div>`).join('')}</div>`:''}
-          ${l.workbook&&(l.workbook.exercisesNote||l.workbook.answerKeyNote)?`<details ${!quizzes.length?'open':''}><summary style="cursor:pointer;font-weight:700" class="small">SBT &amp; Đáp án chi tiết</summary><div class="small" style="margin-top:6px;line-height:1.55;white-space:pre-line">${l.workbook.exercisesNote?`<div><b>Nội dung SBT:</b> ${escHtml(l.workbook.exercisesNote)}</div>`:''}${l.workbook.answerKeyNote?`<div style="margin-top:6px"><b>Đáp án SBT:</b>\n${escHtml(l.workbook.answerKeyNote)}</div>`:''}</div></details>`:''}
+          ${l.workbook&&(l.workbook.exercisesNote||l.workbook.answerKeyNote||l.workbook.transcriptNote)?`<details ${!quizzes.length?'open':''}><summary style="cursor:pointer;font-weight:700" class="small">SBT &amp; Đáp án chi tiết</summary><div class="small" style="margin-top:6px;line-height:1.55;white-space:pre-line">${l.workbook.exercisesNote?`<div><b>Nội dung SBT:</b> ${escHtml(l.workbook.exercisesNote)}</div>`:''}${l.workbook.answerKeyNote?`<div style="margin-top:6px"><b>Đáp án SBT:</b>\n${escHtml(l.workbook.answerKeyNote)}</div>`:''}${l.workbook.transcriptNote?`<div style="margin-top:6px"><b>Lời thoại nghe SBT:</b>\n${escHtml(l.workbook.transcriptNote)}</div>`:''}</div></details>`:''}
         </div>
       `;
     }

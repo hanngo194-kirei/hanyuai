@@ -484,8 +484,16 @@ function buildStandardCatalogSeed(){
       }
       lessons.push(mockObj);
     }
+    const packLessons=packMeta&&Array.isArray(packMeta.lessons)?packMeta.lessons:[];
+    const packRegularCnt=packLessons.filter(x=>x!=='mock').length;
+    const hasStarterData=Boolean(starterLv&&Object.keys(starterLv).length);
+    const sbtDesc=h.lvl===2?' + Đề thi thử + SBT, Đáp án & Lời thoại nghe':(h.hasSbt?' + Đề thi thử + SBT & Đáp án':'');
     const courseDesc=packMeta
-      ?`Hệ thống NEW HSK 3.0 Cấp ${h.lvl} độc lập (${h.cnt} bài${h.hasSbt?' + Đề thi thử + SBT & Đáp án':''}). Đã nạp sẵn Bài 1–2; các bài khác bấm Tải khi cần học để giữ ứng dụng gọn nhẹ.`
+      ?(hasStarterData
+        ?`Hệ thống NEW HSK 3.0 Cấp ${h.lvl} độc lập (${h.cnt} bài${sbtDesc}). Đã nạp sẵn Bài 1–2; các bài khác bấm Tải khi cần học để giữ ứng dụng gọn nhẹ.`
+        :(packRegularCnt>=h.cnt
+          ?`Hệ thống NEW HSK 3.0 Cấp ${h.lvl} độc lập (${h.cnt} bài${sbtDesc}). Có sẵn gói tải đầy đủ trong app; bấm Tải ở từng bài khi cần học.`
+          :`Hệ thống NEW HSK 3.0 Cấp ${h.lvl} độc lập (${h.cnt} bài${sbtDesc}). Đã có gói tải ${packRegularCnt}/${h.cnt} bài (Bài 1–${packRegularCnt}); bấm Tải ở từng bài khi cần học.`))
       :`Hệ thống NEW HSK 3.0 Cấp ${h.lvl} độc lập. Đã ánh xạ đủ toàn bộ track MP3 giáo trình & SBT; hỗ trợ nạp thẳng file .zip/.mp3 từ máy.`;
     courses.push({
       id:cId,title:h.title,group:'hsk',systemTrack:'hsk30',versionLabel:h.ver,source:h.src,level:`HSK ${h.lvl} (3.0)`,
