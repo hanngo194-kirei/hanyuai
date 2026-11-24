@@ -101,7 +101,7 @@
 </ul>
 </article>
 <article class="card">
-<div class="head"><svg class="ic"><use href="#i-bars"></use></svg><div><h3>Tiến độ học</h3><span class="muted small" id="hm-lvl">Bài 4 • Sở thích</span></div></div>
+<div class="head"><svg class="ic"><use href="#i-bars"></use></svg><div><h3>Tiến độ học</h3><span class="muted small" id="hm-lvl">Bài 1 • Xin chào</span></div></div>
 <div class="barrow"><div class="bar"><i id="hm-prog-bar" style="width:0%"></i></div><b id="hm-prog-pct">0%</b></div>
 <div class="stats3">
 <div><svg class="ic"><use href="#i-book"></use></svg><b id="hm-lessons">0</b><span id="hm-lessons-lbl">bài đã học</span></div>
@@ -116,14 +116,7 @@
 </div>
 <div class="hm-track-hub" id="hm-track-hub"></div>
 <div class="h2"><h2>Lộ trình học</h2><a href="javascript:void(0)" id="hm-all-roadmap">Xem toàn bộ lộ trình <svg class="ic" style="width:1em;height:1em"><use href="#i-chev"></use></svg></a></div>
-<div class="road-subbar"><span class="road-course-lbl" id="hm-course-lbl">Giáo trình Hán ngữ 1 (15 bài)</span><div class="road-sub-btns"><button class="free-pill" id="hm-free-btn" type="button">Học tự do</button><button class="road-tb-btn" id="rm-view-textbook" type="button">📖 Xem giáo trình</button></div></div><div class="road"><div class="road-in" id="hm-road-in">
-<a class="node done" data-go="lesson" href="javascript:void(0)"><span class="dot"><svg class="ic"><use href="#i-check"></use></svg></span><b>Bài 1</b>Chào hỏi</a>
-<a class="node done" data-go="lesson" href="javascript:void(0)"><span class="dot"><svg class="ic"><use href="#i-check"></use></svg></span><b>Bài 2</b>Giới thiệu bản thân</a>
-<a class="node done" data-go="lesson" href="javascript:void(0)"><span class="dot"><svg class="ic"><use href="#i-check"></use></svg></span><b>Bài 3</b>Gia đình</a>
-<a class="node now" data-go="lesson" href="javascript:void(0)"><span class="tag">Đang học</span><span class="dot"><svg class="ic f"><use href="#i-play"></use></svg></span><span class="nm"><b>Bài 4</b>Sở thích</span></a>
-<button class="node" data-toast="Hoàn thành Bài 4 để mở khóa Bài 5" type="button"><span class="dot"><svg class="ic"><use href="#i-lock"></use></svg></span><b>Bài 5</b>Mua sắm</button>
-<button class="node" data-toast="Hoàn thành Bài 5 để mở khóa Bài 6" type="button"><span class="dot"><svg class="ic"><use href="#i-lock"></use></svg></span><b>Bài 6</b>Ăn uống</button>
-</div></div>
+<div class="road-subbar"><span class="road-course-lbl" id="hm-course-lbl">Giáo trình Hán ngữ 1 (15 bài)</span><div class="road-sub-btns"><button class="free-pill" id="hm-free-btn" type="button">Học tự do</button><button class="road-tb-btn" id="rm-view-textbook" type="button">📖 Xem giáo trình</button></div></div><div class="road"><div class="road-in" id="hm-road-in"></div></div>
 <div class="h2"><h2>Khám phá thêm</h2></div>
 <div class="explore">
 <a class="tile t-1" data-go="learn" data-learntab-jump="books" href="javascript:void(0)"><svg class="ic"><use href="#i-book"></use></svg>Giáo trình</a>
@@ -358,14 +351,17 @@
 </section>
 <!-- ================= NGỮ PHÁP ================= -->
 <section class="view" data-view="grammar" id="grammar">
-<div class="title-row"><a aria-label="Quay lại" class="back" data-go="lesson" href="javascript:void(0)"><svg class="ic"><use href="#i-back"></use></svg></a><div><h1>Ngữ pháp</h1><span class="sub">Bài 4 • Cấu trúc “也” &amp; “喜欢”</span></div></div>
-<div class="seg2" id="gp-tabs">
-<button class="on" data-gp="ye" type="button">也 (yě) · cũng</button>
-<button data-gp="xihuan" type="button">喜欢 (xǐhuan) · thích</button>
-</div>
+<div class="title-row"><a aria-label="Quay lại" class="back" data-go="lesson" href="javascript:void(0)"><svg class="ic"><use href="#i-back"></use></svg></a><div><h1>Ngữ pháp</h1><span class="sub" id="gr-sub">Ngữ pháp bài học</span></div></div>
+<div class="seg2" id="gp-tabs"></div>
 <div class="card" id="gp-card"></div>
 <div class="card" id="gq-wrap">
 <div class="barrow" style="justify-content:space-between"><div class="head" style="align-items:center"><svg class="ic" style="width:1.4em;height:1.4em"><use href="#i-pencil"></use></svg><h3>Bài tập áp dụng</h3></div><span class="small muted" id="gq-count">1 / 5</span></div>
+<div class="chips gq-modes" id="gq-modes">
+<button class="chip on" data-gm="mix" type="button">Tổng hợp</button>
+<button class="chip" data-gm="fill" type="button">Chọn từ</button>
+<button class="chip" data-gm="correct" type="button">Chọn câu đúng</button>
+<button class="chip" data-gm="order" type="button">Sắp xếp câu</button>
+</div>
 <div class="bar"><i id="gq-bar" style="width:20%"></i></div>
 <p class="muted small" id="gq-prompt">Chọn câu đúng:</p>
 <div class="quiz-q" id="gq-q"></div>
@@ -377,11 +373,11 @@
 </div>
 </div>
 <div class="card hide" id="gq-summary"></div>
-<div class="btnrow"><a class="btn ghost sm" data-go="exercise" href="javascript:void(0)"><svg class="ic"><use href="#i-back"></use></svg>Bài tập từ vựng</a><a class="btn sm" data-go="dialog" href="javascript:void(0)">Hội thoại<svg class="ic"><use href="#i-chev"></use></svg></a></div>
+<div class="btnrow"><a class="btn ghost sm" data-go="exercise" href="javascript:void(0)"><svg class="ic"><use href="#i-back"></use></svg>Bài tập từ vựng</a><a class="btn sm" data-go="dialog" href="javascript:void(0)">Bài khóa<svg class="ic"><use href="#i-chev"></use></svg></a></div>
 </section>
 <!-- ================= BÀI TẬP TƯƠNG TÁC ================= -->
 <section class="view" data-view="exercise" id="exercise">
-<div class="title-row"><a aria-label="Quay lại" class="back" data-go="lesson" href="javascript:void(0)"><svg class="ic"><use href="#i-back"></use></svg></a><div><h1>Luyện từ vựng</h1><span class="sub">Bài 4 • Sở thích</span></div></div>
+<div class="title-row"><a aria-label="Quay lại" class="back" data-go="lesson" href="javascript:void(0)"><svg class="ic"><use href="#i-back"></use></svg></a><div><h1>Luyện từ vựng</h1><span class="sub" id="ex-sub">Bài tập từ vựng bài học</span></div></div>
 <div class="chips" id="ex-modes">
 <button class="chip on" data-em="mix" type="button">Tổng hợp (10)</button>
 <button class="chip" data-em="meaning" type="button">Chọn nghĩa</button>
@@ -582,7 +578,7 @@
 <div class="hide" id="ln-dlg-wrap" style="display:grid;gap:10px;margin-top:10px">
 <div class="dlg-player">
 <button aria-label="Phát cả đoạn hội thoại" class="playbtn" id="ln-dlg-play" type="button"><svg class="ic f"><use href="#i-play"></use></svg></button>
-<div style="flex:1;min-width:0"><b class="small" id="ln-dlg-status">Phát cả đoạn hội thoại</b><span class="muted small" id="ln-dlg-sub" style="display:block">2 nhân vật • Bài 4</span></div>
+<div style="flex:1;min-width:0"><b class="small" id="ln-dlg-status">Phát cả đoạn hội thoại</b><span class="muted small" id="ln-dlg-sub" style="display:block">Hội thoại bài học</span></div>
 <div class="spd-row" id="ln-dlg-speeds">
 <button class="spd-btn" data-spd="0.75" type="button">0.75x</button>
 <button class="spd-btn on" data-spd="1" type="button">1.0x</button>
@@ -613,12 +609,12 @@
 <div class="title-row"><a aria-label="Quay lại" class="back" data-go="lesson" href="javascript:void(0)"><svg class="ic"><use href="#i-back"></use></svg></a><div><h1>Luyện viết chữ Hán</h1><span class="sub" id="w-sub">Bài học • Thứ tự nét &amp; đối chiếu mẫu</span></div></div>
 <div class="barrow"><span class="small" id="wcount" style="font-weight:600">1 / 8</span><div class="bar"><i id="wbar" style="width:12.5%"></i></div><button aria-label="Chữ trước" class="back" id="wprev" style="width:34px;height:34px" type="button"><svg class="ic"><use href="#i-back"></use></svg></button><button aria-label="Chữ sau" class="back" id="wnext" style="width:34px;height:34px" type="button"><svg class="ic"><use href="#i-chev"></use></svg></button></div>
 <div class="card w-info">
-<div class="charbox" id="wch">喜</div>
+<div class="charbox" id="wch">—</div>
 <div class="w-meta">
-<div style="display:flex;align-items:center;gap:8px"><span class="py" id="wpy">xǐ • thích</span><button aria-label="Nghe phát âm" class="playbtn" id="wsay" style="width:32px;height:32px;margin-left:auto" type="button"><svg class="ic" style="width:1.05em;height:1.05em"><use href="#i-vol"></use></svg></button></div>
+<div style="display:flex;align-items:center;gap:8px"><span class="py" id="wpy">—</span><button aria-label="Nghe phát âm" class="playbtn" id="wsay" style="width:32px;height:32px;margin-left:auto" type="button"><svg class="ic" style="width:1.05em;height:1.05em"><use href="#i-vol"></use></svg></button></div>
 <div class="w-tags" id="wtags">
-<span class="w-tag" id="w-strokes-tag">12 nét</span>
-<span class="w-tag" id="w-rad-tag">Bộ: 口</span>
+<span class="w-tag" id="w-strokes-tag">— nét</span>
+<span class="w-tag" id="w-rad-tag">Bộ: —</span>
 <span class="w-tag" id="w-prog-tag">Chưa luyện</span>
 </div>
 </div>
@@ -631,7 +627,7 @@
 </div>
 <div class="w-stylus-bar"><span class="w-stylus-pill" id="w-stylus-pill">Hỗ trợ chuột, cảm ứng &amp; Apple Pencil / S Pen</span></div>
 <div class="pad" id="pad">
-<div class="ghost" id="wghost">喜</div>
+<div class="ghost" id="wghost">—</div>
 <div class="hw-box" id="hw-target"></div>
 <canvas aria-label="Khung tự viết chữ Hán, dùng chuột, ngón tay hoặc bút cảm ứng" id="cv"></canvas>
 </div>
@@ -731,12 +727,12 @@
 </div>
 </div>
 <div class="listen-prompt hide" data-f="lprompt">Nhấn loa để nghe và nhớ chữ Hán</div>
-<div class="zh" data-f="zh">喜欢</div>
+<div class="zh" data-f="zh">—</div>
 <div class="py-row" data-f="pyrow">
-<div class="py" data-f="py">xǐhuan</div>
+<div class="py" data-f="py">—</div>
 <button aria-label="Nghe phát âm" class="playbtn" data-f="spk" style="width:32px;height:32px;box-shadow:none" type="button"><svg class="ic" style="width:1.05em;height:1.05em"><use href="#i-vol"></use></svg></button>
 </div>
-<div class="vi" data-f="vi">thích, yêu thích</div>
+<div class="vi" data-f="vi">—</div>
 <button aria-label="Nghe phát âm" class="spk hide" data-f="spkBig" type="button"><svg class="ic"><use href="#i-vol"></use></svg></button>
 <div class="hint" data-f="hint">Chạm thẻ để xem đáp án</div>
 <div class="flash-foot">
@@ -749,9 +745,9 @@
 <div class="card rv-ex-card" data-f="exbox">
 <span class="rv-ex-tag"><svg class="ic"><use href="#i-book"></use></svg>例句</span>
 <div class="rv-ex-body">
-<div class="zh" data-f="ex">我喜欢喝茶。</div>
-<div class="py" data-f="exPy">Wǒ xǐhuan hē chá.</div>
-<span class="vi" data-f="exVi">Tôi thích uống trà.</span>
+<div class="zh" data-f="ex">—</div>
+<div class="py" data-f="exPy"></div>
+<span class="vi" data-f="exVi"></span>
 </div>
 <button aria-label="Nghe câu ví dụ" class="rv-ex-spk" data-f="exSpk" type="button"><svg class="ic"><use href="#i-vol"></use></svg></button>
 </div>
@@ -812,9 +808,9 @@
 <span class="sp-idx-pill">Mục <b id="sp-idx">1 / 3</b></span>
 <div class="pager" style="gap:8px"><button aria-label="Mục trước" id="sp-prev" type="button"><svg class="ic"><use href="#i-back"></use></svg></button><button aria-label="Mục sau" id="sp-next" type="button"><svg class="ic"><use href="#i-chev"></use></svg></button></div>
 </div>
-<div class="sp-zh" id="sp-zh">我喜欢喝茶。</div>
-<div class="sp-py" id="sp-py">Wǒ xǐhuan hē chá.</div>
-<div class="sp-vi" id="sp-vi">Tôi thích uống trà.</div>
+<div class="sp-zh" id="sp-zh">—</div>
+<div class="sp-py" id="sp-py"></div>
+<div class="sp-vi" id="sp-vi"></div>
 <div class="sp-audio-row">
 <button class="btn ghost sm" id="sp-hear" type="button"><svg class="ic"><use href="#i-vol"></use></svg>Nghe mẫu</button>
 <button class="btn ghost sm" id="sp-slow" type="button"><svg class="ic"><use href="#i-slow"></use></svg>Nghe chậm</button>

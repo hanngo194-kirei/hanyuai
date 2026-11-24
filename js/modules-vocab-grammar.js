@@ -1,3 +1,62 @@
+const VOCAB_EXAMPLE_MAP={
+  '你':{ex:'你好！很高兴认识你。',exPy:'Nǐ hǎo! Hěn gāoxìng rènshi nǐ.',exVi:'Xin chào! Rất vui được làm quen với bạn.'},
+  '好':{ex:'你忙吗？我很好。',exPy:'Nǐ máng ma? Wǒ hěn hǎo.',exVi:'Bạn bận không? Tôi rất khỏe.'},
+  '你好':{ex:'老师，你好！',exPy:'Lǎoshī, nǐ hǎo!',exVi:'Em chào thầy/cô ạ!'},
+  '一':{ex:'我要一碗米饭。',exPy:'Wǒ yào yì wǎn mǐfàn.',exVi:'Tôi muốn một bát cơm.'},
+  '五':{ex:'我买五斤苹果。',exPy:'Wǒ mǎi wǔ jīn píngguǒ.',exVi:'Tôi mua năm cân táo.'},
+  '八':{ex:'爸爸有八本书。',exPy:'Bàba yǒu bā běn shū.',exVi:'Bố có tám quyển sách.'},
+  '大':{ex:'这个学校很大。',exPy:'Zhè ge xuéxiào hěn dà.',exVi:'Ngôi trường này rất lớn.'},
+  '不':{ex:'汉语不太难。',exPy:'Hànyǔ bú tài nán.',exVi:'Tiếng Hán không khó lắm.'},
+  '口':{ex:'我家有五口人。',exPy:'Wǒ jiā yǒu wǔ kǒu rén.',exVi:'Nhà tôi có năm người.'},
+  '白':{ex:'她有一匹白马。',exPy:'Tā yǒu yì pǐ bái mǎ.',exVi:'Cô ấy có một con ngựa trắng.'},
+  '女':{ex:'她是女老师。',exPy:'Tā shì nǚ lǎoshī.',exVi:'Cô ấy là cô giáo.'},
+  '马':{ex:'这是一匹白马。',exPy:'Zhè shì yì pǐ bái mǎ.',exVi:'Đây là một con ngựa trắng.'},
+  '忙':{ex:'你工作忙吗？很忙。',exPy:'Nǐ gōngzuò máng ma? Hěn máng.',exVi:'Công việc của bạn bận không? Rất bận.'},
+  '吗':{ex:'你学习汉语吗？',exPy:'Nǐ xuéxí Hànyǔ ma?',exVi:'Bạn có học tiếng Hán không?'},
+  '很':{ex:'我哥哥很忙。',exPy:'Wǒ gēge hěn máng.',exVi:'Anh trai tôi rất bận.'},
+  '汉语':{ex:'我学习汉语。',exPy:'Wǒ xuéxí Hànyǔ.',exVi:'Tôi học tiếng Hán.'},
+  '难':{ex:'汉字很难，发音不太难。',exPy:'Hànzì hěn nán, fāyīn bú tài nán.',exVi:'Chữ Hán rất khó, phát âm không khó lắm.'},
+  '太':{ex:'汉语不太难。',exPy:'Hànyǔ bú tài nán.',exVi:'Tiếng Hán không khó lắm.'},
+  '爸爸':{ex:'我爸爸是老师。',exPy:'Wǒ bàba shì lǎoshī.',exVi:'Bố tôi là giáo viên.'},
+  '妈妈':{ex:'妈妈很忙吗？',exPy:'Māma hěn máng ma?',exVi:'Mẹ có bận không?'},
+  '他':{ex:'他学习汉语。',exPy:'Tā xuéxí Hànyǔ.',exVi:'Anh ấy học tiếng Hán.'},
+  '她':{ex:'她是我妹妹。',exPy:'Tā shì wǒ mèimei.',exVi:'Cô ấy là em gái tôi.'},
+  '男':{ex:'他是我男朋友。',exPy:'Tā shì wǒ nán péngyou.',exVi:'Anh ấy là bạn trai của tôi.'},
+  '哥哥':{ex:'我哥哥去北京。',exPy:'Wǒ gēge qù Běijīng.',exVi:'Anh trai tôi đi Bắc Kinh.'},
+  '弟弟':{ex:'我弟弟学英语。',exPy:'Wǒ dìdi xué Yīngyǔ.',exVi:'Em trai tôi học tiếng Anh.'},
+  '妹妹':{ex:'我妹妹很好。',exPy:'Wǒ mèimei hěn hǎo.',exVi:'Em gái tôi rất tốt.'}
+};
+
+function resolveWordExample(w){
+  if(!w||!w.zh)return {ex:'',exPy:'',exVi:''};
+  const normLen=s=>String(s||'').replace(/[\s.,!?;:。，！？；：“”"']/g,'').length;
+  const zhLen=normLen(w.zh);
+  const isSentence=s=>Boolean(s&&s.includes(w.zh)&&normLen(s)>zhLen);
+  // Ưu tiên câu có chứa ngữ cảnh dài hơn từ gốc trong kho ví dụ chuẩn & câu hội thoại
+  if(VOCAB_EXAMPLE_MAP[w.zh])return VOCAB_EXAMPLE_MAP[w.zh];
+  if(w.ex&&isSentence(w.ex))return {ex:w.ex,exPy:w.exPy||'',exVi:w.exVi||''};
+  const pool=[...(typeof SENT!=='undefined'&&Array.isArray(SENT)?SENT:[]),...(typeof LISTEN_DIALOG!=='undefined'&&Array.isArray(LISTEN_DIALOG)?LISTEN_DIALOG:[])];
+  const longMatch=pool.find(s=>s&&s.zh&&isSentence(s.zh)&&normLen(s.zh)>zhLen+2);
+  if(longMatch)return {ex:longMatch.zh,exPy:longMatch.py||'',exVi:longMatch.vi||''};
+  if(typeof HANZI_MINDMAP_DB!=='undefined'&&w.zh.length===1&&HANZI_MINDMAP_DB[w.zh]&&HANZI_MINDMAP_DB[w.zh].example){
+    const mex=HANZI_MINDMAP_DB[w.zh].example;
+    if(mex.zh&&isSentence(mex.zh))return {ex:mex.zh,exPy:mex.py||'',exVi:mex.vi||''};
+  }
+  const match=pool.find(s=>s&&s.zh&&isSentence(s.zh));
+  if(match)return {ex:match.zh,exPy:match.py||'',exVi:match.vi||''};
+  if(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS)){
+    for(const l of LESSONS){
+      const dl=(l&&Array.isArray(l.dialog))?l.dialog:[];
+      const hit=dl.find(d=>d&&d.zh&&isSentence(d.zh));
+      if(hit)return {ex:hit.zh,exPy:hit.py||'',exVi:hit.vi||''};
+    }
+  }
+  if(w.ex)return {ex:w.ex,exPy:w.exPy||'',exVi:w.exVi||''};
+  const loose=pool.find(s=>s&&s.zh&&s.zh.includes(w.zh));
+  return loose?{ex:loose.zh,exPy:loose.py||'',exVi:loose.vi||''}:{ex:`${w.zh}！`,exPy:w.py||'',exVi:w.vi||''};
+}
+window.resolveWordExample=resolveWordExample;
+
 /* ---------- Flashcard dùng chung ---------- */
 function makeDeck(root,opts){
   let queue=[],i=0,revealed=false,rateLock=false,session={reviewed:0,r0:0,r1:0,r2:0,done:false};
@@ -43,10 +102,7 @@ function makeDeck(root,opts){
     const rb=$('[data-f="restart"]',sumEl);if(rb)rb.onclick=()=>{buildQueue();render();};
   }
   function resolveExample(w){
-    if(w.ex)return {ex:w.ex,exPy:w.exPy||'',exVi:w.exVi||''};
-    const pool=[...(typeof SENT!=='undefined'&&Array.isArray(SENT)?SENT:[]),...(typeof LISTEN_DIALOG!=='undefined'&&Array.isArray(LISTEN_DIALOG)?LISTEN_DIALOG:[])];
-    const match=pool.find(s=>s&&s.zh&&s.zh.includes(w.zh));
-    return match?{ex:match.zh,exPy:match.py||'',exVi:match.vi||''}:{ex:'',exPy:'',exVi:''};
+    return resolveWordExample(w);
   }
   function render(){
     if(i>=queue.length&&queue.length>0)i=0;
@@ -569,6 +625,44 @@ let ORDER_BANK=[
   {id:'ord5',tokens:['我','想','去','旅游','。'],ans:'我想去旅游。',py:'Wǒ xiǎng qù lǚyóu.',vi:'Tôi muốn đi du lịch.'}
 ];
 
+function buildLessonOrderBank(){
+  if(typeof ORDER_BANK!=='undefined'&&Array.isArray(ORDER_BANK)&&ORDER_BANK.length)return ORDER_BANK;
+  const wordSet=(WORDS||[]).map(w=>w.zh).filter(z=>z&&z.length>=2).sort((a,b)=>b.length-a.length);
+  const splitSentence=zh=>{
+    const clean=String(zh||'').trim();
+    if(!clean)return [];
+    const tokens=[];
+    let i=0;
+    while(i<clean.length){
+      const ch=clean[i];
+      if(/\s/.test(ch)){i++;continue;}
+      if(/[。！？?!，,；;：:]/.test(ch)){tokens.push(ch);i++;continue;}
+      const hit=wordSet.find(w=>clean.startsWith(w,i));
+      if(hit){tokens.push(hit);i+=hit.length;}
+      else{tokens.push(ch);i++;}
+    }
+    return tokens;
+  };
+  const candidates=[];
+  const seen=new Set();
+  const pushItem=(zh,py,vi,id)=>{
+    const cleanZh=String(zh||'').trim();
+    const hanLen=(cleanZh.match(/[\u4e00-\u9fff]/g)||[]).length;
+    if(hanLen<3||seen.has(cleanZh))return;
+    const tokens=splitSentence(cleanZh);
+    if(tokens.length<3)return;
+    seen.add(cleanZh);
+    candidates.push({id,tokens,ans:cleanZh,py:py||'',vi:vi||''});
+  };
+  (LISTEN_DIALOG||[]).forEach((d,k)=>pushItem(d.zh,d.py,d.vi,'ord_d_'+k));
+  (SENT||[]).forEach((s,k)=>pushItem(s.zh,s.py,s.vi,'ord_s_'+k));
+  (WORDS||[]).forEach((w,k)=>{
+    const ex=resolveWordExample(w);
+    pushItem(ex.ex,ex.exPy,ex.exVi,'ord_w_'+k);
+  });
+  return candidates.slice(0,8);
+}
+
 function buildExerciseQuestions(mode){
   if(!WORDS.length)return [];
   const makeMeaning=w=>{
@@ -580,40 +674,59 @@ function buildExerciseQuestions(mode){
     return {type:'hanzi',wordId:w.id,prompt:'Chọn chữ Hán & Pinyin đúng cho nghĩa:',vi:w.vi,zh:w.zh,opts,exp:`“${w.vi}” viết là ${w.zh} (${w.py}).`};
   };
   const makeFill=w=>{
-    const blank=w.ex.includes(w.zh)?w.ex.replace(w.zh,'____'):`${w.ex} (____)`;
+    const exData=resolveWordExample(w);
+    const exZh=exData.ex||(w.zh+'！');
+    const blank=exZh.includes(w.zh)?exZh.replace(w.zh,'____'):`${exZh} (____)`;
     const opts=shuffle([w,...pickDistractors(w,WORDS,3)]).map(x=>({id:x.id,zh:x.zh,py:x.py,ok:x.id===w.id}));
-    return {type:'fill',wordId:w.id,prompt:'Điền từ đúng vào chỗ trống:',sentence:blank,vi:w.exVi,zh:w.ex,opts,exp:`Câu đúng: ${w.ex} (${w.exPy}) — ${w.exVi}`};
+    return {type:'fill',wordId:w.id,prompt:'Điền từ đúng vào chỗ trống:',sentence:blank,vi:exData.exVi||w.vi,zh:exZh,opts,exp:`Câu đúng: ${exZh} (${exData.exPy||w.py}) — ${exData.exVi||w.vi}`};
   };
   const makeMatch=slice=>{
     const pairs=slice.map(w=>({id:w.id,zh:w.zh,py:w.py,vi:w.vi}));
-    return {type:'match',prompt:'Nối 4 cặp chữ Hán với nghĩa đúng:',pairs,left:shuffle(pairs),right:shuffle(pairs),exp:pairs.map(p=>`${p.zh} (${p.py}) = ${p.vi}`).join(' · ')};
+    return {type:'match',prompt:`Nối ${pairs.length} cặp chữ Hán với nghĩa đúng:`,pairs,left:shuffle(pairs),right:shuffle(pairs),exp:pairs.map(p=>`${p.zh} (${p.py}) = ${p.vi}`).join(' · ')};
   };
-  const makeOrder=o=>({type:'order',prompt:'Sắp xếp các từ thành câu đúng:',tokens:shuffle(o.tokens),ans:o.ans,py:o.py,vi:o.vi,exp:`Đáp án đúng: ${o.ans} (${o.py})`});
+  const makeOrder=o=>({type:'order',prompt:'Sắp xếp các từ thành câu đúng:',tokens:shuffle(o.tokens),ans:o.ans,py:o.py,vi:o.vi,exp:`Đáp án đúng: ${o.ans}${o.py?' ('+o.py+')':''}`});
+  const ordBank=buildLessonOrderBank();
 
   if(mode==='meaning')return shuffle(WORDS).slice(0,6).map(makeMeaning);
   if(mode==='hanzi')return shuffle(WORDS).slice(0,6).map(makeHanzi);
   if(mode==='fill')return shuffle(WORDS).slice(0,6).map(makeFill);
-  if(mode==='match')return [makeMatch(shuffle(WORDS).slice(0,4)),makeMatch(shuffle(WORDS).slice(4,8))];
-  if(mode==='order')return shuffle(ORDER_BANK).map(makeOrder);
+  if(mode==='match'){
+    const ws=shuffle(WORDS);
+    const out=[];
+    if(ws.length>=2)out.push(makeMatch(ws.slice(0,Math.min(4,ws.length))));
+    if(ws.length>=6)out.push(makeMatch(ws.slice(4,Math.min(8,ws.length))));
+    return out;
+  }
+  if(mode==='order')return shuffle(ordBank).map(makeOrder);
 
-  // Tổng hợp 10 câu đa dạng
-  const ws=shuffle(WORDS);
-  return [
-    makeMeaning(ws[0]),makeMeaning(ws[1]),
-    makeHanzi(ws[2]),makeHanzi(ws[3]),
-    makeFill(ws[4]),makeFill(ws[5]),
-    makeMatch(ws.slice(0,4)),makeMatch(ws.slice(4,8)),
-    makeOrder(ORDER_BANK[0]),makeOrder(ORDER_BANK[1])
-  ];
+  // Tổng hợp đa dạng theo đúng bài học hiện tại (tối đa 10 câu)
+  const ws=shuffle(WORDS),qs=[];
+  if(ws[0])qs.push(makeMeaning(ws[0]));
+  if(ws[1])qs.push(makeMeaning(ws[1]));
+  if(ws[2])qs.push(makeHanzi(ws[2]));
+  if(ws[3])qs.push(makeHanzi(ws[3]));
+  if(ws[4])qs.push(makeFill(ws[4]));
+  if(ws[5])qs.push(makeFill(ws[5]));
+  else if(ws[0])qs.push(makeFill(ws[0]));
+  if(ws.length>=4)qs.push(makeMatch(ws.slice(0,4)));
+  if(ws.length>=8)qs.push(makeMatch(ws.slice(4,8)));
+  if(ordBank[0])qs.push(makeOrder(ordBank[0]));
+  if(ordBank[1])qs.push(makeOrder(ordBank[1]));
+  return qs;
 }
 
 /* ---------- Bộ điều khiển Bài tập tương tác (#exercise) ---------- */
 const exCtrl=(function(){
   let mode='mix',qs=[],qi=0,correct=0,wrong=0,wrongQs=[],answered=false,recorded=false,placed=[],mSelL=null,mSelR=null,mDone=new Set(),mErrors=0;
 
+  function syncHeader(){
+    const l=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
+    const sub=$('#ex-sub');
+    if(sub)sub.textContent=l?`${l.code||'Bài học'} • ${l.titleVi||l.titleZh||''}`:'Bài tập từ vựng bài học';
+  }
   function saveActive(){
     if(!qs.length||qi>=qs.length)return;
-    store.exercises.active={mode,qs,qi,correct,wrong,wrongQs,savedAt:Date.now()};
+    store.exercises.active={lessonId:store.activeLessonId,mode,qs,qi,correct,wrong,wrongQs,savedAt:Date.now()};
     saveStore(store);
   }
   function clearActive(){
@@ -623,7 +736,7 @@ const exCtrl=(function(){
   function checkResumeBanner(){
     const act=store.exercises.active,rb=$('#ex-resume');
     if(!rb)return;
-    if(act&&Array.isArray(act.qs)&&act.qs.length&&act.qi<act.qs.length){
+    if(act&&act.lessonId===store.activeLessonId&&Array.isArray(act.qs)&&act.qs.length&&act.qi<act.qs.length){
       rb.classList.remove('hide');
       rb.innerHTML=`<div class="head" style="align-items:center"><svg class="ic"><use href="#i-clock"/></svg><div><b>Bạn có bài tập đang làm dở</b><span class="muted small" style="display:block">Câu ${act.qi+1} / ${act.qs.length} • Đúng ${act.correct}</span></div></div><div class="btnrow" style="margin-top:10px"><button type="button" class="btn sm" id="ex-cont">Tiếp tục</button><button type="button" class="btn ghost sm" id="ex-fresh">Làm bài mới</button></div>`;
       $('#ex-cont').onclick=()=>{
@@ -777,7 +890,9 @@ const exCtrl=(function(){
       recorded=true;
       store.exercises.attempts+=1;
       if(pct>store.exercises.bestPct)store.exercises.bestPct=pct;
-      store.exercises.sessions.push({at:Date.now(),mode,correct,wrong,total,pct});recordLearningEvent({type:'exercise',skill:'read',title:`Bài tập từ vựng (${mode})`,result:`${correct}/${total} (${pct}%)`,view:'exercise',meta:{correct,total,pct}});
+      const lAct=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
+      const exTitle=lAct?`Bài tập từ vựng ${lAct.code||''} (${mode})`:`Bài tập từ vựng (${mode})`;
+      store.exercises.sessions.push({at:Date.now(),mode,correct,wrong,total,pct});recordLearningEvent({type:'exercise',skill:'read',title:exTitle,result:`${correct}/${total} (${pct}%)`,view:'exercise',meta:{correct,total,pct}});
       if(store.exercises.sessions.length>20)store.exercises.sessions=store.exercises.sessions.slice(-20);
       clearActive();
       updateLessonExerciseStatus();
@@ -799,13 +914,154 @@ const exCtrl=(function(){
     renderQ();
   };
 
-  return {init(){checkResumeBanner();start('mix');}};
+  return {init(){syncHeader();checkResumeBanner();start('mix');},refresh(){syncHeader();checkResumeBanner();start(mode);},syncHeader};
 })();
 
-/* ---------- Bộ điều khiển Ngữ pháp (#grammar) ---------- */
+/* ---------- Bộ điều khiển Ngữ pháp (#grammar: Lý thuyết + Bài tập áp dụng đa dạng) ---------- */
+const HN_GRAMMAR_QUIZ_BANK={
+  lesson_hn1_b1:[
+    {id:'g1_1',qtype:'fill',prompt:'Chọn từ đúng về biến điệu thanh 3:',q:'Khi nói “你好” (nǐ hǎo), âm tiết “你” đọc biến điệu thành ____.',opts:[{t:'ní (thanh 2)',ok:true},{t:'nī (thanh 1)',ok:false},{t:'nì (thanh 4)',ok:false}],exp:'Hai âm tiết thanh 3 liền nhau thì âm đầu đọc thành thanh 2: nǐ hǎo → ní hǎo.'},
+    {id:'g1_2',qtype:'correct',prompt:'Chọn cặp chữ & thanh điệu đúng nghĩa “tám” (bā) – “bố” (bà):',q:'Phân biệt thanh 1 và thanh 4:',opts:[{t:'八 (bā · thanh 1) — 爸 (bà · thanh 4)',ok:true},{t:'八 (bà · thanh 4) — 爸 (bā · thanh 1)',ok:false},{t:'八 (bá · thanh 2) — 爸 (bǎ · thanh 3)',ok:false}],exp:'Thanh 1 (bā: tám) đọc cao ngang, còn thanh 4 (bà: bố) đọc giáng mạnh từ cao xuống thấp.'},
+    {id:'g1_3',qtype:'fill',prompt:'Chọn đại từ nhân xưng ngôi 2 số ít đúng với ngữ cảnh chào hỏi:',q:'____ 好！(Xin chào bạn!)',opts:[{t:'你 (nǐ)',ok:true},{t:'马 (mǎ)',ok:false},{t:'大 (dà)',ok:false}],exp:'“你好！” (Nǐ hǎo!) là câu chào hỏi cơ bản nhất trong Bài 1.'},
+    {id:'g1_4',qtype:'correct',prompt:'Chọn câu chào đáp lại đúng chuẩn hội thoại Bài 1:',q:'Người A: “你好！” — Người B đáp:',opts:[{t:'你好！',ok:true},{t:'不马！',ok:false},{t:'大女！',ok:false}],exp:'Trong Bài 1 Hán ngữ 1, khi nghe “你好！”, ta đáp lại lịch sự là “你好！”.'},
+    {id:'g1_5',qtype:'order',prompt:'Sắp xếp các mảnh sau thành câu chào chuẩn:',tokens:['你','好','！'],ans:'你好！',py:'Nǐ hǎo!',vi:'Xin chào!'},
+    {id:'g1_6',qtype:'order',prompt:'Sắp xếp các mảnh sau thành cụm từ có nghĩa “con ngựa trắng”:',tokens:['白','马'],ans:'白马',py:'bái mǎ',vi:'con ngựa trắng'}
+  ],
+  lesson_hn1_b2:[
+    {id:'g2_1',qtype:'fill',prompt:'Chọn trợ từ nghi vấn để tạo câu hỏi “Bạn bận không?”:',q:'你忙 ____？',opts:[{t:'吗 (ma)',ok:true},{t:'很 (hěn)',ok:false},{t:'太 (tài)',ok:false}],exp:'Đặt trợ từ “吗” ở cuối câu trần thuật để hỏi Có/Không: 你忙吗？'},
+    {id:'g2_2',qtype:'fill',prompt:'Chọn cụm từ điền đúng nghĩa “không khó lắm”:',q:'汉语 ____ 难。',opts:[{t:'不太 (bú tài)',ok:true},{t:'吗 (ma)',ok:false},{t:'好吗 (hǎo ma)',ok:false}],exp:'“不太 + Tính từ” diễn đạt mức độ “không ... lắm”: 汉语不太难。'},
+    {id:'g2_3',qtype:'correct',prompt:'Chọn câu hỏi đúng ngữ pháp cho “Tiếng Hán khó không?”:',q:'Tiếng Hán có khó không?',opts:[{t:'汉语难吗？',ok:true},{t:'汉语吗难？',ok:false},{t:'吗汉语难？',ok:false}],exp:'Trợ từ nghi vấn “吗” luôn đứng ở cuối câu hỏi: 汉语难吗？'},
+    {id:'g2_4',qtype:'correct',prompt:'Chọn câu áp dụng đúng biến điệu “不” trước thanh 4 (tài):',q:'Đọc và dùng đúng “不太难”:',opts:[{t:'不太难 (bú tài nán)',ok:true},{t:'不太难 (bù tǎi nán)',ok:false},{t:'难不太 (nán bú tài)',ok:false}],exp:'“不” đứng trước âm tiết thanh 4 (太 tài) biến điệu thành thanh 2 (bú): bú tài nán.'},
+    {id:'g2_5',qtype:'order',prompt:'Sắp xếp thành câu hỏi “Bạn bận không?”:',tokens:['你','忙','吗','？'],ans:'你忙吗？',py:'Nǐ máng ma?',vi:'Bạn bận không?'},
+    {id:'g2_6',qtype:'order',prompt:'Sắp xếp thành câu trả lời “Không khó lắm.”:',tokens:['不','太','难','。'],ans:'不太难。',py:'Bú tài nán.',vi:'Không khó lắm.'}
+  ]
+};
+
 const gramCtrl=(function(){
-  let curGp='ye',qi=0,correct=0,wrong=0,answered=false,recorded=false,wrongList=[];
+  let curGp='ye',gMode='mix',quizList=[],qi=0,correct=0,wrong=0,answered=false,recorded=false,wrongList=[],placed=[];
   const esc=s=>(typeof escHtml==='function')?escHtml(s):String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  function syncHeader(){
+    const l=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
+    const sub=$('#gr-sub');
+    if(sub)sub.textContent=l?`${l.code||'Bài học'} • ${l.titleVi||l.titleZh||''}`:'Ngữ pháp bài học';
+  }
+
+  function buildDynamicGrammarQuiz(){
+    const lid=store.activeLessonId;
+    if(lid&&HN_GRAMMAR_QUIZ_BANK[lid])return HN_GRAMMAR_QUIZ_BANK[lid].slice();
+    if(typeof GRAMMAR_QUIZ!=='undefined'&&Array.isArray(GRAMMAR_QUIZ)&&GRAMMAR_QUIZ.length){
+      return GRAMMAR_QUIZ.map(q=>Object.assign({},q,{qtype:q.qtype||(q.q&&q.q.includes('____')?'fill':'correct')}));
+    }
+    const out=[];
+    const gpVals=Object.values(GRAMMAR_POINTS||{});
+    const exPool=[];
+    gpVals.forEach(gp=>{
+      if(Array.isArray(gp.examples))gp.examples.forEach(ex=>{if(ex&&ex.zh)exPool.push({zh:ex.zh,py:ex.py||'',vi:ex.vi||'',hl:ex.hl||'',gpTitle:gp.title||''});});
+      if(gp.ex)exPool.push({zh:gp.ex,py:'',vi:gp.explain||gp.desc||'',hl:'',gpTitle:gp.title||''});
+    });
+    (LISTEN_DIALOG||[]).forEach(d=>{if(d&&d.zh)exPool.push({zh:d.zh,py:d.py||'',vi:d.vi||'',hl:'',gpTitle:''});});
+    (SENT||[]).forEach(s=>{if(s&&s.zh)exPool.push({zh:s.zh,py:s.py||'',vi:s.vi||'',hl:'',gpTitle:''});});
+
+    const funcWords=[
+      {w:'吗',alt:['呢','很']},
+      {w:'呢',alt:['吗','吧']},
+      {w:'吧',alt:['吗','的']},
+      {w:'也',alt:['不','都']},
+      {w:'都',alt:['也','很']},
+      {w:'的',alt:['吗','呢']},
+      {w:'很',alt:['不','太']},
+      {w:'还是',alt:['不是','都是']},
+      {w:'没有',alt:['不是','很']},
+      {w:'在',alt:['是','有']},
+      {w:'是',alt:['在','有']},
+      {w:'有',alt:['在','是']},
+      {w:'不',alt:['很','也']}
+    ];
+    const seenFill=new Set();
+    const cleanSentences=[];
+    const seenSent=new Set();
+    exPool.forEach(item=>{
+      String(item.zh).split(/[·。！？!?]/).map(x=>x.trim()).forEach(seg=>{
+        const han=(seg.match(/[\u4e00-\u9fff]/g)||[]).length;
+        if(han>=3&&!seenSent.has(seg)){seenSent.add(seg);cleanSentences.push({zh:seg+(String(item.zh).includes('？')&&seg.includes('吗')?'？':(/[吗谁什么哪几多少呢]$/.test(seg)?'？':'。')),py:item.py,vi:item.vi,gpTitle:item.gpTitle});}
+      });
+    });
+
+    // 1. Chọn từ vào chỗ trống (fill)
+    for(const s of cleanSentences){
+      if(seenFill.size>=3)break;
+      let matchedFw=funcWords.find(fw=>s.zh.includes(fw.w));
+      let tok=matchedFw?matchedFw.w:null;
+      let alts=matchedFw?matchedFw.alt:null;
+      if(!tok){
+        const wHit=(WORDS||[]).find(w=>w.zh&&s.zh.includes(w.zh));
+        if(wHit){
+          tok=wHit.zh;
+          alts=shuffle((WORDS||[]).filter(x=>x.zh!==tok)).slice(0,2).map(x=>x.zh);
+        }
+      }
+      if(tok&&alts&&alts.length>=2&&!seenFill.has(s.zh)){
+        seenFill.add(s.zh);
+        const blank=s.zh.replace(tok,'____');
+        const opts=shuffle([{t:tok,ok:true},{t:alts[0],ok:false},{t:alts[1],ok:false}]);
+        out.push({id:'dyn_f_'+out.length,qtype:'fill',prompt:'Chọn từ thích hợp điền vào chỗ trống:',q:`${blank}${s.vi?' ('+s.vi+')':''}`,opts,ansZh:s.zh,exp:`Câu hoàn chỉnh đúng ngữ pháp là “${s.zh}”${s.vi?' ('+s.vi+')':''}.`});
+      }
+    }
+
+    // 2. Chọn câu đúng ngữ pháp (correct)
+    cleanSentences.slice(0,3).forEach((s,idx)=>{
+      const base=s.zh.replace(/[。！？?!]+$/,'');
+      const endP=s.zh.slice(base.length)||'。';
+      const chars=[...base];
+      if(chars.length<3)return;
+      const w1=[...chars.slice(1),chars[0]].join('')+endP;
+      const w2=chars.slice().reverse().join('')+endP;
+      if(w1===s.zh||w2===s.zh||w1===w2)return;
+      const opts=shuffle([{t:s.zh,ok:true},{t:w1,ok:false},{t:w2,ok:false}]);
+      out.push({id:'dyn_c_'+idx,qtype:'correct',prompt:'Chọn câu viết đúng trật tự ngữ pháp:',q:s.vi||`Áp dụng ngữ pháp ${s.gpTitle||'của bài'}`,opts,ansZh:s.zh,exp:`Câu chuẩn theo giáo trình: “${s.zh}”${s.vi?' — '+s.vi:''}.`});
+    });
+
+    // 3. Sắp xếp câu ngữ pháp (order)
+    const ordBank=buildLessonOrderBank();
+    ordBank.slice(0,3).forEach((o,idx)=>{
+      out.push({id:'dyn_o_'+idx,qtype:'order',prompt:'Sắp xếp các từ theo đúng cấu trúc câu:',tokens:o.tokens.slice(),ans:o.ans,py:o.py,vi:o.vi,exp:`Trật tự đúng: ${o.ans}${o.py?' ('+o.py+')':''}`});
+    });
+
+    return out;
+  }
+
+  function startQuiz(newMode){
+    if(newMode)gMode=newMode;
+    $$('#gq-modes button').forEach(b=>b.classList.toggle('on',b.dataset.gm===gMode));
+    const full=buildDynamicGrammarQuiz();
+    const wrap=$('#gq-wrap'),sum=$('#gq-summary');
+    if(!full.length){
+      quizList=[];
+      if(wrap)wrap.classList.add('hide');
+      if(sum)sum.classList.add('hide');
+      return;
+    }
+    if(gMode==='mix'){
+      const fills=full.filter(x=>x.qtype==='fill');
+      const cors=full.filter(x=>x.qtype==='correct');
+      const ords=full.filter(x=>x.qtype==='order');
+      const mixed=[];
+      const maxLen=Math.max(fills.length,cors.length,ords.length);
+      for(let k=0;k<maxLen&&mixed.length<6;k++){
+        if(fills[k]&&mixed.length<6)mixed.push(fills[k]);
+        if(cors[k]&&mixed.length<6)mixed.push(cors[k]);
+        if(ords[k]&&mixed.length<6)mixed.push(ords[k]);
+      }
+      quizList=mixed.length?mixed:full.slice(0,6);
+    }else{
+      quizList=full.filter(x=>x.qtype===gMode);
+    }
+    qi=0;correct=0;wrong=0;answered=false;recorded=false;wrongList=[];placed=[];
+    if(wrap)wrap.classList.remove('hide');
+    if(sum)sum.classList.add('hide');
+    renderQuiz();
+  }
 
   function renderPoint(key){
     const g=GRAMMAR_POINTS[key];
@@ -818,43 +1074,94 @@ const gramCtrl=(function(){
     const structHtml=g.struct?`<div class="struct"><b><svg class="ic"><use href="#i-layers"/></svg>Cấu trúc:</b><span>${esc(g.struct)}</span></div>`:'';
     const exList=Array.isArray(g.examples)?g.examples:(g.ex?[{zh:g.ex,hl:'',py:'',vi:'',ic:'book'}]:[]);
     const exHtml=exList.length?`<h3 style="border-left:4px solid var(--accent);padding-left:8px">Ví dụ</h3>
-      <div>${exList.map(ex=>`<div class="ex"><span class="ib"><svg class="ic"><use href="#i-${esc(ex.ic||'book')}"/></svg></span><div><div class="zh">${ex.hl?highlightText(esc(ex.zh||''),esc(ex.hl)):esc(ex.zh||'')}</div>${ex.py?`<small>${esc(ex.py)}</small>`:''}${ex.vi?`<small>${esc(ex.vi)}</small>`:''}</div><button type="button" class="playbtn" data-say="${esc(ex.zh||'')}" aria-label="Nghe ví dụ"><svg class="ic"><use href="#i-vol"/></svg></button></div>`).join('')}</div>`:'';
+      <div>${exList.map(ex=>`<div class="ex"><span class="ib"><svg class="ic"><use href="#i-${esc(ex.ic||'book')}"/></svg></span><div><div class="zh">${ex.hl?highlightText(ex.zh||'',ex.hl):esc(ex.zh||'')}</div>${ex.py?`<small>${esc(ex.py)}</small>`:''}${ex.vi?`<small>${esc(ex.vi)}</small>`:''}</div><button type="button" class="playbtn" data-say="${esc(ex.zh||'')}" aria-label="Nghe ví dụ"><svg class="ic"><use href="#i-vol"/></svg></button></div>`).join('')}</div>`:'';
     const noteHtml=g.note?`<div class="note"><svg class="ic"><use href="#i-bulb"/></svg><div><b>Lưu ý:</b> ${esc(g.note)}</div></div>`:'';
+    const jumpHtml=quizList.length?`<div style="display:flex;justify-content:flex-end;margin-top:4px"><button type="button" class="chip on" id="gp-jump-quiz">Làm bài tập áp dụng (${quizList.length} câu) ↓</button></div>`:'';
     $('#gp-card').innerHTML=`
       <div class="gram"><div class="big">${esc(han)}<small>${esc(py)}</small></div><div><h3>${esc(g.title||'')}</h3>${desc?`<p class="muted small" style="margin-top:4px">${esc(desc)}</p>`:''}</div></div>
       ${structHtml}
       ${exHtml}
-      ${noteHtml}`;
+      ${noteHtml}
+      ${jumpHtml}`;
+    const jb=$('#gp-jump-quiz');
+    if(jb)jb.onclick=()=>{const w=$('#gq-wrap');if(w)w.scrollIntoView({behavior:'smooth',block:'start'});};
   }
 
   function renderQuiz(){
     const wrap=$('#gq-wrap'),sum=$('#gq-summary');
-    if(qi>=GRAMMAR_QUIZ.length){
+    if(!quizList.length){
+      $('#gq-count').textContent='0 / 0';
+      $('#gq-bar').style.width='0%';
+      $('#gq-prompt').textContent='Dạng bài tập này chưa có đủ câu ở bài ngắn này:';
+      $('#gq-q').textContent='Hãy chọn “Tổng hợp” hoặc chuyển sang bài học dài hơn.';
+      $('#gq-opts').innerHTML=`<button type="button" class="btn sm" id="gq-to-mix">Chuyển về Tổng hợp</button>`;
+      $('#gq-fb').classList.add('hide');$('#gq-actions').classList.add('hide');
+      const tm=$('#gq-to-mix');if(tm)tm.onclick=()=>startQuiz('mix');
+      return;
+    }
+    if(qi>=quizList.length){
       wrap.classList.add('hide');sum.classList.remove('hide');
-      const total=GRAMMAR_QUIZ.length,pct=Math.round(correct/total*100);
+      const total=quizList.length,pct=Math.round(correct/total*100);
       if(!recorded){
         recorded=true;
         store.grammarQuiz.attempts+=1;
         if(pct>store.grammarQuiz.bestPct)store.grammarQuiz.bestPct=pct;
-        store.grammarQuiz.sessions.push({at:Date.now(),correct,wrong,total,pct});recordLearningEvent({type:'grammar',skill:'read',title:'Bài tập ngữ pháp Bài 4',result:`${correct}/${total} (${pct}%)`,view:'grammar',meta:{correct,total,pct}});
+        const lAct=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
+        const grTitle=lAct?`Bài tập ngữ pháp ${lAct.code||''}`:'Bài tập ngữ pháp';
+        store.grammarQuiz.sessions.push({at:Date.now(),correct,wrong,total,pct});
+        recordLearningEvent({type:'grammar',skill:'read',title:grTitle,result:`${correct}/${total} (${pct}%)`,view:'grammar',meta:{correct,total,pct}});
         if(store.grammarQuiz.sessions.length>20)store.grammarQuiz.sessions=store.grammarQuiz.sessions.slice(-20);
+        if(typeof markLessonSectionDone==='function')markLessonSectionDone(store.activeLessonId,'grammar',true);
         saveStore(store);
       }
       sum.innerHTML=`<div class="sphead"><svg class="ic"><use href="#i-award"/></svg><div><h3>Hoàn thành bài tập ngữ pháp!</h3><span class="muted small">Đúng ${correct}/${total} câu (${pct}%)</span></div></div>
         <div class="sum-grid" style="margin-top:12px"><div><b style="color:var(--good)">${correct}</b><span>Đúng</span></div><div><b>${wrong}</b><span>Sai</span></div><div><b style="color:var(--ink)">${store.grammarQuiz.attempts}</b><span>Lần làm</span></div></div>
         <div class="btnrow" style="margin-top:12px"><button type="button" class="btn sm" id="gq-restart"><svg class="ic"><use href="#i-refresh"/></svg>Làm lại bài ngữ pháp</button></div>`;
-      $('#gq-restart').onclick=()=>{qi=0;correct=0;wrong=0;recorded=false;wrongList=[];renderQuiz();};
+      $('#gq-restart').onclick=()=>startQuiz(gMode);
       return;
     }
     wrap.classList.remove('hide');sum.classList.add('hide');
-    answered=false;
-    const q=GRAMMAR_QUIZ[qi],ABC=['A','B','C'];
-    $('#gq-count').textContent=`${qi+1} / ${GRAMMAR_QUIZ.length}`;
-    $('#gq-bar').style.width=((qi+1)/GRAMMAR_QUIZ.length*100)+'%';
+    answered=false;placed=[];
+    const q=quizList[qi],ABC=['A','B','C'];
+    $('#gq-count').textContent=`${qi+1} / ${quizList.length}`;
+    $('#gq-bar').style.width=((qi+1)/quizList.length*100)+'%';
     $('#gq-prompt').textContent=q.prompt;
-    $('#gq-q').textContent=q.q;
     $('#gq-fb').classList.add('hide');$('#gq-actions').classList.add('hide');
-    $('#gq-opts').innerHTML=q.opts.map((o,idx)=>`<button class="opt" type="button" data-idx="${idx}"><i>${ABC[idx]}</i><span class="z">${o.t}</span><span class="st-ic"></span></button>`).join('');
+
+    if(q.qtype==='order'){
+      const tokens=shuffle(q.tokens.slice());
+      $('#gq-q').textContent=q.vi?`“${q.vi}”`:'Ghép thành câu tiếng Trung hoàn chỉnh';
+      const drawOrder=()=>{
+        $('#gq-opts').innerHTML=`
+          <div class="order-zone" id="gq-ord-ans">${placed.length?placed.map((ti,pos)=>`<button type="button" class="tok placed" data-gop="${pos}">${esc(tokens[ti])}</button>`).join(''):'<span class="muted small">Chạm các mảnh từ bên dưới để xếp câu...</span>'}</div>
+          <div class="bank-zone" style="margin-top:8px">${tokens.map((t,ti)=>`<button type="button" class="tok ${placed.includes(ti)?'used':''}" data-got="${ti}">${esc(t)}</button>`).join('')}</div>
+          <div class="btnrow" style="margin-top:8px"><button type="button" class="btn ghost sm" id="gq-ord-clr">Xếp lại</button><button type="button" class="btn sm" id="gq-ord-chk">Kiểm tra</button></div>`;
+        $$('[data-got]',$('#gq-opts')).forEach(b=>b.onclick=()=>{if(answered)return;placed.push(+b.dataset.got);drawOrder();});
+        $$('[data-gop]',$('#gq-opts')).forEach(b=>b.onclick=()=>{if(answered)return;placed.splice(+b.dataset.gop,1);drawOrder();});
+        $('#gq-ord-clr').onclick=()=>{if(answered)return;placed=[];drawOrder();};
+        $('#gq-ord-chk').onclick=()=>{
+          if(answered)return;
+          if(!placed.length){toast('Hãy chọn các mảnh từ trước khi kiểm tra');return;}
+          answered=true;
+          const userStr=placed.map(ti=>tokens[ti]).join('');
+          const ok=userStr===q.ans;
+          speak(q.ans);
+          if(ok)correct++;else{wrong++;wrongList.push(q);}
+          const fb=$('#gq-fb');
+          fb.className='fb-card '+(ok?'ok':'no');
+          fb.innerHTML=`<b><svg class="ic" style="width:1.1em;height:1.1em"><use href="#i-${ok?'check':'x'}"/></svg>${ok?'Chính xác!':'Chưa đúng trật tự'}</b><span>${esc(q.exp||'')}</span>`;
+          fb.classList.remove('hide');
+          $('#gq-actions').classList.remove('hide');
+          $('#gq-retry').classList.toggle('hide',ok);
+          $('#gq-next').textContent=(qi+1>=quizList.length)?'Xem tổng kết':'Câu tiếp theo →';
+        };
+      };
+      drawOrder();
+      return;
+    }
+
+    $('#gq-q').textContent=q.q;
+    $('#gq-opts').innerHTML=q.opts.map((o,idx)=>`<button class="opt" type="button" data-idx="${idx}"><i>${ABC[idx]}</i><span class="z">${esc(o.t)}</span><span class="st-ic"></span></button>`).join('');
     $$('#gq-opts .opt').forEach(btn=>btn.onclick=()=>{
       if(answered)return;
       answered=true;
@@ -862,32 +1169,40 @@ const gramCtrl=(function(){
       btn.classList.add(ok?'ok':'no');
       $('.st-ic',btn).textContent=ok?'✓':'✕';
       if(!ok){const oi=q.opts.findIndex(x=>x.ok);if(oi>=0){const ob=$$('#gq-opts .opt')[oi];ob.classList.add('ok');$('.st-ic',ob).textContent='✓';}}
+      if(q.ansZh)speak(q.ansZh);
       if(ok)correct++;else{wrong++;wrongList.push(q);}
       const fb=$('#gq-fb');
       fb.className='fb-card '+(ok?'ok':'no');
-      fb.innerHTML=`<b><svg class="ic" style="width:1.1em;height:1.1em"><use href="#i-${ok?'check':'x'}"/></svg>${ok?'Chính xác!':'Giải thích lỗi'}</b><span>${q.exp}</span>`;
+      fb.innerHTML=`<b><svg class="ic" style="width:1.1em;height:1.1em"><use href="#i-${ok?'check':'x'}"/></svg>${ok?'Chính xác!':'Giải thích lỗi'}</b><span>${esc(q.exp||'')}</span>`;
       fb.classList.remove('hide');
       $('#gq-actions').classList.remove('hide');
       $('#gq-retry').classList.toggle('hide',ok);
-      $('#gq-next').textContent=(qi+1>=GRAMMAR_QUIZ.length)?'Xem tổng kết':'Câu tiếp theo →';
+      $('#gq-next').textContent=(qi+1>=quizList.length)?'Xem tổng kết':'Câu tiếp theo →';
     });
   }
 
   $('#gp-tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(b)renderPoint(b.dataset.gp);});
+  if($('#gq-modes'))$('#gq-modes').addEventListener('click',e=>{const b=e.target.closest('button');if(b)startQuiz(b.dataset.gm);});
   $('#gq-next').onclick=()=>{qi+=1;renderQuiz();};
   $('#gq-retry').onclick=()=>{if(answered&&wrong>0)wrong--;renderQuiz();};
 
   window.renderGrammarPoint=renderPoint;
-  return {renderPoint,init(){
+  function refresh(){
+    syncHeader();
     const ks=Object.keys(GRAMMAR_POINTS||{});
-    if(ks.length)renderPoint(ks[0]);
-    if(GRAMMAR_QUIZ&&GRAMMAR_QUIZ.length){renderQuiz();}
-    else{
-      const wrap=$('#gq-wrap'),sum=$('#gq-summary');
-      if(wrap)wrap.classList.add('hide');
-      if(sum)sum.classList.add('hide');
+    const gpTabs=$('#gp-tabs'),gpCard=$('#gp-card');
+    startQuiz('mix');
+    if(gpTabs&&gpCard){
+      if(!ks.length){
+        gpTabs.innerHTML='';
+        gpCard.innerHTML='<p class="muted small" style="margin:0">Bài học này chưa có điểm ngữ pháp. Hãy vào <b>Sửa bài</b> để bổ sung.</p>';
+      }else{
+        gpTabs.innerHTML=ks.map((k,i)=>`<button class="${i===0?'on':''}" data-gp="${esc(k)}" type="button">${esc(GRAMMAR_POINTS[k].title||k)}</button>`).join('');
+        renderPoint(ks[0]);
+      }
     }
-  }};
+  }
+  return {renderPoint,syncHeader,refresh,init:refresh};
 })();
 
 function updateLessonExerciseStatus(){

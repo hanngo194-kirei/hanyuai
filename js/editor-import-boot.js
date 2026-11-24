@@ -397,14 +397,14 @@ function onViewEntered(id){
   if(id==='copy'&&typeof copyCtrl!=='undefined')copyCtrl.enter();
   if(id==='trans'&&typeof transCtrl!=='undefined')transCtrl.enter();
   if(id==='listen'&&typeof listenCtrl!=='undefined'&&listenCtrl.syncHeader)listenCtrl.syncHeader();
+  if(id==='exercise'&&typeof exCtrl!=='undefined'&&exCtrl.syncHeader)exCtrl.syncHeader();
+  if(id==='grammar'&&typeof gramCtrl!=='undefined'&&gramCtrl.syncHeader)gramCtrl.syncHeader();
   if(id==='speak'&&typeof speakCtrl!=='undefined'&&speakCtrl.render)speakCtrl.render();
+  if(id==='writing'&&typeof syncWriteHeader==='function')syncWriteHeader();
   if(id==='review'&&typeof renderReviewDash==='function')renderReviewDash();
   if(id==='wordbook'&&typeof renderWordbook==='function')renderWordbook();
   if(id==='dialog'&&typeof LISTEN_DIALOG!=='undefined'&&LISTEN_DIALOG.length&&typeof markLessonSectionDone==='function'){
     markLessonSectionDone(store.activeLessonId,'dialog',true);
-  }
-  if(id==='grammar'&&(typeof GRAMMAR_QUIZ==='undefined'||!GRAMMAR_QUIZ||!GRAMMAR_QUIZ.length)&&typeof GRAMMAR_POINTS!=='undefined'&&Object.keys(GRAMMAR_POINTS||{}).length&&typeof markLessonSectionDone==='function'){
-    markLessonSectionDone(store.activeLessonId,'grammar',true);
   }
 }
 

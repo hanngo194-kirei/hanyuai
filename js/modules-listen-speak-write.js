@@ -508,7 +508,7 @@ const listenCtrl=(function(){
   $('#ln-next').onclick=()=>{qi+=1;renderQ();};
   $('#ln-retry').onclick=()=>{if(answered&&wrong>0){wrong--;const idx=wrongQs.indexOf(qs[qi]);if(idx>=0)wrongQs.splice(idx,1);}renderQ();};
 
-  return {init(){applySpeedUI();applyDlgToggles();start('choice');},refresh(){start(mode);},syncHeader,stop:stopDlg};
+  return {init(){applySpeedUI();applyDlgToggles();syncHeader();start('choice');},refresh(){syncHeader();start(mode);},syncHeader,stop:stopDlg};
 })();
 
 function updateLessonListenStatus(){
@@ -744,7 +744,14 @@ const speakCtrl=(function(){
     const useMode=m||mode;
     if(useMode==='word')return WORDS.map(w=>({id:'sp_w_'+w.id,zh:w.zh,py:w.py,vi:w.vi}));
     if(useMode==='dialog')return LISTEN_DIALOG.map((d,k)=>({id:'sp_d_'+k,zh:d.zh,py:d.py,vi:d.vi}));
-    return SENT.map((s,k)=>({id:'sp_s_'+k,zh:s.zh,py:s.py,vi:s.vi}));
+    if(SENT&&SENT.length)return SENT.map((s,k)=>({id:'sp_s_'+k,zh:s.zh,py:s.py,vi:s.vi}));
+    if(LISTEN_DIALOG&&LISTEN_DIALOG.length)return LISTEN_DIALOG.map((d,k)=>({id:'sp_d_'+k,zh:d.zh,py:d.py,vi:d.vi}));
+    const seen=new Set(),out=[];
+    WORDS.forEach((w,k)=>{
+      const ex=(typeof resolveWordExample==='function')?resolveWordExample(w):{ex:w.ex||w.zh,exPy:w.exPy||w.py,exVi:w.exVi||w.vi};
+      if(ex.ex&&!seen.has(ex.ex)){seen.add(ex.ex);out.push({id:'sp_ex_'+k,zh:ex.ex,py:ex.exPy,vi:ex.exVi});}
+    });
+    return out;
   }
   function getItemRec(id){
     return store.speaking.items[id]||{attempts:0,assessRequests:0,lastPracticedAt:null,lastResult:null,selfStatus:null,needsPractice:false,history:[]};
@@ -1132,14 +1139,29 @@ const speakCtrl=(function(){
     }
   };
 
+  function syncHeader(){
+    const l=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
+    const spSub=$('#sp-sub');
+    if(spSub)spSub.textContent=`${l?(l.code||'Bài học')+(l.titleVi?' · '+l.titleVi:''):'Bài học'} · Ghi âm thật & sửa lỗi phát âm`;
+  }
+
   return {
     init(){
       $$('#sp-modes button').forEach(x=>x.classList.toggle('on',x.dataset.sm===mode));
       $('#sp-maxsec').value=String(store.speaking.maxSec||15);
+      syncHeader();
       setViewTab('practice');
       renderItem();
     },
-    render(){if(viewTab==='history')renderHistory();else renderItem();},
+    refresh(){
+      idx=0;
+      $$('#sp-modes button').forEach(x=>x.classList.toggle('on',x.dataset.sm===mode));
+      syncHeader();
+      if(viewTab==='history')renderHistory();
+      else renderItem();
+    },
+    syncHeader,
+    render(){syncHeader();if(viewTab==='history')renderHistory();else renderItem();},
     stop:stopAll
   };
 })();
@@ -1514,8 +1536,16 @@ async function setupPadForChar(){
   }
 }
 
+function syncWriteHeader(){
+  const l=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
+  const wSub=$('#w-sub');
+  if(wSub)wSub.textContent=`${l?(l.code||'Bài học')+(l.titleVi?' · '+l.titleVi:''):'Bài học'} • Thứ tự nét & đối chiếu mẫu`;
+}
+window.syncWriteHeader=syncWriteHeader;
+
 function refreshWritingForLesson(){
   ci=0;
+  syncWriteHeader();
   setupPadForChar();
 }
 window.refreshWritingForLesson=refreshWritingForLesson;
@@ -1851,30 +1881,72 @@ function renderHomeStreakStrip(st){
   const mon=new Date(now.getFullYear(),now.getMonth(),now.getDate()+diffToMon);
   const labels=['T2','T3','T4','T5','T6','T7','CN'];
   const todayDk=st.todayKey;
+  const dayFlags=[];
   let activeThisWeek=0;
-  const daysHtml=labels.map((lbl,i)=>{
+  for(let i=0;i<7;i++){
     const d=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+i);
     const dk=localDateKey(d.getTime());
     const rec=store.daily[dk];
     const hasAct=Boolean(rec&&(rec.events>0||rec.newWords>0||rec.reviews>0||rec.listen>0||rec.speak>0||rec.write>0));
     if(hasAct)activeThisWeek++;
-    const isToday=dk===todayDk;
-    const isFuture=dk>todayDk;
-    const cls=`hm-ss-day${hasAct?' done':''}${isToday?' today':''}${isFuture?' future':''}`;
-    const inner=hasAct?'✓':String(d.getDate());
-    return `<div class="${cls}" title="${dk}"><span class="hm-ss-lbl">${lbl}</span><span class="hm-ss-dot">${inner}</span></div>`;
+    dayFlags.push({lbl:labels[i],dk,hasAct,isToday:dk===todayDk,isFuture:dk>todayDk,isLast:i===6});
+  }
+  // Vẽ từng đoạn nối ray chính xác từ tâm ngày i đến tâm ngày i+1 (6 khoảng trên left:7.14%..right:7.14%)
+  let railSegs='';
+  for(let i=0;i<6;i++){
+    if(dayFlags[i].hasAct&&dayFlags[i+1].hasAct){
+      railSegs+=`<i style="left:${(i*100/6).toFixed(2)}%;width:${(100/6).toFixed(2)}%"></i>`;
+    }
+  }
+  const starSvg='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 L14.7 9.3 L21.5 12 L14.7 14.7 L12 21.5 L9.3 14.7 L2.5 12 L9.3 9.3 Z"/></svg>';
+  const flameMilestoneSvg='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.2 2c.6 3.1 4.2 5.4 5.5 9.2 1 2.9.2 6.8-2.6 8.6-1.8 1.2-4.6 1.2-6.4 0-3-1.9-3.9-5.9-2.2-9.2.7-1.4 1.8-2.4 2.8-3.3-.2 1.6.4 2.9 1.4 3.5-.3-2.6.2-5.7 1.5-8.8z"/></svg>';
+  const bigFlameSvg=`<svg class="hm-ss-bigflame ${st.streak>0?'lit':''}" viewBox="0 0 48 56" aria-hidden="true">
+    <path class="fl-out" d="M24 3c2 9 13 14 16 24 2.4 8.2-1.8 18.8-10.2 22.8C22 53.6 11.4 50.6 7.5 42.6 3.5 34.4 6.7 23.2 13 17.5c.7 4.2 2.9 7.2 5.4 8.4-.7-7.2.9-15 5.6-22.9z"/>
+    <path class="fl-in" d="M24 22c1.2 4.8 6.5 7.8 7.8 13.1 1 4.2-1.6 9.5-6 10.8-4.5 1.3-9.5-1.5-10.6-6-.9-3.7.7-8.1 3.6-10.9.5 2.1 1.6 3.6 3 4.3-.4-3.7.4-7.6 2.2-11.3z"/>
+  </svg>`;
+  const weekNum=Math.max(1,Math.floor(st.streak/7)+1);
+  const perfectWeeks=Math.floor(st.streak/7);
+  let footMsg='Học 1 bài hôm nay để thắp sáng <b>Streak</b> của bạn!';
+  if(perfectWeeks>=1){
+    footMsg=`Bạn đã giữ được <b>Streak hoàn hảo</b> trong ${perfectWeeks} tuần liên tiếp!`;
+  }else if(activeThisWeek>=7){
+    footMsg='Bạn đã hoàn thành <b>Streak hoàn hảo</b> tuần này!';
+  }else if(st.streak>0){
+    const remain=Math.max(1,7-activeThisWeek);
+    footMsg=`Bạn đang giữ chuỗi <b>${st.streak} ngày</b> — còn <b>${remain} ngày</b> đạt <b>Streak hoàn hảo</b> tuần ${weekNum}!`;
+  }
+  const labelsHtml=dayFlags.map(df=>`<span class="hm-ss-wday ${df.hasAct?'lit':''} ${df.isToday?'today':''}">${df.lbl}</span>`).join('');
+  const nodesHtml=dayFlags.map(df=>{
+    if(df.isLast){
+      const cnLit=df.hasAct||(activeThisWeek>=7);
+      return `<div class="hm-ss-node ${df.hasAct?'done':''} ${df.isToday?'today':''}" title="${df.dk}">
+        <span class="hm-ss-mile ${cnLit?'lit':''}">${flameMilestoneSvg}</span>
+        <span class="hm-ss-wktag">TUẦN ${weekNum}</span>
+      </div>`;
+    }
+    return `<div class="hm-ss-node ${df.hasAct?'done':''} ${df.isToday?'today':''} ${df.isFuture?'future':''}" title="${df.dk}">
+      <span class="hm-ss-orb">${df.hasAct?starSvg:''}</span>
+    </div>`;
   }).join('');
-  box.innerHTML=`<div class="hm-ss-top">
-    <div class="hm-ss-left">
-      <span class="hm-ss-flame"><svg class="ic f"><use href="#i-flame"/></svg></span>
-      <div>
-        <div class="hm-ss-title">Chuỗi ${st.streak} ngày liên tiếp</div>
-        <div class="small muted">Tuần này đã học ${activeThisWeek}/7 ngày</div>
+  box.innerHTML=`
+    <div class="hm-ss-hero">
+      <div class="hm-ss-hero-l">
+        ${bigFlameSvg}
+        <div>
+          <div class="hm-ss-count">${st.streak} ngày streak!</div>
+          <div class="hm-ss-sub">Tuần ${weekNum} · Đã học ${activeThisWeek}/7 ngày</div>
+        </div>
       </div>
+      <span class="hm-ss-xp">Cấp ${st.xp.level} · ${st.xp.xp} XP ›</span>
     </div>
-    <span class="hm-ss-xp">Cấp ${st.xp.level} · ${st.xp.xp} XP ›</span>
-  </div>
-  <div class="hm-ss-week">${daysHtml}</div>`;
+    <div class="hm-ss-card-in">
+      <div class="hm-ss-wdays">${labelsHtml}</div>
+      <div class="hm-ss-track">
+        <div class="hm-ss-rail">${railSegs}</div>
+        <div class="hm-ss-nodes">${nodesHtml}</div>
+      </div>
+      <div class="hm-ss-foot">${footMsg}</div>
+    </div>`;
 }
 
 function renderChart(st){

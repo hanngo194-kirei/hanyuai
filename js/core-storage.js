@@ -392,8 +392,23 @@ function matchWord(w,q){
 }
 
 function highlightText(txt,sub){
-  if(!sub||!txt.includes(sub))return txt;
-  return txt.split(sub).join(`<em>${sub}</em>`);
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const raw=String(txt==null?'':txt);
+  const needle=String(sub==null?'':sub).trim();
+  if(!raw||!needle)return esc(raw);
+  const reEsc=needle.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  // Với chữ Hán: khớp chính xác; với pinyin/latin: khớp không phân biệt hoa/thường
+  const isLatin=/^[a-zA-Z0-9\sāáǎàēéěèīíǐìōóǒòūúǔùüǖǘǚǜ'’\-]+$/.test(needle);
+  const re=new RegExp(reEsc,isLatin?'gi':'g');
+  let out='',last=0,m;
+  while((m=re.exec(raw))!==null){
+    if(m.index>last)out+=esc(raw.slice(last,m.index));
+    out+=`<em>${esc(m[0])}</em>`;
+    last=m.index+m[0].length;
+  }
+  if(last===0)return esc(raw);
+  if(last<raw.length)out+=esc(raw.slice(last));
+  return out;
 }
 
 function applySettingsUI(){

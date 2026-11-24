@@ -21,38 +21,52 @@ function applyActiveLesson(){
     GRAMMAR_POINTS=l.grammarPoints||{};
     GRAMMAR_QUIZ=l.grammarQuiz||[];
     ORDER_BANK=l.orderBank||[];
-    CHARS=(l.chars&&l.chars.length)?l.chars:[];
+    if(l.chars&&l.chars.length){
+      CHARS=l.chars;
+    }else if(WORDS.length){
+      const seenCh=new Set(),autoChars=[];
+      WORDS.forEach(w=>{
+        for(const ch of String(w.zh||'')){
+          if(/[\u4e00-\u9fff]/.test(ch)&&!seenCh.has(ch)&&autoChars.length<12){
+            seenCh.add(ch);
+            autoChars.push({id:'c_'+ch.charCodeAt(0),ch,py:w.zh===ch?w.py:'',vi:w.zh===ch?w.vi:'',rad:'',strokes:0});
+          }
+        }
+      });
+      CHARS=autoChars;
+    }else{
+      CHARS=[];
+    }
   }
   renderLessonDetail();
   refreshModulesForLesson();
 }
 
 function refreshModulesForLesson(){
-  // Safe refresh of existing modules without rebuilding them
+  // Safe refresh of ALL modules for active lesson so zero stale Bài 4 data remains
   try{
     const l=LESSONS.find(x=>x.id===store.activeLessonId);
+    const lbl=l?`${l.code||'Bài học'} • ${l.titleVi||l.titleZh||''}`:'Bài học';
     const vSub=$('#vocab [data-f="subtitle"]');
     if(vSub&&l)vSub.textContent=`${l.code||'Bài học'} · ${l.titleVi||l.titleZh||''}`;
+    const grSub=$('#gr-sub');if(grSub)grSub.textContent=lbl;
+    const exSub=$('#ex-sub');if(exSub)exSub.textContent=lbl;
+    const wSub=$('#w-sub');if(wSub)wSub.textContent=`${l?(l.code||'Bài học'):'Bài học'} • Thứ tự nét & đối chiếu mẫu`;
+    const spSub=$('#sp-sub');if(spSub)spSub.textContent=`${l?(l.code||'Bài học'):'Bài học'} • Ghi âm thật & hướng dẫn sửa lỗi`;
   }catch(_){}
   try{if(typeof renderFlash==='function')renderFlash();}catch(_){}
   try{
-    const gKeys=Object.keys(GRAMMAR_POINTS||{});
-    const gpTabs=$('#gp-tabs'),gpCard=$('#gp-card'),gqWrap=$('#gq-wrap');
-    if(gpTabs&&gpCard){
-      if(!gKeys.length){
-        gpTabs.innerHTML='';
-        gpCard.innerHTML='<p class="muted small" style="margin:0">Bài học này chưa có điểm ngữ pháp. Hãy vào <b>Sửa bài</b> để bổ sung.</p>';
-        if(gqWrap)gqWrap.classList.add('hide');
-      }else{
-        gpTabs.innerHTML=gKeys.map((k,i)=>`<button class="${i===0?'on':''}" data-gp="${escHtml(k)}" type="button">${escHtml(GRAMMAR_POINTS[k].title||k)}</button>`).join('');
-        if(typeof renderGrammarPoint==='function')renderGrammarPoint(gKeys[0]);
-        if(gqWrap)gqWrap.classList.toggle('hide',!(GRAMMAR_QUIZ&&GRAMMAR_QUIZ.length));
-      }
-    }
+    if(typeof gramCtrl!=='undefined'&&gramCtrl.refresh)gramCtrl.refresh();
   }catch(_){}
+  try{if(typeof exCtrl!=='undefined'&&exCtrl.refresh)exCtrl.refresh();}catch(_){}
   try{if(typeof window.refreshDot2Views==='function')window.refreshDot2Views();}catch(_){}
   try{if(typeof listenCtrl!=='undefined'&&listenCtrl.refresh)listenCtrl.refresh();}catch(_){}
-  try{if(typeof speakCtrl!=='undefined'&&speakCtrl.init)speakCtrl.init();}catch(_){}
+  try{
+    if(typeof speakCtrl!=='undefined'){
+      if(speakCtrl.refresh)speakCtrl.refresh();
+      else if(speakCtrl.init)speakCtrl.init();
+    }
+  }catch(_){}
   try{if(typeof refreshWritingForLesson==='function')refreshWritingForLesson();else if(typeof setupPadForChar==='function'&&CHARS.length)setupPadForChar();}catch(_){}
   try{if(typeof renderReviewDash==='function')renderReviewDash();}catch(_){}
   try{if(typeof renderWordbook==='function')renderWordbook();}catch(_){}
@@ -368,101 +382,59 @@ function getTrackPairInfo(setup){
 function renderHomeTrackHub(){
   const box=$('#hm-track-hub');
   if(!box)return;
-  const {setup,lv,hnId,hskId,hnC,hskC,hnSt,hskSt}=getTrackPairInfo();
-  const quick6=`<div class="hm-quick6" aria-label="Lối tắt 6 kỹ năng">
-    <button type="button" class="hm-q6-btn" data-go="vocab"><svg class="ic"><use href="#i-layers"/></svg><span>Từ vựng</span></button>
-    <button type="button" class="hm-q6-btn" data-go="dialog"><svg class="ic"><use href="#i-book"/></svg><span>Bài khóa</span></button>
-    <button type="button" class="hm-q6-btn" data-go="grammar"><svg class="ic"><use href="#i-bars"/></svg><span>Ngữ pháp</span></button>
-    <button type="button" class="hm-q6-btn" data-go="listen"><svg class="ic"><use href="#i-head"/></svg><span>Nghe</span></button>
-    <button type="button" class="hm-q6-btn" data-go="speak"><svg class="ic"><use href="#i-mic"/></svg><span>Nói</span></button>
-    <button type="button" class="hm-q6-btn" data-go="writing"><svg class="ic"><use href="#i-brush"/></svg><span>Viết</span></button>
-  </div>`;
+  const {setup,lv,hnId,hskId,hnSt,hskSt}=getTrackPairInfo();
   if(!setup.completed){
-    box.innerHTML=`<div class="hm-track-card-wrap">
-      <div class="hm-lvl-pills">${buildHubLevelPillsHtml(lv)}</div>
-      <div class="hm-track-single">
-        <div style="flex:1;min-width:0"><b>Chưa chọn trình độ HSK &amp; hệ giáo trình</b><div class="small muted" style="margin-top:2px">Chọn cấp độ HSK 1–6 và giáo trình Hán ngữ, NEW HSK 3.0 hoặc học song song.</div></div>
-        <button type="button" class="btn sm" data-open-setup="1" style="white-space:nowrap">Thiết lập ngay ›</button>
-      </div>
-      ${quick6}
-    </div>`;
+    box.innerHTML=`<div class="hm-track-card-wrap"><div class="hm-track-single">
+      <div style="flex:1;min-width:0"><b>Chưa chọn trình độ HSK &amp; hệ giáo trình</b><div class="small muted" style="margin-top:2px">Chọn cấp độ HSK 1–6 và giáo trình Hán ngữ, NEW HSK 3.0 hoặc học song song.</div></div>
+      <button type="button" class="btn sm" data-open-setup="1" style="white-space:nowrap">Thiết lập ngay ›</button>
+    </div></div>`;
     return;
   }
+  const mkRow=(cid,covCls,covBig,covSmall,title,st)=>{
+    const isOn=store.activeCourseId===cid;
+    const covUrl=getCourseCoverUrl(cid);
+    const covHtml=covUrl
+      ?`<span class="hm-tr-cov has-img"><img src="${covUrl}" alt="${escHtml(title)}"/></span>`
+      :`<span class="hm-tr-cov ${covCls}"><span>${covBig}<br><small>${covSmall}</small></span></span>`;
+    const isDone=st.total>0&&st.doneCnt>=st.total;
+    const tagTxt=isDone?'Hoàn thành':(isOn?'Đang học':'');
+    return `<button type="button" class="hm-track-row ${isOn?'on':''}" data-switch-course="${escHtml(cid)}">
+      ${covHtml}
+      <div class="hm-tr-mid">
+        <div class="hm-tr-title-line"><span class="hm-tr-title">${escHtml(title)}</span>${tagTxt?`<span class="hm-tr-tag ${isDone?'done':'on'}">${tagTxt}</span>`:''}</div>
+        <div class="hm-tr-prog-line"><div class="hm-tc-bar"><i style="width:${st.pct}%"></i></div><span class="hm-tr-stat">Tiến độ: ${st.doneCnt}/${st.total} bài</span><b class="hm-tr-pct">${st.pct}%</b></div>
+      </div>
+      <span class="hm-tr-chev" aria-hidden="true">›</span>
+    </button>`;
+  };
   if(setup.mode==='parallel'){
-    const actCid=store.activeCourseId;
-    const mkCard=(cid,covCls,covBig,covSmall,title,desc,st)=>{
-      const isOn=actCid===cid;
-      const isComplete=st.total>0&&st.doneCnt>=st.total;
-      const badgeCls=isComplete?'done':(isOn?'active':(st.doneCnt>0?'doing':'idle'));
-      const statusTxt=isComplete?'✓ Đã hoàn thành':(isOn?'Đang chọn':(st.doneCnt>0?'Đang học':'Chưa bắt đầu'));
-      const covUrl=getCourseCoverUrl(cid);
-      const covHtml=covUrl
-        ?`<span class="hm-tc-cov-v4 has-img"><img src="${covUrl}" alt="${escHtml(title)}"/></span>`
-        :`<span class="hm-tc-cov-v4 ${covCls}"><span>${covBig}<br><small>${covSmall}</small></span></span>`;
-      const nextL=getCourseNextLesson(cid);
-      const nextLbl=st.doneCnt>0&&nextL?`Tiếp tục ${nextL.code||'Bài học'} ›`:`Bắt đầu ${nextL?(nextL.code||'Bài 1'):'Bài 1'} ›`;
-      return `<div class="hm-track-card-v4 ${isOn?'on':''}">
-        <button type="button" class="hm-tc-v4-sel" data-switch-course="${escHtml(cid)}">
-          ${covHtml}
-          <div class="hm-tc-v4-body">
-            <div class="hm-tc-v4-head"><span class="hm-tc-v4-title">${escHtml(title)}</span><span class="hm-tc-badge ${badgeCls}">${statusTxt}</span></div>
-            <div class="hm-tc-v4-desc">${escHtml(desc)}</div>
-            <div class="hm-tc-v4-prog"><span>Tiến độ: <b>${st.doneCnt}/${st.total} bài</b></span><b>${st.pct}%</b></div>
-            <div class="hm-tc-bar"><i style="width:${st.pct}%"></i></div>
-          </div>
-        </button>
-        <div class="hm-tc-v4-foot">
-          <button type="button" class="hm-tc-btn primary" data-switch-course="${escHtml(cid)}" data-open-lesson-now="1">${escHtml(nextLbl)}</button>
-          <button type="button" class="hm-tc-btn ghost" data-view-textbook="${escHtml(cid)}">Sách</button>
-        </div>
-      </div>`;
-    };
     box.innerHTML=`<div class="hm-track-card-wrap">
       <div class="hm-track-hd">
-        <div class="hm-track-hd-left"><span class="hm-lvl-badge">HSK ${lv}</span><b>Hub lộ trình song song</b></div>
-        <button type="button" class="free-pill" data-open-setup="1">Đổi trình độ / giáo trình</button>
+        <div class="hm-track-hd-left"><span class="hm-lvl-badge">HSK ${lv}</span><b>Học song song</b></div>
+        <button type="button" class="free-pill" data-open-setup="1">Đổi giáo trình</button>
       </div>
-      <div class="hm-lvl-pills">${buildHubLevelPillsHtml(lv)}</div>
-      <div class="hm-track-grid">
-        ${mkCard(hnId,'hn','汉语','Q'+lv,`Giáo trình Hán ngữ – Quyển ${lv}`,(hnC&&hnC.desc)||`15 bài chuẩn Bộ Giáo trình Hán ngữ (Quyển ${lv})`,hnSt)}
-        ${mkCard(hskId,'hsk','HSK','Cấp '+lv,`NEW HSK 3.0 – Cấp ${lv}`,(hskC&&hskC.desc)||`Lộ trình chuẩn giáo trình & SBT NEW HSK 3.0 Cấp ${lv}`,hskSt)}
+      <div class="hm-track-rows">
+        ${mkRow(hnId,'hn','汉语','Q'+lv,`Giáo trình Hán ngữ – Quyển ${lv}`,hnSt)}
+        ${mkRow(hskId,'hsk','HSK','Cấp '+lv,`NEW HSK 3.0 – Cấp ${lv}`,hskSt)}
       </div>
-      <div class="hm-track-note"><span style="font-weight:800;flex-shrink:0">ⓘ</span><span>Giáo trình Hán ngữ và NEW HSK 3.0 là 2 hệ thống độc lập: bấm chuyển từng bên để nạp đúng bài học, tiến độ tách riêng 100% và không ảnh hưởng lẫn nhau.</span></div>
-      ${quick6}
+      <div class="hm-track-note"><span style="font-weight:800;flex-shrink:0">ⓘ</span><span>Tiến độ Giáo trình Hán ngữ và NEW HSK 3.0 tách riêng 100%, không ảnh hưởng lẫn nhau.</span></div>
     </div>`;
     return;
   }
   const singleId=setup.mode==='hsk30'?hskId:hnId;
   const singleSt=setup.mode==='hsk30'?hskSt:hnSt;
-  const singleC=setup.mode==='hsk30'?hskC:hnC;
   const singleTitle=setup.mode==='hsk30'?`NEW HSK 3.0 – Cấp ${lv}`:`Giáo trình Hán ngữ – Quyển ${lv}`;
-  const singleDesc=(singleC&&singleC.desc)||(setup.mode==='hsk30'?'Lộ trình chuẩn NEW HSK 3.0':'Giáo trình Hán ngữ hiện đại');
-  const singleCovUrl=getCourseCoverUrl(singleId);
-  const singleCovCls=setup.mode==='hsk30'?'hsk':'hn';
-  const singleCovHtml=singleCovUrl
-    ?`<span class="hm-tc-cov-v4 has-img"><img src="${singleCovUrl}" alt="${escHtml(singleTitle)}"/></span>`
-    :`<span class="hm-tc-cov-v4 ${singleCovCls}"><span>${setup.mode==='hsk30'?'HSK':'汉语'}<br><small>${setup.mode==='hsk30'?'Cấp '+lv:'Q'+lv}</small></span></span>`;
   box.innerHTML=`<div class="hm-track-card-wrap">
     <div class="hm-track-hd">
-      <div class="hm-track-hd-left"><span class="hm-lvl-badge">HSK ${lv}</span><b>Lộ trình đang chọn</b></div>
+      <div class="hm-track-hd-left"><span class="hm-lvl-badge">HSK ${lv}</span><b>Giáo trình đang học</b></div>
       <div class="hm-track-single-acts">
-        <button type="button" class="free-pill" data-enable-parallel="1">Bật học song song</button>
+        <button type="button" class="free-pill" data-enable-parallel="1">Học song song</button>
         <button type="button" class="free-pill" data-open-setup="1">Đổi giáo trình</button>
       </div>
     </div>
-    <div class="hm-lvl-pills">${buildHubLevelPillsHtml(lv)}</div>
-    <div class="hm-track-card-v4 on">
-      <div class="hm-tc-v4-sel" data-switch-course="${escHtml(singleId)}">
-        ${singleCovHtml}
-        <div class="hm-tc-v4-body">
-          <div class="hm-tc-v4-head"><span class="hm-tc-v4-title">${escHtml(singleTitle)}</span><span class="hm-tc-badge ${singleSt.total>0&&singleSt.doneCnt>=singleSt.total?'done':'active'}">${singleSt.total>0&&singleSt.doneCnt>=singleSt.total?'✓ Đã hoàn thành':'Đang học'}</span></div>
-          <div class="hm-tc-v4-desc">${escHtml(singleDesc)}</div>
-          <div class="hm-tc-v4-prog"><span>Tiến độ: <b>${singleSt.doneCnt}/${singleSt.total} bài</b></span><b>${singleSt.pct}%</b></div>
-          <div class="hm-tc-bar"><i style="width:${singleSt.pct}%"></i></div>
-        </div>
-      </div>
+    <div class="hm-track-rows">
+      ${mkRow(singleId,setup.mode==='hsk30'?'hsk':'hn',setup.mode==='hsk30'?'HSK':'汉语',setup.mode==='hsk30'?'Cấp '+lv:'Q'+lv,singleTitle,singleSt)}
     </div>
-    ${quick6}
   </div>`;
 }
 
@@ -482,9 +454,8 @@ function renderLearnTrackSwitcher(){
   if(!box)return;
   const {setup,lv,hnId,hskId,hnSt,hskSt}=getTrackPairInfo();
   const actC=COURSES.find(x=>x.id===store.activeCourseId);
-  const lvlBar=`<div class="learn-lvl-bar" style="margin-bottom:8px">${buildHubLevelPillsHtml(lv)}</div>`;
   if(setup.mode==='parallel'){
-    box.innerHTML=`${lvlBar}<div class="learn-track-bar">
+    box.innerHTML=`<div class="learn-track-bar">
       <div class="learn-track-tabs">
         <button type="button" class="learn-track-pill ${store.activeCourseId===hnId?'on':''}" data-switch-course="${escHtml(hnId)}">
           <span>Hán ngữ Q${lv}</span><span class="lt-pct">${hnSt.doneCnt}/${hnSt.total} · ${hnSt.pct}%</span>
@@ -498,7 +469,7 @@ function renderLearnTrackSwitcher(){
     return;
   }
   const st=actC&&typeof getCourseProgressStats==='function'?getCourseProgressStats(actC.id):{doneCnt:0,total:0,pct:0};
-  box.innerHTML=`${lvlBar}<div class="learn-track-bar">
+  box.innerHTML=`<div class="learn-track-bar">
     <div class="small"><b>HSK ${lv}</b> · ${escHtml(actC?actC.title:'Lộ trình hiện tại')} <span class="muted">(${st.doneCnt}/${st.total} · ${st.pct}%)</span></div>
     <div class="hm-track-single-acts">
       <button type="button" class="free-pill" data-enable-parallel="1">Học song song</button>
