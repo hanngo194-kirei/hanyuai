@@ -46,9 +46,9 @@
 - [x] Cấp 2 (15 bài + Đề thi thử `模拟测试` + SBT 2 + Đáp án + Lời thoại nghe):
   - [x] Đợt 1 (Mục lục 15 bài + Bài 1–8 + SBT 2, Đáp án & Lời thoại phần nghe Bài 1–8 → `data/hsk30-2-full.js` tải theo yêu cầu)
   - [x] Đợt 2 (Bài 9–15 + Đề thi thử `模拟测试` + SBT 2, Đáp án & Lời thoại phần nghe Bài 9–15 & đề thi thử → `data/hsk30-2-full.js` & `dist/hanyu-ai.html`)
-- [ ] Cấp 3 (18 bài):
+- [x] Cấp 3 (18 bài · `491` từ vựng, `397` dòng bài khóa/hội thoại, `63` điểm ngữ pháp, `324` bài tập `综合练习` & nghe hiểu):
   - [x] Đợt 1 (Mục lục 18 bài + Bài 1–9 → `data/hsk30-3-full.js` tải theo yêu cầu & `dist/hanyu-ai.html`)
-  - [ ] Đợt 2 (Bài 10–18)
+  - [x] Đợt 2 (Bài 10–18 → `data/hsk30-3-full.js` & `dist/hanyu-ai.html`)
 
 ---
 
