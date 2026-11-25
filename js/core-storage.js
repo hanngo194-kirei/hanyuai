@@ -174,8 +174,10 @@ function defaultStore(){
     lessonSections:{},
     lessonNotes:{},
     copyDrafts:{},
+    copyTextDrafts:{},
     savedLessonIds:[],
-    learningSetup:{completed:false,level:1,mode:'hanngu',activeTrack:'hanngu',updatedAt:null}
+    learningSetup:{completed:false,level:1,mode:'hanngu',activeTrack:'hanngu',updatedAt:null},
+    profile:{name:'',avatarType:'default',avatarValue:'',mode:'guest',updatedAt:null}
   };
 }
 function sanitizeWordRec(r){
@@ -331,6 +333,9 @@ function migrateStore(raw){
   if(raw.copyDrafts&&typeof raw.copyDrafts==='object'&&!Array.isArray(raw.copyDrafts)){
     base.copyDrafts=raw.copyDrafts;
   }
+  if(raw.copyTextDrafts&&typeof raw.copyTextDrafts==='object'&&!Array.isArray(raw.copyTextDrafts)){
+    base.copyTextDrafts=raw.copyTextDrafts;
+  }
   if(Array.isArray(raw.savedLessonIds)){
     base.savedLessonIds=[...new Set(raw.savedLessonIds.filter(x=>typeof x==='string'&&x))];
   }
@@ -347,6 +352,16 @@ function migrateStore(raw){
       updatedAt:Number.isFinite(ls.updatedAt)?ls.updatedAt:null
     };
   }
+  if(raw.profile&&typeof raw.profile==='object'){
+    const pf=raw.profile;
+    base.profile={
+      name:typeof pf.name==='string'?pf.name.slice(0,48):'',
+      avatarType:['default','preset','image'].includes(pf.avatarType)?pf.avatarType:'default',
+      avatarValue:typeof pf.avatarValue==='string'?pf.avatarValue.slice(0,120000):'',
+      mode:pf.mode==='account'?'account':'guest',
+      updatedAt:Number.isFinite(pf.updatedAt)?pf.updatedAt:null
+    };
+  }
   if(Array.isArray(raw.events)){
     base.events=raw.events.filter(e=>e&&typeof e==='object'&&e.id&&e.type).slice(-200);
   }
@@ -357,15 +372,39 @@ function loadStore(){
     if(typeof localStorage==='undefined')return defaultStore();
     const s=localStorage.getItem(STORAGE_KEY);if(!s)return defaultStore();
     const p=JSON.parse(s),m=migrateStore(p);
-    if(!p.version||p.version<SCHEMA_VERSION)saveStore(m);
+    if(!p.version||p.version<SCHEMA_VERSION)saveStore(m,{skipCloud:true});
     return m;
   }catch(e){return defaultStore();}
 }
 let storageWarned=false;
-function saveStore(st){
+function saveStore(st,opts){
   try{if(typeof localStorage!=='undefined')localStorage.setItem(STORAGE_KEY,JSON.stringify(st));}
   catch(e){if(!storageWarned){storageWarned=true;toast('Không thể lưu tiến độ vào bộ nhớ trình duyệt');}}
+  if(!(opts&&opts.skipCloud)&&typeof window.HanyuAuth!=='undefined'&&typeof window.HanyuAuth.scheduleCloudPush==='function'){
+    try{window.HanyuAuth.scheduleCloudPush(st);}catch(_){}
+  }
 }
+window.defaultStore=defaultStore;
+window.migrateStore=migrateStore;
+window.applySyncedStore=function(rawData){
+  const merged=migrateStore(rawData);
+  Object.keys(store).forEach(k=>{delete store[k];});
+  Object.assign(store,merged);
+  saveStore(store,{skipCloud:true});
+  try{
+    if(typeof getLessonDownloadState==='function'&&store.activeLessonId&&getLessonDownloadState(store.activeLessonId)==='available'&&typeof downloadLessonById==='function'){
+      downloadLessonById(store.activeLessonId).catch(()=>{});
+    }
+  }catch(_){}
+  try{if(typeof applyActiveLesson==='function')applyActiveLesson();}catch(_){}
+  try{if(typeof refreshDashboards==='function')refreshDashboards();}catch(_){}
+  try{if(typeof renderRoadmap==='function')renderRoadmap();}catch(_){}
+  try{if(typeof renderLibrary==='function')renderLibrary();}catch(_){}
+  try{if(typeof renderLearnRoadmap==='function'&&store.activeCourseId)renderLearnRoadmap(store.activeCourseId);}catch(_){}
+  try{if(typeof refreshDot2Views==='function')refreshDot2Views();}catch(_){}
+  try{if(window.HanyuAuth&&typeof window.HanyuAuth.syncProfileUI==='function')window.HanyuAuth.syncProfileUI();}catch(_){}
+  return store;
+};
 const store=loadStore();
 const getWordState=id=>store.words[id]||{status:'new',reps:0,lapses:0,intervalDays:0,ease:2.5,dueAt:null,lastReviewedAt:null,wrongCount:0,history:[]};
 const isDue=(id,now=Date.now())=>{const s=store.words[id];return Boolean(s&&s.status!=='new'&&Number.isFinite(s.dueAt)&&s.dueAt<=now);};

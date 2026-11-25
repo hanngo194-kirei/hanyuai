@@ -2697,6 +2697,9 @@ function refreshDashboards(){
 
   renderChart(st);
   renderHistory();
+  if(typeof window.HanyuAuth!=='undefined'&&typeof window.HanyuAuth.syncProfileUI==='function'){
+    window.HanyuAuth.syncProfileUI();
+  }
 }
 
 // Hook real learning events into recordWord, exercises, grammar, listening, writing, speaking

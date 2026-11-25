@@ -833,11 +833,15 @@ async function initCurriculumStore(){
   if(typeof refreshDashboards==='function')refreshDashboards();
   renderLibrary();
   renderRoadmap();
-  if((!store.learningSetup||!store.learningSetup.completed)&&curView==='home'&&typeof openLearningSetupModal==='function'){
+  if((!store.learningSetup||!store.learningSetup.completed)&&curView==='home'){
     setTimeout(()=>{
       const mb=$('#hanyu-modal');
       if((!store.learningSetup||!store.learningSetup.completed)&&curView==='home'&&mb&&mb.classList.contains('hide')){
-        openLearningSetupModal(1,true);
+        if(typeof window.HanyuAuth!=='undefined'&&typeof window.HanyuAuth.openWelcomeModal==='function'){
+          window.HanyuAuth.openWelcomeModal(true);
+        }else if(typeof openLearningSetupModal==='function'){
+          openLearningSetupModal(1,true);
+        }
       }
     },180);
   }

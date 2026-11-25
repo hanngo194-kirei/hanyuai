@@ -15,7 +15,7 @@
   - Khi trích xuất nội dung từ PDF sau này, ưu tiên đọc trực tiếp file PDF/ảnh bằng công cụ đọc tệp của Antigravity thay vì giả định có sẵn CLI ngoài.
 
 ## 3. Nguyên tắc bất di bất dịch
-1. **Không backend / API trả phí:** Không dùng cơ sở dữ liệu ngoài (như Supabase) và không tích hợp AI API trả phí.
+1. **Backend miễn phí tùy chọn & Không AI trả phí:** Chế độ **Học ngay** chạy hoàn toàn cục bộ trên thiết bị (`localStorage` + `IndexedDB`); chế độ tài khoản hỗ trợ **Supabase gói miễn phí (0đ)** cho Đăng nhập Email/Mật khẩu và đồng bộ tiến độ xuyên thiết bị (theo `docs/SUPABASE_SETUP.sql` & `js/supabase-config.js`). Vẫn tuyệt đối không tích hợp AI API trả phí.
 2. **Không bịa nội dung:** Toàn bộ từ mới, bài khóa, ngữ pháp, bài tập phải trích xuất trung thực từ PDF giáo trình gốc người dùng cung cấp; không tự sáng tác nội dung sách và không giả lập điểm chấm phát âm AI chưa có nguồn thật.
 3. **Bảo toàn giao diện & tính năng hiện có:**
    - Giữ nguyên bảng màu đỏ gốm – kem (`--accent`, `--btn-a`, `--btn-b`, `--surface`, `--surface2`, `--line`, `--gold`).

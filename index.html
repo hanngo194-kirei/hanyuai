@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="css/tokens-core.css"/>
 <link rel="stylesheet" href="css/dot4.css"/>
 <link rel="stylesheet" href="css/stylus-studio.css"/>
+<link rel="stylesheet" href="css/auth-profile.css"/>
 </head><body>
 <svg aria-hidden="true" focusable="false" height="0" style="position:absolute" width="0">
 <defs>
@@ -74,6 +75,7 @@
 <a data-go="me" data-tab="me" href="javascript:void(0)"><svg class="ic"><use href="#i-user"></use></svg>Cá nhân</a>
 </nav>
 <div class="sb-foot">
+<button class="sb-acc-btn" id="sb-account-btn" type="button"><span class="sb-acc-txt"><b>Hồ sơ học tập</b><span>Học ngay · Lưu tại máy</span></span></button>
 <button class="sb-btn" data-view-textbook="1" id="sb-textbook-btn" type="button"><svg class="ic"><use href="#i-book"></use></svg>Xem giáo trình</button>
 <button class="sb-btn" id="sb-theme-btn" type="button"><svg class="ic"><use href="#i-moon"></use></svg><span>Giao diện Tối</span></button>
 </div>
@@ -89,7 +91,7 @@
 <main>
 <!-- ================= TRANG CHỦ ================= -->
 <section class="view on" data-view="home">
-<div><h1 class="hello">Chào mi! 👋</h1><p class="sub">Sẵn sàng cho bài học hôm nay?</p></div>
+<div><h1 class="hello" id="hm-hello">Chào bạn! 👋</h1><p class="sub">Sẵn sàng cho bài học hôm nay?</p></div>
 <div class="hm-streak-strip" id="hm-streak-strip" data-go="me"></div>
 <div class="grid2">
 <article class="card">
@@ -898,9 +900,12 @@
 <div data-pane="ov">
 <div class="card me-profile-card">
   <div class="me-prof-top">
-    <img alt="Hanyu AI" class="me-avatar" id="me-avatar-img"/>
+    <button aria-label="Đổi ảnh đại diện và hồ sơ" class="me-avatar-btn" id="me-edit-avatar-btn" type="button">
+      <img alt="Hanyu AI" class="me-avatar" id="me-avatar-img"/>
+      <span class="me-avatar-edit"><svg class="ic"><use href="#i-pencil"></use></svg></span>
+    </button>
     <div class="me-prof-mid">
-      <div class="me-prof-title"><b>Học viên Hanyu AI</b><span class="me-lvl-pill" id="me-level-badge">Cấp 1</span></div>
+      <div class="me-prof-title"><b id="me-profile-name">Học viên Hanyu AI</b><span class="me-lvl-pill" id="me-level-badge">Cấp 1</span></div>
       <div class="me-prof-sub" id="me-profile-sub">Mới bắt đầu · Duy trì học mỗi ngày</div>
     </div>
     <span class="me-streak-chip" id="me-streak-pill"><svg class="ic f"><use href="#i-flame"></use></svg><span>0 ngày</span></span>
@@ -909,6 +914,7 @@
     <div class="me-xp-row"><span class="muted">Kinh nghiệm cục bộ (XP)</span><b id="me-xp-txt">0 XP · Còn 250 XP lên Cấp 2</b></div>
     <div class="me-xp-bar"><i id="me-xp-bar" style="width:0%"></i></div>
   </div>
+  <div class="me-account-box" id="me-account-box"></div>
 </div>
 <div class="stats4">
 <div><svg class="ic"><use href="#i-book"></use></svg><b id="me-done-lessons">0 bài</b><span>Bài hoàn thành</span><small class="me-kpi-sub"><i id="me-sessions">0</i> phiên luyện</small></div>
@@ -1195,6 +1201,8 @@ B: 我去图书馆。 | Wǒ qù túshūguǎn. | Tôi đi thư viện." style="wi
 <script src="data/hanzi-ext-db.js"></script>
 <script src="data/course-covers.js"></script>
 <script src="js/core-storage.js"></script>
+<script src="js/supabase-config.js"></script>
+<script src="js/auth-sync.js"></script>
 <script src="js/stylus-studio.js"></script>
 <script src="js/azure-speech.js"></script>
 <script src="js/local-speech-analyzer.js"></script>
