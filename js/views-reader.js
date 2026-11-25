@@ -537,11 +537,13 @@ function renderLessonDetail(){
     const ext=l.optionalExtensions||{};
     const hn=Array.isArray(ext.hackNaoIds)?ext.hackNaoIds:[];
     const mm=Array.isArray(ext.mindMapRootChars)?ext.mindMapRootChars:[];
-    if(!hn.length&&!mm.length){extCard.classList.add('hide');extCard.innerHTML='';}
+    const hasVocabExt=Boolean(parseHnLessonId(l.id))&&wList.some(w=>extractUniqueHanzi(w.zh).length);
+    if(!hasVocabExt&&!hn.length&&!mm.length){extCard.classList.add('hide');extCard.innerHTML='';}
     else{
       extCard.classList.remove('hide');
       const show=store.settings.showOptionalExt!==false;
-      extCard.innerHTML=`<div class="barrow" style="justify-content:space-between"><b>Mở rộng tùy chọn (Không ép SRS)</b><button type="button" class="chip" id="ls-tog-opt-ext">${show?'Đang bật':'Đang ẩn'}</button></div>`+(show?`<div class="small" style="margin-top:6px">${hn.length?`<div><b>Hack não 3000 chữ Hán:</b> ${hn.length} mục liên kết trong thẻ từ vựng</div>`:''}${mm.length?`<div style="margin-top:4px"><b>Sơ đồ tư duy 3300 chữ Hán:</b> Chữ gốc ${mm.map(x=>escHtml(x)).join(', ')}</div>`:''}</div>`:'<div class="small muted" style="margin-top:4px">Đã ẩn phần mở rộng (bấm “Đang ẩn” để xem lại).</div>');
+      const info=hasVocabExt?'Mở Từ vựng để xem Hack não và Sơ đồ tư duy theo từng thẻ.':`${hn.length?`<div><b>Hack não 3000 chữ Hán:</b> ${hn.length} mục liên kết trong thẻ từ vựng</div>`:''}${mm.length?`<div style="margin-top:4px"><b>Sơ đồ tư duy 3300 chữ Hán:</b> Chữ gốc ${mm.map(x=>escHtml(x)).join(', ')}</div>`:''}`;
+      extCard.innerHTML=`<div class="barrow" style="justify-content:space-between"><b>Mở rộng tùy chọn (Không ép SRS)</b><button type="button" class="chip" id="ls-tog-opt-ext">${show?'Đang bật':'Đang ẩn'}</button></div>`+(show?`<div class="small" style="margin-top:6px">${info}</div>`:'<div class="small muted" style="margin-top:4px">Đã ẩn phần mở rộng (bấm “Đang ẩn” để xem lại).</div>');
     }
   }
 

@@ -54,7 +54,8 @@
 
 ## Milestone 4 — Nạp Khẩu ngữ tốc thành & Bổ trợ Chữ Hán
 - [ ] Bộ *Khẩu ngữ tốc thành* (`HanYu KouYu SuCheng` 1m–5m) vào nhóm `kouyu`
-- [ ] Bộ *Hack não 3000 chữ Hán* (tập 1–3) & *Sơ đồ tư duy 3300 chữ Hán* vào nhóm `hanzi` và liên kết `optionalExtensions` cho các quyển sau
+- [x] Phần mở rộng *Hack não* và *Sơ đồ tư duy* trong thẻ từ vựng của 76 bài Hán ngữ Quyển 1–6. Dùng mục đã biên soạn trong `data/hanzi-ext-db.js` cùng từ trong bài. Bổ sung bộ tra và số nét từ Unihan 17.0 cho 1.627 chữ trong `data/hanzi-radicals.js`.
+- [ ] Nạp đầy đủ bộ *Hack não 3000 chữ Hán* (tập 1–3) và *Sơ đồ tư duy 3300 chữ Hán* vào nhóm `hanzi`.
 
 ---
 

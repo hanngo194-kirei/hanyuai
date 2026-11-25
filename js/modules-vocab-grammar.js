@@ -230,9 +230,39 @@ function getPartMeaning(p,db){
   return '';
 }
 function extractUniqueHanzi(zh){
-  const arr=[];
-  for(const ch of String(zh||'')){if(/[\u4e00-\u9fff]/.test(ch)&&!arr.includes(ch))arr.push(ch);}
-  return arr;
+  return [...new Set(String(zh||'').match(/\p{Script=Han}/gu)||[])];
+}
+function getVocabExtensionEntries(word,tab){
+  const db=tab==='hacknao'
+    ?(typeof HANZI_HACKNAO_DB==='undefined'?{}:HANZI_HACKNAO_DB)
+    :(typeof HANZI_MINDMAP_DB==='undefined'?{}:HANZI_MINDMAP_DB);
+  const isHanyuLesson=typeof parseHnLessonId==='function'&&Boolean(parseHnLessonId(store.activeLessonId));
+  const radicals=typeof HANZI_RADICAL_STROKES==='undefined'?{}:HANZI_RADICAL_STROKES;
+  return extractUniqueHanzi(word?.zh).flatMap(ch=>{
+    const entry=db[ch];
+    if(!isHanyuLesson)return entry?[{ch,entry}]:[];
+    const [radical,strokes]=radicals[ch]||[];
+    const lessonWords=[word,...WORDS.filter(w=>w.zh!==word.zh&&w.zh.includes(ch))];
+    return [{ch,entry,radical,strokes,lessonWords}];
+  });
+}
+function mergeExtensionWords(lessonWords,curatedWords){
+  const words=new Map();
+  for(const w of [...lessonWords,...curatedWords]){
+    if(w?.zh&&!words.has(w.zh))words.set(w.zh,w);
+  }
+  return [...words.values()];
+}
+const VC_MIND_MAP_PAGE_SIZE=6;
+function getMindMapItems(item){
+  const curated=(item.entry?.groups||[]).flatMap(g=>g.items||[]).filter(w=>w?.zh);
+  if(!item.lessonWords)return curated;
+  const related=mergeExtensionWords(item.lessonWords.filter(w=>w.zh!==item.ch),curated);
+  if(item.entry&&related.length)return related;
+  if(item.radical)related.push({fact:'Bộ tra chữ',value:item.radical});
+  if(item.strokes)related.push({fact:'Số nét',value:String(item.strokes)});
+  if(!related.length)related.push({fact:'Nghĩa trong bài',value:item.lessonWords[0].vi});
+  return related;
 }
 function renderVocabExtension(w){
   const hnTab=$('#vc-tab-hacknao'),mmTab=$('#vc-tab-mindmap'),panel=$('#vc-ext-panel');
@@ -240,48 +270,50 @@ function renderVocabExtension(w){
   if(mmTab)mmTab.classList.toggle('on',vcExtTab==='mindmap');
   if(!panel)return;
   if(!w){panel.innerHTML='<div class="vc-ext-empty">Chưa chọn từ vựng</div>';return;}
-  const chars=extractUniqueHanzi(w.zh);
+  const matched=getVocabExtensionEntries(w,vcExtTab);
+  if(!matched.length){panel.innerHTML='<div class="vc-ext-empty">Từ này không có nội dung</div>';return;}
+  vcExtCharIdx=vcExtCharIdx%matched.length;
+  const curItem=matched[vcExtCharIdx],e=curItem.entry||{};
   const pillsHtml=(matched)=>matched.length>1?`<div class="vc-char-pills">${matched.map((m,idx)=>`<button class="${idx===vcExtCharIdx?'on':''}" data-vext-char="${idx}" type="button">${escH(m.ch)}</button>`).join('')}</div>`:'';
 
   if(vcExtTab==='hacknao'){
-    const db=(typeof HANZI_HACKNAO_DB!=='undefined')?HANZI_HACKNAO_DB:{};
-    const matched=chars.map(ch=>({ch,entry:db[ch]})).filter(x=>x.entry);
-    if(!matched.length){panel.innerHTML='<div class="vc-ext-empty">Từ này không có nội dung</div>';return;}
-    vcExtCharIdx=vcExtCharIdx%matched.length;
-    const curItem=matched[vcExtCharIdx],e=curItem.entry;
     let eqInner='';
     if(e.parts&&e.parts.length){
       const rhs=e.parts.map((p,idx)=>{
-        const sub=getPartMeaning(p,db);
+        const sub=getPartMeaning(p,HANZI_HACKNAO_DB);
         return `<div class="vc-hn-term${idx===0?' is-red':''}"><div class="vc-hn-ch">${escH(p.ch)}</div>${sub?`<div class="vc-hn-sub">(${escH(sub)})</div>`:''}</div>`;
       }).join('<span class="vc-hn-op">+</span>');
       eqInner=`<div class="vc-hn-term is-main"><div class="vc-hn-ch">${escH(curItem.ch)}</div></div><span class="vc-hn-op">=</span>${rhs}`;
-    }else if(chars.length>=2&&matched.length>=2){
-      const rhs=chars.map((ch,idx)=>{
-        const ent=db[ch];
+    }else if(!curItem.lessonWords&&matched.length>=2){
+      const rhs=extractUniqueHanzi(w.zh).map((ch,idx)=>{
+        const ent=HANZI_HACKNAO_DB[ch];
         const sub=ent?(String(ent.meaning||ent.hv||'').split(',')[0].trim()):'';
         return `<div class="vc-hn-term${idx===0?' is-red':''}"><div class="vc-hn-ch">${escH(ch)}</div>${sub?`<div class="vc-hn-sub">(${escH(sub)})</div>`:''}</div>`;
       }).join('<span class="vc-hn-op">+</span>');
       eqInner=`<div class="vc-hn-term is-main"><div class="vc-hn-ch">${escH(w.zh)}</div></div><span class="vc-hn-op">=</span>${rhs}`;
-    }else{
+    }else if(curItem.entry){
       const shortM=String(e.meaning||'').split(',')[0].trim();
       eqInner=`<div class="vc-hn-term is-main is-red"><div class="vc-hn-ch">${escH(curItem.ch)}</div></div><span class="vc-hn-op">=</span><div class="vc-hn-base"><b>${escH(e.hv||e.py||'')}</b>${shortM?`<span>(${escH(shortM)})</span>`:''}</div>`;
+    }else{
+      const facts=[curItem.radical&&`Bộ tra chữ ${curItem.radical}`,curItem.strokes&&`${curItem.strokes} nét`].filter(Boolean).join(' · ');
+      eqInner=`<div class="vc-hn-term is-main is-red"><div class="vc-hn-ch">${escH(curItem.ch)}</div></div><div class="vc-hn-base"><b>${escH(w.zh)} · ${escH(w.py)}</b><span>${escH(facts||w.vi)}</span></div>`;
     }
     const brainIc='<span class="vc-ext-ic-brain" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9.5 4.2a3.4 3.4 0 0 0-3.2 4.5 3.1 3.1 0 0 0-1.6 2.8 3.1 3.1 0 0 0 1.2 2.4A3.1 3.1 0 0 0 9.1 19h2.2V4.2z" fill="#E36252"/><path d="M14.5 4.2a3.4 3.4 0 0 1 3.2 4.5 3.1 3.1 0 0 1 1.6 2.8 3.1 3.1 0 0 1-1.2 2.4A3.1 3.1 0 0 1 14.9 19h-2.2V4.2z" fill="#C73F33"/><path d="M8 9.2c.8.5 1.4 1.3 1.4 2.2M7.5 14c1-.3 1.8-.9 2-1.7M16 9.2c-.8.5-1.4 1.3-1.4 2.2M16.5 14c-1-.3-1.8-.9-2-1.7" fill="none" stroke="#FFF8F3" stroke-width="1.3" stroke-linecap="round"/></svg></span>';
     const hnNav=matched.length>1?'<div class="vc-hn-nav"><button aria-label="Chữ trước" class="vc-next-char" data-vext-prev="1" type="button">←</button><button aria-label="Chữ tiếp theo" class="vc-next-char" data-vext-next="1" type="button">→</button></div>':'';
-    const comps=(e.compounds||[]).map(cp=>`<button class="vc-comp-chip" data-say="${escH(cp.zh)}" type="button"><b>${escH(cp.zh)}</b><span>${escH(cp.py)} · ${escH(cp.vi)}</span></button>`).join('');
-    panel.innerHTML=`<div class="vc-ext-head"><div class="vc-ext-head-l">${brainIc}<span class="vc-ext-title">Hack não 3000 chữ Hán</span></div>${pillsHtml(matched)}</div><div class="vc-hn-eqbox">${eqInner}</div><div class="vc-hn-tiprow"><span class="vc-bulb" aria-hidden="true">💡</span><div class="vc-hn-tip"><b>Mẹo nhớ:</b><p>${escH(e.mnemonic||'')}</p></div>${hnNav}</div>${comps?`<div class="vc-comp-list">${comps}</div>`:''}`;
+    const related=curItem.lessonWords?.[1];
+    const tip=e.mnemonic||(related
+      ?`Tìm chữ ${curItem.ch} trong ${w.zh} và ${related.zh}. Đọc mỗi từ rồi nhắc lại nghĩa: ${w.vi} / ${related.vi}.`
+      :`Nhìn nghĩa “${w.vi}”, che chữ rồi viết lại ${w.zh}. Đọc ${w.py} để kiểm tra.`);
+    const title=curItem.entry?'Hack não 3000 chữ Hán':'Hack não theo từ trong bài';
+    const curated=e.compounds||[];
+    const compounds=curItem.lessonWords?mergeExtensionWords([w,...curated],curItem.lessonWords).slice(0,6):curated;
+    const comps=compounds.map(cp=>`<button class="vc-comp-chip" data-say="${escH(cp.zh)}" type="button"><b>${escH(cp.zh)}</b><span>${escH(cp.py)} · ${escH(cp.vi)}</span></button>`).join('');
+    panel.innerHTML=`<div class="vc-ext-head"><div class="vc-ext-head-l">${brainIc}<span class="vc-ext-title">${title}</span></div>${pillsHtml(matched)}</div><div class="vc-hn-eqbox">${eqInner}</div><div class="vc-hn-tiprow"><span class="vc-bulb" aria-hidden="true">💡</span><div class="vc-hn-tip"><b>Mẹo nhớ:</b><p>${escH(tip)}</p></div>${hnNav}</div>${comps?`<div class="vc-comp-list">${comps}</div>`:''}`;
     return;
   }
 
-  const db=(typeof HANZI_MINDMAP_DB!=='undefined')?HANZI_MINDMAP_DB:{};
-  const matched=chars.map(ch=>({ch,entry:db[ch]})).filter(x=>x.entry);
-  if(!matched.length){panel.innerHTML='<div class="vc-ext-empty">Từ này không có nội dung</div>';return;}
-  vcExtCharIdx=vcExtCharIdx%matched.length;
-  const curItem=matched[vcExtCharIdx],e=curItem.entry;
-  const allItems=[];
-  (e.groups||[]).forEach(g=>(g.items||[]).forEach(it=>{if(it&&it.zh)allItems.push(it);}));
-  const pageSize=6,totalPages=Math.max(1,Math.ceil(allItems.length/pageSize));
+  const allItems=getMindMapItems(curItem);
+  const pageSize=VC_MIND_MAP_PAGE_SIZE,totalPages=Math.max(1,Math.ceil(allItems.length/pageSize));
   vcMmPage=vcMmPage%totalPages;
   const pageItems=allItems.slice(vcMmPage*pageSize,(vcMmPage+1)*pageSize);
   let top=[],midL=null,midR=null,bot=[];
@@ -292,18 +324,24 @@ function renderVocabExtension(w){
   else if(k===3){top=[pageItems[0],pageItems[1]];bot=[pageItems[2]];}
   else if(k===2){midL=pageItems[0];midR=pageItems[1];}
   else if(k===1){midR=pageItems[0];}
-  const renderPill=it=>`<button class="vc-mm-pill" data-say="${escH(it.zh)}" title="${escH(it.py||'')}" type="button"><b>${escH(it.zh)}</b><span>${escH(it.vi||'')}</span></button>`;
-  const shortVi=String(e.meaning||'').split(/[;,]/)[0].trim();
+  const renderPill=it=>it.fact
+    ?`<div class="vc-mm-pill vc-mm-fact"><b>${escH(it.value)}</b><span>${escH(it.fact)}</span></div>`
+    :`<button class="vc-mm-pill" data-say="${escH(it.zh)}" title="${escH(it.py||'')}" type="button"><b>${escH(it.zh)}</b><span>${escH(it.vi||'')}</span></button>`;
+  const shortVi=String((curItem.lessonWords&&w.zh===curItem.ch?w.vi:e.meaning)||'').split(/[;,]/)[0].trim();
+  const charPy=(curItem.lessonWords&&w.zh===curItem.ch?w.py:e.py)||'';
   const mmIc='<span class="vc-ext-ic-mm" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 12L5.8 6.2M12 12l6.2-5.8M12 12l-6.2 5.8M12 12l6.2 5.8" stroke="#C7463B" stroke-width="2.2" stroke-linecap="round"/><circle cx="5.5" cy="6" r="2.7" fill="#C73F33"/><circle cx="18.5" cy="6" r="2.7" fill="#C73F33"/><circle cx="5.5" cy="18" r="2.7" fill="#C73F33"/><circle cx="18.5" cy="18" r="2.7" fill="#C73F33"/><circle cx="12" cy="12" r="3.4" fill="#9E2A22"/></svg></span>';
   const hasNav=totalPages>1||matched.length>1;
   const navHtml=hasNav?`<div class="vc-mm-nav"><button aria-label="Trang trước" class="vc-next-char vc-mm-prev" data-vext-mm-prev="1" type="button">←</button><span class="vc-mm-pg">${matched.length>1?escH(curItem.ch)+' · ':''}Trang ${vcMmPage+1} / ${totalPages}</span><button aria-label="Trang tiếp theo" class="vc-next-char vc-mm-next" data-vext-mm-next="1" type="button">→</button></div>`:'';
   const partsHtml=(e.parts&&e.parts.length)?`<div class="vc-mm-parts">${e.parts.map(p=>`<span class="vc-part-pill"><b>${escH(p.rad)}</b><span>${escH(p.hv)}${p.meaning?' · '+escH(p.meaning):''}</span></span>`).join('')}</div>`:'';
-  const exHtml=(e.example&&e.example.zh)?`<button class="vc-mm-ex" data-say="${escH(e.example.zh)}" type="button"><div><div class="zh">${escH(e.example.zh)}</div><div class="sub">${escH(e.example.py)} · ${escH(e.example.vi)}</div></div><svg class="ic" style="color:var(--accent);flex-shrink:0"><use href="#i-vol"></use></svg></button>`:'';
-  const moreHtml=`<details class="vc-mm-more"><summary>Chi tiết chữ ${escH(curItem.ch)} (${escH(e.py||'')}) · Câu chuyện &amp; ví dụ</summary><div class="vc-mm-more-body">${partsHtml}${e.story?`<div class="vc-mm-story"><b>Câu chuyện nhớ:</b> ${escH(e.story)}</div>`:''}${exHtml}</div></details>`;
+  const example=e.example||(curItem.lessonWords&&SENT.find(s=>s.zh?.includes(w.zh)&&s.zh.length>w.zh.length+2&&s.zh.length<=90));
+  const exHtml=example?.zh?`<button class="vc-mm-ex" data-say="${escH(example.zh)}" type="button"><div><div class="zh">${escH(example.zh)}</div><div class="sub">${escH(example.py)} · ${escH(example.vi)}</div></div><svg class="ic" style="color:var(--accent);flex-shrink:0"><use href="#i-vol"></use></svg></button>`:'';
+  const storyHtml=e.story?`<div class="vc-mm-story"><b>Câu chuyện nhớ:</b> ${escH(e.story)}</div>`:'';
+  const moreHtml=partsHtml||storyHtml||exHtml?`<details class="vc-mm-more"><summary>Chi tiết chữ ${escH(curItem.ch)}${charPy?` (${escH(charPy)})`:''}</summary><div class="vc-mm-more-body">${partsHtml}${storyHtml}${exHtml}</div></details>`:'';
   const topHtml=top.length?`<div class="vc-mm-row mm-top${top.length===1?' single':''}">${top.map(renderPill).join('')}</div>`:'';
   const botHtml=bot.length?`<div class="vc-mm-row mm-bot${bot.length===1?' single':''}">${bot.map(renderPill).join('')}</div>`:'';
-  const midHtml=`<div class="vc-mm-row mm-mid${(!midL&&!midR)?' center-only':''}"><div class="vc-mm-slot left">${midL?renderPill(midL):''}</div><button class="vc-mm-center" data-say="${escH(curItem.ch)}" title="${escH(e.py||'')}" type="button"><b>${escH(curItem.ch)}</b><span>${escH(shortVi)}</span></button><div class="vc-mm-slot right">${midR?renderPill(midR):''}</div></div>`;
-  panel.innerHTML=`<div class="vc-ext-head"><div class="vc-ext-head-l">${mmIc}<span class="vc-ext-title">Sơ đồ tư duy 3300 chữ Hán</span></div>${pillsHtml(matched)}</div><div class="vc-mm-stage" id="vc-mm-stage"><svg aria-hidden="true" class="vc-mm-svg"></svg>${topHtml}${midHtml}${botHtml}</div>${navHtml}${moreHtml}`;
+  const midHtml=`<div class="vc-mm-row mm-mid${(!midL&&!midR)?' center-only':''}"><div class="vc-mm-slot left">${midL?renderPill(midL):''}</div><button class="vc-mm-center" data-say="${escH(curItem.ch)}" title="${escH(charPy)}" type="button"><b>${escH(curItem.ch)}</b><span>${escH(shortVi)}</span></button><div class="vc-mm-slot right">${midR?renderPill(midR):''}</div></div>`;
+  const title=curItem.entry?'Sơ đồ tư duy 3300 chữ Hán':'Sơ đồ tư duy theo từ trong bài';
+  panel.innerHTML=`<div class="vc-ext-head"><div class="vc-ext-head-l">${mmIc}<span class="vc-ext-title">${title}</span></div>${pillsHtml(matched)}</div><div class="vc-mm-stage" id="vc-mm-stage"><svg aria-hidden="true" class="vc-mm-svg"></svg>${topHtml}${midHtml}${botHtml}</div>${navHtml}${moreHtml}`;
   requestAnimationFrame(syncMindMapLines);
 }
 function syncMindMapLines(){
@@ -324,10 +362,8 @@ function syncMindMapLines(){
 }
 window.syncMindMapLines=syncMindMapLines;
 window.addEventListener('resize',()=>requestAnimationFrame(syncMindMapLines));
-function getMmTotalPages(entry){
-  let cnt=0;
-  (entry&&entry.groups||[]).forEach(g=>{cnt+=(g&&g.items||[]).filter(it=>it&&it.zh).length;});
-  return Math.max(1,Math.ceil(cnt/6));
+function getMmTotalPages(item){
+  return Math.max(1,Math.ceil(getMindMapItems(item).length/VC_MIND_MAP_PAGE_SIZE));
 }
 if($('#vc-ext-tabs'))$('#vc-ext-tabs').addEventListener('click',e=>{
   const b=e.target.closest('button[data-vext]');if(!b)return;
@@ -338,8 +374,7 @@ if($('#vc-ext-panel'))$('#vc-ext-panel').addEventListener('click',e=>{
   if(cb){vcExtCharIdx=+cb.dataset.vextChar||0;vcMmPage=0;renderVocabExtension(vcCurWord);return;}
   const pb=e.target.closest('[data-vext-prev]');
   if(pb){
-    const db=(typeof HANZI_HACKNAO_DB!=='undefined')?HANZI_HACKNAO_DB:{};
-    const matched=extractUniqueHanzi(vcCurWord&&vcCurWord.zh).map(ch=>({ch,entry:db[ch]})).filter(x=>x.entry);
+    const matched=getVocabExtensionEntries(vcCurWord,'hacknao');
     if(matched.length>1){vcExtCharIdx=(vcExtCharIdx-1+matched.length)%matched.length;vcMmPage=0;renderVocabExtension(vcCurWord);}
     return;
   }
@@ -347,22 +382,20 @@ if($('#vc-ext-panel'))$('#vc-ext-panel').addEventListener('click',e=>{
   if(nb){vcExtCharIdx+=1;vcMmPage=0;renderVocabExtension(vcCurWord);return;}
   const mp=e.target.closest('[data-vext-mm-prev]');
   if(mp){
-    const db=(typeof HANZI_MINDMAP_DB!=='undefined')?HANZI_MINDMAP_DB:{};
-    const matched=extractUniqueHanzi(vcCurWord&&vcCurWord.zh).map(ch=>({ch,entry:db[ch]})).filter(x=>x.entry);
+    const matched=getVocabExtensionEntries(vcCurWord,'mindmap');
     if(!matched.length)return;
     const len=matched.length;vcExtCharIdx=vcExtCharIdx%len;
     if(vcMmPage>0)vcMmPage-=1;
-    else if(len>1){vcExtCharIdx=(vcExtCharIdx-1+len)%len;vcMmPage=getMmTotalPages(matched[vcExtCharIdx].entry)-1;}
-    else vcMmPage=getMmTotalPages(matched[0].entry)-1;
+    else if(len>1){vcExtCharIdx=(vcExtCharIdx-1+len)%len;vcMmPage=getMmTotalPages(matched[vcExtCharIdx])-1;}
+    else vcMmPage=getMmTotalPages(matched[0])-1;
     renderVocabExtension(vcCurWord);return;
   }
   const mn=e.target.closest('[data-vext-mm-next]');
   if(mn){
-    const db=(typeof HANZI_MINDMAP_DB!=='undefined')?HANZI_MINDMAP_DB:{};
-    const matched=extractUniqueHanzi(vcCurWord&&vcCurWord.zh).map(ch=>({ch,entry:db[ch]})).filter(x=>x.entry);
+    const matched=getVocabExtensionEntries(vcCurWord,'mindmap');
     if(!matched.length)return;
     const len=matched.length;vcExtCharIdx=vcExtCharIdx%len;
-    const pages=getMmTotalPages(matched[vcExtCharIdx].entry);
+    const pages=getMmTotalPages(matched[vcExtCharIdx]);
     if(vcMmPage+1<pages)vcMmPage+=1;
     else{vcMmPage=0;if(len>1)vcExtCharIdx=(vcExtCharIdx+1)%len;}
     renderVocabExtension(vcCurWord);
