@@ -1239,6 +1239,7 @@ const speakCtrl=(function(){
   $('#sp-assess').onclick=async()=>{
     if(assessInFlight)return;
     const it=getList()[idx];if(!it||!recBlob)return;
+    const blob=recBlob,transcript=lastLiveTranscript,lessonId=store.activeLessonId;
     const cfg=PronunciationAssessor.getConfig();
     const trimForStore=res=>{
       if(!res||typeof res!=='object')return res;
@@ -1250,7 +1251,7 @@ const speakCtrl=(function(){
     };
     const runLocal=async ()=>{
       if(typeof LocalSpeechAnalyzer==='undefined'||!LocalSpeechAnalyzer.assessLocal)throw new Error('LOCAL_ANALYZER_MISSING');
-      return await LocalSpeechAnalyzer.assessLocal(recBlob,it,lastLiveTranscript);
+      return await LocalSpeechAnalyzer.assessLocal(blob,it,transcript);
     };
 
     assessInFlight=true;
@@ -1259,15 +1260,15 @@ const speakCtrl=(function(){
     try{
       const prev=getItemRec(it.id);
       let result=null;
-      let usedLocalFallback=false;
+      let fallbackNotice='';
 
       if(cfg.configured&&apiCallsInSession<MAX_API_CALLS_SESSION){
         apiCallsInSession++;countedApi=true;
         try{
           const [aiRes,pitchRes]=await Promise.all([
-            PronunciationAssessor.assess(recBlob,it),
+            PronunciationAssessor.assess(blob,it),
             (typeof LocalSpeechAnalyzer!=='undefined'&&LocalSpeechAnalyzer.extractPitchContour)
-              ? LocalSpeechAnalyzer.extractPitchContour(recBlob).catch(()=>null)
+              ? LocalSpeechAnalyzer.extractPitchContour(blob).catch(()=>null)
               : Promise.resolve(null)
           ]);
           result=aiRes;
@@ -1294,10 +1295,12 @@ const speakCtrl=(function(){
           }
         }catch(aiErr){
           const code=(aiErr&&aiErr.code)||'';
-          const isFallbackErr=(code==='OVERLOADED'||code==='RATE_LIMIT'||code==='NETWORK_ERROR'||(aiErr&&(aiErr.message==='SDK_LOAD_ERROR'||aiErr.message==='SDK_TIMEOUT')));
+          const isFallbackErr=(code==='CHIVOX_TIMEOUT'||code==='OVERLOADED'||code==='RATE_LIMIT'||code==='NETWORK_ERROR'||(aiErr&&(aiErr.message==='SDK_LOAD_ERROR'||aiErr.message==='SDK_TIMEOUT')));
           if(isFallbackErr&&typeof LocalSpeechAnalyzer!=='undefined'&&LocalSpeechAnalyzer.assessLocal){
             apiCallsInSession=Math.max(0,apiCallsInSession-1);
-            usedLocalFallback=true;
+            countedApi=false;
+            fallbackNotice=code==='CHIVOX_TIMEOUT'?'Chivox quá thời gian chờ. Đã phân tích trên thiết bị.':'Dịch vụ AI tạm thời không phản hồi. Đã phân tích trên thiết bị.';
+            btn.textContent='Đang phân tích trên thiết bị…';
             result=await runLocal();
           }else{
             throw aiErr;
@@ -1312,24 +1315,26 @@ const speakCtrl=(function(){
       if(typeof recordLearningEvent==='function'){
         recordLearningEvent({type:'assess',skill:'speak',title:`Chấm phát âm: ${it.zh}`,targetId:it.id,view:'speak',result:toStore.overallScore!==null?`${toStore.overallScore}/100`:'Đã phân tích'});
       }
-      if(typeof markLessonSectionDone==='function'&&store.activeLessonId){
-        markLessonSectionDone(store.activeLessonId,'speak',true);
+      if(typeof markLessonSectionDone==='function'&&lessonId){
+        markLessonSectionDone(lessonId,'speak',true);
       }
-      renderAssessmentArea(it);
-      if(usedLocalFallback){
-        toast('AI đang quá tải — đã tự động chấm bằng bộ phân tích trên trình duyệt');
+      if(lessonId===store.activeLessonId&&getList()[idx]?.id===it.id)renderAssessmentArea(it);
+      if(fallbackNotice){
+        toast(fallbackNotice);
       }else if(toStore.overallScore!==null){
         toast(`Điểm phát âm: ${toStore.overallScore}/100`);
       }else{
         toast('Đã hoàn tất phân tích đường cong thanh điệu');
       }
     }catch(err){
-      if(countedApi&&err&&(err.message==='SDK_LOAD_ERROR'||err.message==='SDK_TIMEOUT'||err.message==='EMPTY_AUDIO_BLOB'||err.message==='NO_AUDIO_CONTEXT'||err.code==='RATE_LIMIT'||err.code==='OVERLOADED')){
+      if(countedApi&&err&&(err.message==='SDK_LOAD_ERROR'||err.message==='SDK_TIMEOUT'||err.message==='EMPTY_AUDIO_BLOB'||err.message==='NO_AUDIO_CONTEXT'||err.code==='RATE_LIMIT'||err.code==='OVERLOADED'||err.code==='CHIVOX_TIMEOUT')){
         apiCallsInSession=Math.max(0,apiCallsInSession-1);
       }
       const code=(err&&err.code)||'';
       if(code==='NO_MATCH'){
         toast('Không nghe rõ tiếng Trung trong bản ghi, hãy đọc gần micro và rõ hơn');
+      }else if(code==='CHIVOX_TIMEOUT'){
+        toast('Chivox quá thời gian chờ. Mi có thể thử lại với một câu ngắn.');
       }else if(code==='RATE_LIMIT'||code==='OVERLOADED'){
         toast('Máy chủ AI đang quá tải hoặc chạm giới hạn, hãy thử lại sau ít giây');
       }else if(code==='AUTH_ERROR'){

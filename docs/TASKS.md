@@ -60,6 +60,7 @@
 ---
 
 ## Milestone 5 — Kiểm thử Audio đầy đủ & Tinh chỉnh UI/UX
+- [x] Chivox MCP trả điểm ngay khi nhận đủ sự kiện SSE, dùng lại phiên và giới hạn mỗi lần chấm ở 20 giây. Lỗi 504 và lỗi kết nối chuyển sang phân tích bản ghi trên thiết bị.
 - [ ] Kiểm thử nạp hàng loạt các gói `.zip` audio thật (Hán ngữ Q1–Q6 và HSK 3.0 407 track) trên `IndexedDB media`
 - [ ] Đối chiếu và tinh chỉnh UI theo 2 ảnh demo chuẩn trong `docs/references/` (nếu có điểm nào cần hoàn thiện thêm)
 

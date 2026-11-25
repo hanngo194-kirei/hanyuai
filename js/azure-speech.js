@@ -891,10 +891,11 @@
   /* ================= CHIVOX MCP (600 LƯỢT FREE · MANDARIN) ================= */
   const CHIVOX_STORAGE_KEY = 'hanyu_chivox_speech';
   const CHIVOX_ENDPOINT = 'https://mcp-global.cloud.chivox.com';
+  const CHIVOX_ASSESS_TIMEOUT_MS = 20000;
+  const CHIVOX_TEST_TIMEOUT_MS = 8000;
   const CHIVOX_DEFAULT_CFG = { key: '', enabled: true };
-  let chivoxSessionId = '';
+  let chivoxSession = null;
   let chivoxReqId = 1;
-  let chivoxToolSchemas = null;
 
   function getChivoxConfig(){
     try{
@@ -914,7 +915,7 @@
     const next = Object.assign({}, getChivoxConfig(), patch || {});
     next.key = String(next.key || '').trim();
     next.enabled = next.enabled !== false;
-    chivoxSessionId = '';
+    if(chivoxSession?.key !== next.key) chivoxSession = null;
     try{
       localStorage.setItem(CHIVOX_STORAGE_KEY, JSON.stringify(next));
     }catch(_){}
@@ -924,7 +925,7 @@
   function clearChivoxConfig(){
     const cur = getChivoxConfig();
     const cleared = Object.assign({}, cur, { key: '' });
-    chivoxSessionId = '';
+    chivoxSession = null;
     try{
       localStorage.setItem(CHIVOX_STORAGE_KEY, JSON.stringify(cleared));
     }catch(_){}
@@ -941,92 +942,156 @@
     return isChivoxConfigured(c) && c.enabled !== false;
   }
 
-  function parseMcpResponseBody(txt, contentType){
-    const s = String(txt || '').trim();
-    if(!s) return null;
-    if((contentType && contentType.includes('text/event-stream')) || s.startsWith('event:') || s.startsWith('data:')){
-      const lines = s.split(/\r?\n/);
-      let lastMsg = null;
-      for(let i = 0; i < lines.length; i++){
-        const ln = lines[i].trim();
-        if(!ln.startsWith('data:')) continue;
-        const payload = ln.slice(5).trim();
-        if(!payload || payload === '[DONE]') continue;
-        try{
-          const obj = JSON.parse(payload);
-          if(obj && (obj.result !== undefined || obj.error !== undefined)) lastMsg = obj;
-        }catch(_){}
-      }
-      if(lastMsg) return lastMsg;
-    }
-    return JSON.parse(s);
+  function chivoxError(message, status, serviceCode){
+    const e = new Error(message);
+    e.status = status;
+    const detail = `${serviceCode || ''} ${message}`;
+    if(status === 401 || status === 403 || /unauthorized|invalid (?:api )?key/i.test(detail)) e.code = 'AUTH_ERROR';
+    else if(status === 429 || /quota|rate.limit|insufficient (?:points|balance)/i.test(detail)) e.code = 'RATE_LIMIT';
+    else if(status === 408 || status === 504 || /timeout|timed out|\b(?:504|53000)\b/i.test(detail)) e.code = 'CHIVOX_TIMEOUT';
+    else if(status >= 500 || /busy|UPSTREAM_CONNECT|CAPACITY_FULL/i.test(detail)) e.code = 'OVERLOADED';
+    else e.code = 'CHIVOX_API_ERROR';
+    return e;
   }
 
-  async function mcpCallRaw(key, method, params){
+  async function withChivoxDeadline(ms, run){
+    const controller = new AbortController();
+    let timer;
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const err = chivoxError(`Chivox chưa phản hồi sau ${ms / 1000} giây`, 408);
+        reject(err);
+        controller.abort(err);
+      }, ms);
+    });
+    try{
+      return await Promise.race([deadline, run(controller.signal)]);
+    }finally{
+      clearTimeout(timer);
+      controller.abort();
+    }
+  }
+
+  async function readMcpResponse(response, id){
+    if(!(response.headers.get('Content-Type') || '').includes('text/event-stream')) return response.json();
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = '';
+    let data = [];
+    const readEvent = () => {
+      const payload = data.join('\n');
+      data = [];
+      if(!payload || payload === '[DONE]') return null;
+      try{
+        const message = JSON.parse(payload);
+        return (Array.isArray(message) ? message : [message]).find(msg =>
+          msg?.id === id && ('result' in msg || 'error' in msg)) || null;
+      }catch(_){ return null; }
+    };
+    try{
+      while(true){
+        const {value, done} = await reader.read();
+        if(done) {
+          pending += decoder.decode();
+          if(pending.startsWith('data:')) data.push(pending.slice(5).trim());
+          return readEvent();
+        }
+        pending += decoder.decode(value, {stream: true});
+        let end;
+        while((end = pending.indexOf('\n')) >= 0){
+          const line = pending.slice(0, end).replace(/\r$/, '');
+          pending = pending.slice(end + 1);
+          if(line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
+          if(!line){
+            const message = readEvent();
+            if(message) return message;
+          }
+        }
+      }
+    }finally{
+      // Có thể máy chủ vẫn giữ luồng SSE mở sau khi trả điểm.
+      void reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
+  }
+
+  async function mcpCallRaw(session, method, params, signal){
+    const isNotification = method === 'notifications/initialized';
+    const request = {jsonrpc: '2.0', method, params};
+    if(!isNotification) request.id = chivoxReqId++;
     const headers = {
-      'Authorization': 'Bearer ' + key,
+      'Authorization': 'Bearer ' + session.key,
       'Content-Type': 'application/json',
       'Accept': 'application/json, text/event-stream'
     };
-    if(chivoxSessionId) headers['Mcp-Session-Id'] = chivoxSessionId;
+    if(session.id) headers['Mcp-Session-Id'] = session.id;
+    if(session.protocol) headers['MCP-Protocol-Version'] = session.protocol;
 
     let res;
     try{
       res = await fetch(CHIVOX_ENDPOINT, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ jsonrpc: '2.0', id: chivoxReqId++, method, params: params || {} })
+        body: JSON.stringify(request),
+        signal
       });
-    }catch(_){
+    }catch(err){
+      if(signal.aborted) throw signal.reason || err;
       const e = new Error('Không kết nối được Chivox MCP (kiểm tra mạng hoặc trình duyệt chặn CORS)');
       e.code = 'NETWORK_ERROR';
       throw e;
     }
-
-    const sid = res.headers.get('Mcp-Session-Id') || res.headers.get('mcp-session-id');
-    if(sid) chivoxSessionId = sid;
-
-    const ct = String(res.headers.get('content-type') || '').toLowerCase();
-    const txt = await res.text();
-    let msg = null;
-    try{ msg = parseMcpResponseBody(txt, ct); }catch(_){}
-
     if(!res.ok){
-      const errMsg = (msg && msg.error && msg.error.message) ? String(msg.error.message) : ('HTTP ' + res.status);
-      const e = new Error(errMsg);
-      e.status = res.status;
-      if(res.status === 401 || res.status === 403) e.code = 'AUTH_ERROR';
-      else if(res.status === 429 || /point|quota|limit/i.test(errMsg)) e.code = 'RATE_LIMIT';
-      else e.code = 'CHIVOX_API_ERROR';
-      throw e;
+      // Không chờ đọc thân trang lỗi 5xx từ gateway.
+      void res.body?.cancel().catch(() => {});
+      throw chivoxError(`Chivox trả về HTTP ${res.status}`, res.status);
     }
-
-    if(msg && msg.error){
-      const errMsg = String(msg.error.message || 'CHIVOX_RPC_ERROR');
-      const e = new Error(errMsg);
-      e.rpcCode = msg.error.code;
-      if(/auth|key|token|unauth/i.test(errMsg)) e.code = 'AUTH_ERROR';
-      else if(/point|quota|limit|balance/i.test(errMsg)) e.code = 'RATE_LIMIT';
-      else e.code = 'CHIVOX_RPC_ERROR';
-      throw e;
+    if(isNotification){
+      void res.body?.cancel().catch(() => {});
+      return null;
     }
-    return msg ? msg.result : null;
+    let msg;
+    try{
+      msg = await readMcpResponse(res, request.id);
+    }catch(err){
+      if(signal.aborted) throw signal.reason || err;
+      throw chivoxError('Chivox gửi phản hồi không đọc được', 502);
+    }
+    if(msg?.error){
+      const message = msg.error.message || 'Chivox báo lỗi MCP';
+      const code = msg.error.data?.code || msg.error.code;
+      const status = /SESSION_(NOT_FOUND|EXPIRED)|session (?:not found|expired)|invalid session/i.test(`${code || ''} ${message}`) ? 404 : undefined;
+      throw chivoxError(message, status, code);
+    }
+    if(msg?.id !== request.id || !('result' in msg)) throw chivoxError('Phản hồi Chivox không hợp lệ', 502);
+    if(method === 'initialize') session.id = res.headers.get('Mcp-Session-Id') || '';
+    return msg.result;
   }
 
-  async function mcpCall(key, method, params){
+  async function openChivoxSession(key, signal){
+    const session = {key, id: '', protocol: ''};
+    const result = await mcpCallRaw(session, 'initialize', {
+      protocolVersion: '2025-03-26',
+      capabilities: {},
+      clientInfo: {name: 'HanyuAI', version: '1.0.0'}
+    }, signal);
+    session.protocol = result?.protocolVersion;
+    if(typeof session.protocol !== 'string' || !session.protocol) throw chivoxError('Chivox chưa xác nhận phiên bản MCP', 502);
+    await mcpCallRaw(session, 'notifications/initialized', {}, signal);
+    if(key === getChivoxConfig().key) chivoxSession = session;
+    return session;
+  }
+
+  async function mcpCallTool(key, params, signal){
+    const session = chivoxSession?.key === key ? chivoxSession : await openChivoxSession(key, signal);
     try{
-      return await mcpCallRaw(key, method, params);
+      return await mcpCallRaw(session, 'tools/call', params, signal);
     }catch(err){
-      if(err && (err.status === 400 || err.status === 404 || err.rpcCode === -32000 || /session|init/i.test(err.message || '')) && method !== 'initialize'){
-        chivoxSessionId = '';
-        await mcpCallRaw(key, 'initialize', {
-          protocolVersion: '2025-03-26',
-          capabilities: {},
-          clientInfo: { name: 'HanyuAI', version: '1.0.0' }
-        });
-        return await mcpCallRaw(key, method, params);
-      }
-      throw err;
+      // Chỉ gửi lại khi máy chủ xác nhận phiên đã hết hạn, không lặp bài chấm bị timeout.
+      if(err.status !== 404 || !session.id || signal.aborted) throw err;
+      if(chivoxSession === session) chivoxSession = null;
+      const renewed = await openChivoxSession(key, signal);
+      return await mcpCallRaw(renewed, 'tools/call', params, signal);
     }
   }
 
@@ -1037,19 +1102,19 @@
       e.code = 'AUTH_ERROR';
       throw e;
     }
-    const res = await mcpCall(k, 'tools/list', {});
-    const tools = (res && Array.isArray(res.tools)) ? res.tools : [];
-    const map = {};
-    tools.forEach(t => { if(t && t.name) map[t.name] = t; });
-    if(tools.length) chivoxToolSchemas = map;
-    return { toolCount: tools.length, hasMandarin: Boolean(map.cn_sentence_eval || map.cn_word_raw_eval || map.cn_word_pinyin_eval) };
+    return withChivoxDeadline(CHIVOX_TEST_TIMEOUT_MS, async signal => {
+      const session = await openChivoxSession(k, signal);
+      const res = await mcpCallRaw(session, 'tools/list', {}, signal);
+      const tools = Array.isArray(res?.tools) ? res.tools : [];
+      return {toolCount: tools.length, hasMandarin: tools.some(t => t?.name === 'cn_sentence_eval')};
+    });
   }
 
   function extractChivoxJson(mcpRes){
-    if(!mcpRes) throw new Error('EMPTY_CHIVOX_RESPONSE');
+    if(!mcpRes) throw chivoxError('Chivox trả về phản hồi trống', 502);
     if(mcpRes.isError){
       const errTxt = (Array.isArray(mcpRes.content) && mcpRes.content[0] && mcpRes.content[0].text) ? mcpRes.content[0].text : 'CHIVOX_TOOL_ERROR';
-      throw new Error(errTxt);
+      throw chivoxError(errTxt);
     }
     if(mcpRes.structuredContent && typeof mcpRes.structuredContent === 'object'){
       return mcpRes.structuredContent;
@@ -1068,7 +1133,7 @@
         }
       }
     }
-    throw new Error('INVALID_CHIVOX_RESPONSE');
+    throw chivoxError('Chivox trả về kết quả chấm không đọc được', 502);
   }
 
   function unwrapChivoxPayload(parsed){
@@ -1087,9 +1152,7 @@
   function buildChivoxFeedback(out){
     const parts = [];
     const words = out.wordResults || [];
-    if(!words.length && out.overallScore === null){
-      return 'Chivox chưa trả về điểm từng chữ cho đoạn ghi âm này — đã bật phân tích chi tiết bổ sung.';
-    }
+    if(!words.length) return 'Chivox chưa trả về điểm từng chữ cho đoạn ghi âm này.';
     const omitted = words.filter(w => w.errorType === 'Omission').map(w => w.word);
     const bad = words.filter(w => w.errorType === 'Mispronunciation' || (w.accuracyScore !== null && w.accuracyScore < 75));
     const mid = words.filter(w => !bad.includes(w) && w.errorType !== 'Omission' && w.accuracyScore !== null && w.accuracyScore < 85);
@@ -1116,56 +1179,17 @@
       throw e;
     }
 
-    if(!chivoxToolSchemas){
-      try{ await testChivoxKey(cfg.key); }catch(_){}
-    }
-
-    const wavBytes = await blobToWav16kBytes(blob, true);
-    const wavBase64 = uint8ToBase64(wavBytes);
+    if(!blob?.size) throw new Error('EMPTY_AUDIO_BLOB');
     const refZh = String(referenceText || '').trim();
-
-    let toolName = 'cn_sentence_eval';
-    if(chivoxToolSchemas){
-      if(chivoxToolSchemas.cn_sentence_eval) toolName = 'cn_sentence_eval';
-      else{
-        const cnTool = Object.keys(chivoxToolSchemas).find(k => k.startsWith('cn_'));
-        if(cnTool) toolName = cnTool;
-      }
-    }
-
-    const props = (chivoxToolSchemas && chivoxToolSchemas[toolName] && chivoxToolSchemas[toolName].inputSchema && chivoxToolSchemas[toolName].inputSchema.properties) || null;
-    const args = {};
-    if(props){
-      const textKey = ['ref_text', 'reference_text', 'text', 'refText'].find(k => Object.prototype.hasOwnProperty.call(props, k)) || 'ref_text';
-      const audKey = ['audio_base64', 'audio_data', 'audio', 'data'].find(k => Object.prototype.hasOwnProperty.call(props, k)) || 'audio_base64';
-      args[textKey] = refZh;
-      args[audKey] = wavBase64;
-      const fmtKey = ['audio_format', 'format', 'audio_type'].find(k => Object.prototype.hasOwnProperty.call(props, k));
-      if(fmtKey) args[fmtKey] = 'wav';
-    }else{
-      args.ref_text = refZh;
-      args.audio_base64 = wavBase64;
-    }
-
-    let parsed = null;
-    for(let attempt = 0; attempt < 2; attempt++){
-      try{
-        const rawRes = await mcpCall(cfg.key, 'tools/call', { name: toolName, arguments: args });
-        parsed = extractChivoxJson(rawRes);
-        break;
-      }catch(err){
-        const msg = String((err && err.message) || '');
-        const isCoreTimeout = /53000|timeout|busy|cluster/i.test(msg);
-        if(isCoreTimeout && attempt === 0){
-          await new Promise(r => setTimeout(r, 500));
-          continue;
-        }
-        if(isCoreTimeout && err){
-          err.code = 'OVERLOADED';
-        }
-        throw err;
-      }
-    }
+    const parsed = await withChivoxDeadline(CHIVOX_ASSESS_TIMEOUT_MS, async signal => {
+      const wavBytes = await blobToWav16kBytes(blob, true);
+      if(signal.aborted) throw signal.reason;
+      const rawRes = await mcpCallTool(cfg.key, {
+        name: 'cn_sentence_eval',
+        arguments: {ref_text: refZh, audio_base64: uint8ToBase64(wavBytes)}
+      }, signal);
+      return extractChivoxJson(rawRes);
+    });
     const num = v => (v !== null && v !== undefined && Number.isFinite(Number(v))) ? Math.round(Number(v)) : null;
     const root = unwrapChivoxPayload(parsed);
 
@@ -1220,6 +1244,9 @@
       wordResults,
       status: 'assessed'
     };
+    if(!wordResults.length && [out.overallScore, out.accuracyScore, out.fluencyScore, out.completenessScore, out.prosodyScore].every(score => score === null)){
+      throw chivoxError('Chivox không trả về điểm phát âm', 502);
+    }
     out.feedback = buildChivoxFeedback(out);
     return out;
   }
@@ -1729,7 +1756,6 @@
     clearConfig: clearChivoxConfig,
     isConfigured: isChivoxConfigured,
     isAssessEnabled: isChivoxAssessEnabled,
-    parseMcpResponseBody,
     testKey: testChivoxKey,
     assessPronunciation: assessWithChivox
   };
