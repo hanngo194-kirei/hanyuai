@@ -891,7 +891,7 @@
   /* ================= CHIVOX MCP (600 LƯỢT FREE · MANDARIN) ================= */
   const CHIVOX_STORAGE_KEY = 'hanyu_chivox_speech';
   const CHIVOX_ENDPOINT = 'https://mcp-global.cloud.chivox.com';
-  const CHIVOX_ASSESS_TIMEOUT_MS = 20000;
+  const CHIVOX_ASSESS_TIMEOUT_MS = 15000;
   const CHIVOX_TEST_TIMEOUT_MS = 8000;
   const CHIVOX_DEFAULT_CFG = { key: '', enabled: true };
   let chivoxSession = null;
