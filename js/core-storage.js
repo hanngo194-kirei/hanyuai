@@ -75,6 +75,7 @@ function fakeRecord(btn,label,done){
 /* ---------- Router (hoạt động cả khi WebView chặn hashchange) ---------- */
 const TAB={home:'home',pinyin:'home',roadmap:'learn',learn:'learn',lesson:'learn',vocab:'learn',exercise:'learn',grammar:'learn',dialog:'learn',copy:'learn',trans:'learn',listen:'learn',writing:'learn',review:'review',wordbook:'review',speak:'speak',me:'me','course-detail':'learn','lesson-editor':'learn','pdf-import':'learn','textbook-reader':'learn'};
 let curView='home';
+const navStack=[];
 const _secStartTimes={};
 window.getSectionElapsedSec=function(key){
   const k=key||curView;
@@ -85,10 +86,17 @@ window.getSectionElapsedSec=function(key){
 window.resetSectionTimer=function(key){
   if(key)_secStartTimes[key]=Date.now();
 };
-function route(forced){
+function route(forced,opts){
   if(window._activeTimeReady&&typeof touchActiveTime==='function')touchActiveTime();
   const h=(typeof forced==='string'&&forced)?forced:((location.hash&&location.hash.length>1)?location.hash.slice(1):curView);
   const id=$(`.view[data-view="${h}"]`)?h:'home';
+  const prevView=curView;
+  if(opts&&opts.resetStack){
+    navStack.length=0;
+  }else if(!(opts&&opts.isBack)&&prevView&&prevView!==id){
+    if(navStack[navStack.length-1]!==prevView)navStack.push(prevView);
+    if(navStack.length>30)navStack.shift();
+  }
   curView=id;
   if(['vocab','grammar','listen','speak','exercise','dialog','copy','writing','trans','review'].includes(id)){
     _secStartTimes[id]=Date.now();
@@ -119,9 +127,20 @@ function route(forced){
   if(id==='pinyin'&&typeof window.initPinyinView==='function'){window.initPinyinView();}
   if(window._v8Ready&&typeof onViewEntered==='function')onViewEntered(id);
 }
-function goView(id){route(id);}
+function goView(id,opts){route(id,opts);}
+function goBack(fallback){
+  while(navStack.length){
+    const prev=navStack.pop();
+    if(prev&&prev!==curView&&$(`.view[data-view="${prev}"]`)){
+      route(prev,{isBack:true});
+      return;
+    }
+  }
+  route(fallback||'home',{isBack:true});
+}
+window.goBack=goBack;
 addEventListener('hashchange',()=>route());
-route('home');
+route('home',{resetStack:true});
 
 /* ---------- Click chung ---------- */
 document.addEventListener('click',e=>{
@@ -129,6 +148,14 @@ document.addEventListener('click',e=>{
   if(navLink&&!navLink.hasAttribute('data-gosk')){
     e.preventDefault();
     if(navLink.dataset.learntabJump&&typeof curLearnTab!=='undefined')curLearnTab=navLink.dataset.learntabJump;
+    if(navLink.classList.contains('back')){
+      goBack(navLink.dataset.go||'home');
+      return;
+    }
+    if(navLink.closest('.tabs,.sidebar')){
+      goView(navLink.dataset.go,{resetStack:true});
+      return;
+    }
     goView(navLink.dataset.go);
     return;
   }

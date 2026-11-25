@@ -807,16 +807,41 @@ const speakCtrl=(function(){
     saveStore(store);
   }
 
-  function releaseMic(){
+  function destroyMicStream(){
+    if(stream){try{stream.getTracks().forEach(t=>t.stop());}catch(_){}stream=null;}
+  }
+  async function getReusableMicStream(){
+    if(stream){
+      const tracks=stream.getAudioTracks();
+      if(tracks.some(t=>t.readyState==='live')){
+        tracks.forEach(t=>{try{t.enabled=true;}catch(_){}});
+        return stream;
+      }
+      destroyMicStream();
+    }
+    const s=await navigator.mediaDevices.getUserMedia({audio:true});
+    stream=s;
+    try{localStorage.setItem('hanyu_mic_granted','1');}catch(_){}
+    return stream;
+  }
+  function releaseMic(hardStop){
     isRecording=false;
     clearInterval(timerId);timerId=null;
     if(typeof cancelAnimationFrame==='function'&&rafId)cancelAnimationFrame(rafId);rafId=null;
     if(liveRec){try{liveRec.stop();}catch(_){}liveRec=null;}
     if(mediaRec&&mediaRec.state!=='inactive'){try{mediaRec.stop();}catch(_){}}
-    if(stream){try{stream.getTracks().forEach(t=>t.stop());}catch(_){}stream=null;}
+    if(hardStop===true){
+      destroyMicStream();
+    }else if(stream){
+      try{stream.getAudioTracks().forEach(t=>{t.enabled=false;});}catch(_){}
+    }
     if(audioCtx){try{audioCtx.close();}catch(_){}audioCtx=null;analyser=null;}
     $('#sp-mic').classList.remove('rec');
     if(meterEl)$$('i',meterEl).forEach(el=>el.style.height='4px');
+  }
+  if(typeof window!=='undefined'&&!window._hanyuMicUnloadBound){
+    window._hanyuMicUnloadBound=true;
+    window.addEventListener('pagehide',()=>releaseMic(true));
   }
   function clearRecBlob(){
     if(recUrl){try{URL.revokeObjectURL(recUrl);}catch(_){}recUrl=null;}
@@ -1113,7 +1138,7 @@ const speakCtrl=(function(){
     clearRecBlob();
     const maxSec=Number($('#sp-maxsec').value)||15;
     try{
-      stream=await navigator.mediaDevices.getUserMedia({audio:true});
+      stream=await getReusableMicStream();
     }catch(err){
       const msg=err&&err.name==='NotAllowedError'?'Bạn đã từ chối quyền micro':err&&err.name==='NotFoundError'?'Không tìm thấy micro trên thiết bị':'Không thể truy cập micro';
       toast(msg);$('#sp-rec-state').textContent=msg;return;
