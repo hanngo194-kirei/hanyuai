@@ -325,19 +325,19 @@ body.sub .bg{background-image:var(--bg-sub);background-position:center center;ba
 .stats4 b{display:block;font-size:16px;line-height:1.2;margin-top:4px}
 .stats4 span{font-size:11.5px;color:var(--muted);line-height:1.2;display:block}
 .week{display:grid;grid-template-columns:132px 1fr;gap:10px;align-items:stretch}
-@media (max-width:400px){.week{grid-template-columns:1fr}}
+@media (max-width:560px){.week{grid-template-columns:1fr}.wstats{grid-template-columns:repeat(3,1fr);gap:8px}}
 .wstats{display:grid;gap:10px;align-content:start}
-.wstats div{display:flex;gap:8px;align-items:center;font-size:13px;line-height:1.25}
-.wstats .ic{color:var(--accent);width:1.7em;height:1.7em}
+.wstats div{display:flex;gap:8px;align-items:center;font-size:13px;line-height:1.25;min-width:0}
+.wstats .ic{color:var(--accent);width:1.7em;height:1.7em;flex:none}
 .wstats b{display:block;font-size:15px}
-.chart{display:grid;grid-template-columns:30px 1fr;gap:6px;height:178px}
-.yax{display:flex;flex-direction:column-reverse;justify-content:space-between;font-size:11px;color:var(--muted);padding-bottom:20px;text-align:right}
-.cols{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;align-items:end;border-bottom:1px solid var(--line)}
-.col{display:grid;grid-template-rows:1fr 20px;height:100%;text-align:center;min-width:0}
+.chart{display:grid;grid-template-columns:30px 1fr;gap:6px;height:178px;min-width:0}
+.yax{display:flex;flex-direction:column-reverse;justify-content:space-between;font-size:11px;color:var(--muted);padding-bottom:22px;text-align:right}
+.cols{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;align-items:end;border-bottom:1px solid var(--line);min-width:0}
+.col{display:grid;grid-template-rows:1fr 22px;height:100%;text-align:center;min-width:0}
 .col .z{display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:2px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
 .col .z i{display:block;width:100%;border-radius:6px 6px 2px 2px;background:linear-gradient(180deg,var(--accent-2),color-mix(in srgb,var(--accent-2) 55%,var(--surface)))}
 .col.today .z i{background:linear-gradient(180deg,var(--btn-a),var(--btn-b))}
-.col .d{font-size:11.5px;color:var(--ink);padding-top:4px}
+.col .d{font-size:clamp(9.5px,2.6vw,11.5px);color:var(--ink);padding-top:4px;white-space:nowrap;overflow:hidden;line-height:1.2}
 .hist{display:grid;gap:10px}
 .hi{display:flex;gap:12px;align-items:center}
 .hi .ib{width:42px;height:42px;border-radius:12px;background:var(--surface2);color:var(--accent);display:grid;place-items:center;flex:none}

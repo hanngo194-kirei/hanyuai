@@ -444,6 +444,20 @@ function renderLessonDetail(){
     const rawZh=(l.titleZh||'你好').replace(/[。？！?!\s]+$/,'').slice(0,4);
     heroZh.textContent=(rawZh||'你好')+'!';
   }
+  const illusImg=$('#ls-illus-img'),illusSvg=$('#ls-illus svg');
+  const coverUrl=(typeof LESSON_COVERS!=='undefined'&&LESSON_COVERS&&l.id)?LESSON_COVERS[l.id]:'';
+  if(illusImg){
+    if(coverUrl){
+      illusImg.src=coverUrl;
+      illusImg.alt=l.titleVi||l.titleZh||'Minh họa bài học';
+      illusImg.classList.remove('hide');
+      if(illusSvg)illusSvg.classList.add('hide');
+    }else{
+      illusImg.removeAttribute('src');
+      illusImg.classList.add('hide');
+      if(illusSvg)illusSvg.classList.remove('hide');
+    }
+  }
   if(hero){
     const c=(typeof COURSES!=='undefined')?COURSES.find(x=>x.id===l.courseId):null;
     const courseLabel=c?(c.group==='hanngu'?(c.title||'Giáo trình').replace(/\s+(\d+)$/,' · Quyển $1'):(c.title||'Giáo trình')):'Giáo trình Hán ngữ';
@@ -497,40 +511,10 @@ function renderLessonDetail(){
   }
   // Audio đối chiếu (8D)
   const audioCard=$('#ls-audio-card');
-  if(audioCard){
-    const tracks=Array.isArray(l.audioTracks)?l.audioTracks:[];
-    if(!tracks.length){audioCard.classList.add('hide');audioCard.innerHTML='';}
-    else{
-      audioCard.classList.remove('hide');
-      audioCard.innerHTML=`<div class="barrow" style="justify-content:space-between;margin-bottom:6px"><b>Audio bài học đã đối chiếu (${tracks.length} track)</b><button type="button" class="chip" id="ls-load-audio-btn">Nạp MP3 / ZIP</button></div><div id="ls-audio-tracks-list" class="small muted">Đang kiểm tra bộ nhớ âm thanh...</div>`;
-      Promise.all(tracks.map(async tr=>{
-        let rec=await HanyuIDB.get('media',normMediaName(tr.fileName));
-        if(!rec&&tr.fileName&&tr.fileName.includes('/')){
-          rec=await HanyuIDB.get('media',normMediaName(tr.fileName.split('/').pop()));
-        }
-        return {tr,rec};
-      })).then(items=>{
-        const box=$('#ls-audio-tracks-list');if(!box)return;
-        box.innerHTML=items.map(({tr,rec},idx)=>{
-          if(rec&&rec.blob){
-            const url=URL.createObjectURL(rec.blob);
-            return `<div style="margin-top:6px"><div style="font-weight:600;color:var(--ink)">${escHtml(tr.label||tr.fileName)}</div><audio controls preload="none" src="${url}" style="width:100%;height:34px;margin-top:4px"></audio></div>`;
-          }
-          return `<div style="margin-top:4px">• ${escHtml(tr.label||tr.fileName)} — <span style="color:var(--muted)">Chưa nạp file MP3 từ máy</span></div>`;
-        }).join('');
-      });
-    }
-  }
-  // SBT & Đáp án (8D)
+  if(audioCard){audioCard.classList.add('hide');audioCard.innerHTML='';}
+  // SBT & Đáp án (8D) — bỏ hiển thị khối rườm rà ở màn chi tiết bài học
   const wbCard=$('#ls-workbook-card');
-  if(wbCard){
-    const wb=l.workbook;
-    if(!wb||(!wb.exercisesNote&&!wb.answerKeyNote&&!wb.transcriptNote)){wbCard.classList.add('hide');wbCard.innerHTML='';}
-    else{
-      wbCard.classList.remove('hide');
-      wbCard.innerHTML=`<details><summary style="cursor:pointer;font-weight:700">Sách bài tập &amp; Đáp án đối chiếu</summary><div class="small" style="margin-top:8px;line-height:1.55;white-space:pre-line">${wb.exercisesNote?`<div><b>Bài tập:</b> ${escHtml(wb.exercisesNote)}</div>`:''}${wb.answerKeyNote?`<div style="margin-top:6px"><b>Đáp án:</b>\n${escHtml(wb.answerKeyNote)}</div>`:''}${wb.transcriptNote?`<div style="margin-top:6px"><b>Lời thoại nghe:</b>\n${escHtml(wb.transcriptNote)}</div>`:''}</div></details>`;
-    }
-  }
+  if(wbCard){wbCard.classList.add('hide');wbCard.innerHTML='';}
   // Mở rộng tùy chọn Hack não & Sơ đồ tư duy (8D)
   const extCard=$('#ls-ext-card');
   if(extCard){
@@ -669,7 +653,7 @@ function renderHomeTrackHub(){
       ${covHtml}
       <div class="hm-tr-mid">
         <div class="hm-tr-title-line"><span class="hm-tr-title">${escHtml(title)}</span>${tagTxt?`<span class="hm-tr-tag ${isDone?'done':'on'}">${tagTxt}</span>`:''}</div>
-        <div class="hm-tr-prog-line"><div class="hm-tc-bar"><i style="width:${st.pct}%"></i></div><span class="hm-tr-stat">Tiến độ: ${st.doneCnt}/${st.total} bài</span><b class="hm-tr-pct">${st.pct}%</b></div>
+        <div class="hm-tr-prog-line"><div class="hm-tc-bar"><i style="width:${st.pct}%"></i></div><span class="hm-tr-stat">${st.doneCnt}/${st.total} bài</span><b class="hm-tr-pct">${st.pct}%</b></div>
       </div>
       <span class="hm-tr-chev" aria-hidden="true">›</span>
     </button>`;
@@ -699,7 +683,7 @@ function renderHomeTrackHub(){
         <button type="button" class="free-pill" data-open-setup="1">Đổi giáo trình</button>
       </div>
     </div>
-    <div class="hm-track-rows">
+    <div class="hm-track-rows single">
       ${mkRow(singleId,setup.mode==='hsk30'?'hsk':'hn',setup.mode==='hsk30'?'HSK':'汉语',setup.mode==='hsk30'?'Cấp '+lv:'Q'+lv,singleTitle,singleSt)}
     </div>
   </div>`;

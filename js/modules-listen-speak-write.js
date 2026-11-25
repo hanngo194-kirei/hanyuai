@@ -598,16 +598,15 @@ const TONE_PATHS={
 // Lớp đánh giá phát âm: ưu tiên Chivox MCP, tiếp theo Gemini Free, Azure Speech, cuối cùng endpoint tùy biến
 const PronunciationAssessor={
   getConfig(){
+    if(typeof TonePerfectSpeech!=='undefined'&&TonePerfectSpeech&&TonePerfectSpeech.isAssessEnabled&&TonePerfectSpeech.isAssessEnabled()){
+      return {configured:true,provider:'toneperfect',mode:'toneperfect-rest',label:'TonePerfect AI (zh-CN)'};
+    }
     if(typeof ChivoxSpeech!=='undefined'&&ChivoxSpeech&&ChivoxSpeech.isAssessEnabled&&ChivoxSpeech.isAssessEnabled()){
       return {configured:true,provider:'chivox',mode:'chivox-mcp',label:'Chivox Mandarin AI'};
     }
     if(typeof GeminiSpeech!=='undefined'&&GeminiSpeech&&GeminiSpeech.isAssessEnabled&&GeminiSpeech.isAssessEnabled()){
       const gm=GeminiSpeech.getConfig();
       return {configured:true,provider:'gemini',mode:'gemini-rest',model:gm.model,label:'Google Gemini ('+gm.model+')'};
-    }
-    if(typeof AzureSpeech!=='undefined'&&AzureSpeech&&AzureSpeech.isAssessEnabled&&AzureSpeech.isAssessEnabled()){
-      const az=AzureSpeech.getConfig();
-      return {configured:true,provider:'azure-speech',mode:'azure-sdk',region:az.region,label:'Azure AI Speech (zh-CN)'};
     }
     const cfg=(typeof window!=='undefined'&&window.HANYU_ASSESS_CONFIG)||null;
     if(cfg&&typeof cfg.endpoint==='string'&&cfg.endpoint.trim()){
@@ -655,6 +654,12 @@ const PronunciationAssessor={
   async assess(blob,item){
     const cfg=this.getConfig();
     if(!cfg.configured)throw new Error('NOT_CONFIGURED');
+    if(cfg.mode==='toneperfect-rest'&&typeof TonePerfectSpeech!=='undefined'){
+      const data=await TonePerfectSpeech.assessPronunciation(blob,item.zh,item.py);
+      const norm=this.normalize(data,{id:item.id,zh:item.zh,py:item.py,provider:'toneperfect'});
+      if(!norm)throw new Error('INVALID_RESPONSE');
+      return norm;
+    }
     if(cfg.mode==='chivox-mcp'&&typeof ChivoxSpeech!=='undefined'){
       const data=await ChivoxSpeech.assessPronunciation(blob,item.zh,item.py);
       const norm=this.normalize(data,{id:item.id,zh:item.zh,py:item.py,provider:'chivox'});
@@ -664,12 +669,6 @@ const PronunciationAssessor={
     if(cfg.mode==='gemini-rest'&&typeof GeminiSpeech!=='undefined'){
       const data=await GeminiSpeech.assessPronunciation(blob,item.zh,item.py);
       const norm=this.normalize(data,{id:item.id,zh:item.zh,py:item.py,provider:'gemini'});
-      if(!norm)throw new Error('INVALID_RESPONSE');
-      return norm;
-    }
-    if(cfg.mode==='azure-sdk'&&typeof AzureSpeech!=='undefined'){
-      const data=await AzureSpeech.assessPronunciation(blob,item.zh);
-      const norm=this.normalize(data,{id:item.id,zh:item.zh,py:item.py,provider:'azure-speech'});
       if(!norm)throw new Error('INVALID_RESPONSE');
       return norm;
     }
@@ -1265,8 +1264,19 @@ const speakCtrl=(function(){
       if(cfg.configured&&apiCallsInSession<MAX_API_CALLS_SESSION){
         apiCallsInSession++;countedApi=true;
         try{
-          const [aiRes,pitchRes]=await Promise.all([
+          const assessWithCap = Promise.race([
             PronunciationAssessor.assess(blob,it),
+            new Promise((_,reject)=>{
+              setTimeout(()=>{
+                const te=new Error('Chivox chưa phản hồi sau 10 giây');
+                te.code='CHIVOX_TIMEOUT';
+                te.status=504;
+                reject(te);
+              },10000);
+            })
+          ]);
+          const [aiRes,pitchRes]=await Promise.all([
+            assessWithCap,
             (typeof LocalSpeechAnalyzer!=='undefined'&&LocalSpeechAnalyzer.extractPitchContour)
               ? LocalSpeechAnalyzer.extractPitchContour(blob).catch(()=>null)
               : Promise.resolve(null)
@@ -1295,12 +1305,21 @@ const speakCtrl=(function(){
           }
         }catch(aiErr){
           const code=(aiErr&&aiErr.code)||'';
-          const isFallbackErr=(code==='CHIVOX_TIMEOUT'||code==='OVERLOADED'||code==='RATE_LIMIT'||code==='NETWORK_ERROR'||(aiErr&&(aiErr.message==='SDK_LOAD_ERROR'||aiErr.message==='SDK_TIMEOUT')));
+          const msgStr=String((aiErr&&aiErr.message)||'');
+          const statusNum=Number(aiErr&&aiErr.status)||0;
+          const isFatalUserErr=(code==='AUTH_ERROR'||code==='NO_MATCH'||msgStr==='EMPTY_AUDIO_BLOB'||msgStr==='NO_AUDIO_CONTEXT'||msgStr==='NOT_CONFIGURED');
+          const isFallbackErr=!isFatalUserErr&&(
+            code==='CHIVOX_TIMEOUT'||code==='OVERLOADED'||code==='RATE_LIMIT'||code==='NETWORK_ERROR'||code==='CHIVOX_API_ERROR'||
+            statusNum===408||statusNum===429||statusNum>=500||
+            /\b(500|502|503|504|408)\b|timeout|timed out|INVALID_RESPONSE|SDK_LOAD_ERROR|SDK_TIMEOUT|API_ERROR_/i.test(msgStr)
+          );
           if(isFallbackErr&&typeof LocalSpeechAnalyzer!=='undefined'&&LocalSpeechAnalyzer.assessLocal){
             apiCallsInSession=Math.max(0,apiCallsInSession-1);
             countedApi=false;
-            fallbackNotice=code==='CHIVOX_TIMEOUT'?'Chivox quá thời gian chờ. Đã phân tích trên thiết bị.':'Dịch vụ AI tạm thời không phản hồi. Đã phân tích trên thiết bị.';
-            btn.textContent='Đang phân tích trên thiết bị…';
+            fallbackNotice=(code==='CHIVOX_TIMEOUT'||statusNum===504||/\b504\b/.test(msgStr))
+              ?'Chivox quá thời gian chờ (10s / HTTP 504). Đã trả kết quả phân tích qua web.'
+              :'Dịch vụ AI tạm thời không phản hồi. Đã trả kết quả phân tích qua web.';
+            btn.textContent='Đang phân tích qua web…';
             result=await runLocal();
           }else{
             throw aiErr;
@@ -1511,6 +1530,55 @@ function computeWriteWidth(baseW,penType,p){
   if(penType==='highlighter')return Math.max(3,baseW*1.9);
   return Math.max(1.8,baseW*(0.45+p*1.1));
 }
+function drawTaperedWriteCurve(ctx,x0,y0,cx0,cy0,x1,y1,w0,w1){
+  const len=Math.hypot(cx0-x0,cy0-y0)+Math.hypot(x1-cx0,y1-cy0);
+  if(len<0.05){
+    ctx.lineWidth=(w0+w1)*0.5;
+    ctx.beginPath();ctx.arc(x0,y0,ctx.lineWidth*0.5,0,Math.PI*2);ctx.fill();
+    return;
+  }
+  const steps=Math.max(1,Math.min(24,Math.ceil(len/2.5)));
+  if(steps===1||Math.abs(w1-w0)<0.12){
+    ctx.lineWidth=(w0+w1)*0.5;
+    ctx.beginPath();ctx.moveTo(x0,y0);ctx.quadraticCurveTo(cx0,cy0,x1,y1);ctx.stroke();
+    return;
+  }
+  let px=x0,py=y0;
+  for(let k=1;k<=steps;k++){
+    const t=k/steps,mt=1-t;
+    const qx=mt*mt*x0+2*mt*t*cx0+t*t*x1;
+    const qy=mt*mt*y0+2*mt*t*cy0+t*t*y1;
+    const tm=(k-0.5)/steps;
+    ctx.lineWidth=Math.max(0.7,w0+(w1-w0)*tm);
+    ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(qx,qy);ctx.stroke();
+    px=qx;py=qy;
+  }
+}
+function sampleWritePoint(e,rect,prevPt,strokeSize,penType,stateObj){
+  const x=e.clientX-rect.left,y=e.clientY-rect.top;
+  const nowT=e.timeStamp||performance.now();
+  let pr=0.5,real=false;
+  if(typeof window.HanyuStylus!=='undefined'&&window.HanyuStylus.extractSamplePressure){
+    const res=window.HanyuStylus.extractSamplePressure(e,stateObj.hasRealP);
+    pr=res.p;real=res.real;
+  }else if(e.pointerType==='pen'&&Number.isFinite(e.pressure)&&e.pressure>0&&e.pressure!==0.5&&e.pressure!==1){
+    pr=Math.min(1,Math.max(0.05,e.pressure));real=true;
+  }
+  if(real)stateObj.hasRealP=true;
+  let vel=0.12,ang=0;
+  if(prevPt){
+    const dx=x-prevPt.x,dy=y-prevPt.y;
+    const dist=Math.hypot(dx,dy);
+    const dt=Math.max(1,nowT-(prevPt.t||nowT-8));
+    vel=dist/dt;
+    ang=Math.atan2(dy,dx);
+  }
+  const targetW=(typeof window.HanyuStylus!=='undefined'&&window.HanyuStylus.computeStrokeWidth)
+    ?window.HanyuStylus.computeStrokeWidth(penType,strokeSize,pr,stateObj.hasRealP,vel,ang)
+    :computeWriteWidth(strokeSize,penType,pr);
+  stateObj.smoothW=stateObj.smoothW?(stateObj.smoothW*0.65+targetW*0.35):targetW;
+  return {x,y,p:Number(pr.toFixed(3)),w:Number(stateObj.smoothW.toFixed(2)),t:nowT};
+}
 function drawPressurePath(ctx,stObj,baseW,color,scaleX=1,scaleY=1){
   const isObj=stObj&&!Array.isArray(stObj)&&Array.isArray(stObj.pts);
   const pts=isObj?stObj.pts:stObj;
@@ -1521,6 +1589,7 @@ function drawPressurePath(ctx,stObj,baseW,color,scaleX=1,scaleY=1){
   const strokeCol=isObj&&stObj.color?stObj.color:color;
   const softness=isObj&&Number.isFinite(Number(stObj.softness))?Number(stObj.softness):0;
   const rawOp=isObj&&Number(stObj.opacity)>0?Number(stObj.opacity):1;
+  const ptW=pt=>(pt&&Number.isFinite(pt.w)&&pt.w>0)?Math.max(0.7,pt.w*scaleX):computeWriteWidth(strokeSize,penType,pt.p||0.5);
 
   ctx.save();
   ctx.lineCap='round';ctx.lineJoin='round';
@@ -1564,17 +1633,29 @@ function drawPressurePath(ctx,stObj,baseW,color,scaleX=1,scaleY=1){
 
   ctx.globalAlpha=rawOp;
   if(pts.length===1){
-    const w=computeWriteWidth(strokeSize,penType,pts[0].p||0.5);
+    const w=ptW(pts[0]);
     ctx.beginPath();ctx.arc(pts[0].x*scaleX,pts[0].y*scaleY,w/2,0,Math.PI*2);ctx.fill();
     ctx.restore();
     return;
   }
-  for(let k=1;k<pts.length;k++){
-    const a=pts[k-1],b=pts[k];
-    const p=((a.p||0.5)+(b.p||0.5))/2;
-    ctx.lineWidth=computeWriteWidth(strokeSize,penType,p);
-    ctx.beginPath();ctx.moveTo(a.x*scaleX,a.y*scaleY);ctx.lineTo(b.x*scaleX,b.y*scaleY);ctx.stroke();
+  if(pts.length===2){
+    const x0=pts[0].x*scaleX,y0=pts[0].y*scaleY,x1=pts[1].x*scaleX,y1=pts[1].y*scaleY;
+    drawTaperedWriteCurve(ctx,x0,y0,(x0+x1)*0.5,(y0+y1)*0.5,x1,y1,ptW(pts[0]),ptW(pts[1]));
+    ctx.restore();
+    return;
   }
+  let prevX=pts[0].x*scaleX,prevY=pts[0].y*scaleY,prevW=ptW(pts[0]);
+  for(let k=1;k<pts.length-1;k++){
+    const a=pts[k],b=pts[k+1];
+    const ax=a.x*scaleX,ay=a.y*scaleY;
+    const xc=(ax+b.x*scaleX)*0.5,yc=(ay+b.y*scaleY)*0.5;
+    const w1=(ptW(a)+ptW(b))*0.5;
+    drawTaperedWriteCurve(ctx,prevX,prevY,ax,ay,xc,yc,prevW,w1);
+    prevX=xc;prevY=yc;prevW=w1;
+  }
+  const last=pts[pts.length-1];
+  const lx=last.x*scaleX,ly=last.y*scaleY;
+  drawTaperedWriteCurve(ctx,prevX,prevY,(prevX+lx)*0.5,(prevY+ly)*0.5,lx,ly,prevW,ptW(last));
   ctx.restore();
 }
 
@@ -1611,43 +1692,93 @@ function redrawFreeCanvas(){
   const col=getComputedStyle(document.body).color;
   for(const st of strokesHist)drawPressurePath(cx,st,9.5,col);
 }
-const pt=e=>{
-  const r=cv.getBoundingClientRect();
-  const pr=(e.pointerType==='pen'&&Number.isFinite(e.pressure)&&e.pressure>0)?e.pressure:0.48;
-  return {x:e.clientX-r.left,y:e.clientY-r.top,p:pr};
+let wActivePtrId=null;
+const wStrokeDyn={hasRealP:false,smoothW:0};
+const drawLiveWriteSeg=(targetCtx,stObj,ptsArr)=>{
+  const n=ptsArr.length;
+  if(n<2)return;
+  if(n===2){
+    drawPressurePath(targetCtx,Object.assign({},stObj,{pts:[ptsArr[0],ptsArr[1]]}),9.5,getComputedStyle(document.body).color);
+    return;
+  }
+  const p2=ptsArr[n-3],p1=ptsArr[n-2],p0=ptsArr[n-1];
+  const col=stObj.color||getComputedStyle(document.body).color;
+  const ptW=pt=>(pt&&Number.isFinite(pt.w)&&pt.w>0)?Math.max(0.7,pt.w):computeWriteWidth(stObj.size||9.5,stObj.penType||'fountain',pt.p||0.5);
+  targetCtx.save();
+  targetCtx.lineCap='round';targetCtx.lineJoin='round';
+  targetCtx.globalCompositeOperation='source-over';
+  targetCtx.strokeStyle=col;targetCtx.fillStyle=col;
+  targetCtx.globalAlpha=Number(stObj.opacity)>0?Number(stObj.opacity):1;
+  if(stObj.softness>0){targetCtx.shadowBlur=Math.max(0.5,stObj.softness*((stObj.size||9.5)*0.85+3));targetCtx.shadowColor=col;}
+  const xm=(p2.x+p1.x)*0.5,ym=(p2.y+p1.y)*0.5,wm=(ptW(p2)+ptW(p1))*0.5;
+  const xc=(p1.x+p0.x)*0.5,yc=(p1.y+p0.y)*0.5,wc=(ptW(p1)+ptW(p0))*0.5;
+  drawTaperedWriteCurve(targetCtx,xm,ym,p1.x,p1.y,xc,yc,wm,wc);
+  drawTaperedWriteCurve(targetCtx,xc,yc,(xc+p0.x)*0.5,(yc+p0.y)*0.5,p0.x,p0.y,wc,ptW(p0));
+  targetCtx.restore();
 };
 cv.addEventListener('pointerdown',e=>{
   const freeCanvasActive=wMode==='free'||!pad.classList.contains('hw-on');
   if(!freeCanvasActive)return;
-  if(e.pointerType==='pen'){wLastPenAt=Date.now();if(!wPenActive){wPenActive=true;updateStylusPill();}}
+  if(wActivePtrId!==null&&e.pointerId!==wActivePtrId)return;
+  const isPen=(typeof window.HanyuStylus!=='undefined'&&window.HanyuStylus.isStylusLikeEvent)?window.HanyuStylus.isStylusLikeEvent(e):(e.pointerType==='pen');
+  if(isPen){wLastPenAt=Date.now();if(!wPenActive){wPenActive=true;updateStylusPill();}}
   if(typeof window.HanyuStylus!=='undefined'){
     if(!window.HanyuStylus.shouldAcceptPointer(e,wLastPenAt))return;
   }else if(e.pointerType==='touch'&&wPenActive)return;
   if(e.pointerType==='mouse'&&wPenActive){wPenActive=false;updateStylusPill();}
-  e.preventDefault();drawing=true;const p=pt(e);
+  e.preventDefault();drawing=true;wActivePtrId=e.pointerId;
+  wStrokeDyn.hasRealP=false;wStrokeDyn.smoothW=0;
+  const r=cv.getBoundingClientRect();
+  const stCfg=getStylusCfg();
+  const hwErase=typeof window.HanyuStylus!=='undefined'&&window.HanyuStylus.isHardwareEraser(e);
+  const useTool=hwErase?'eraser':(stCfg?stCfg.tool:'pen');
+  const strokeSz=useTool==='eraser'?Math.max(8,(stCfg?stCfg.eraserSize:18)*1.2):Math.max(2,(stCfg?stCfg.penSize:3.2)*2.4);
+  const penType=stCfg?(stCfg.penType||'fountain'):'fountain';
+  const p=sampleWritePoint(e,r,null,strokeSz,penType,wStrokeDyn);
   curStroke=makeWriteStroke(e,p,2.4,9.5);
   strokesHist.push(curStroke);
   try{cv.setPointerCapture(e.pointerId);}catch(_){}
-  redrawFreeCanvas();
+  if(curStroke.tool==='eraser'||curStroke.penType==='highlighter')redrawFreeCanvas();
+  else drawPressurePath(cx,curStroke,9.5,getComputedStyle(document.body).color);
 });
 cv.addEventListener('pointermove',e=>{
   const freeCanvasActive=wMode==='free'||!pad.classList.contains('hw-on');
-  if(!drawing||!freeCanvasActive)return;
-  if(e.pointerType==='touch'){
+  if(!drawing||!freeCanvasActive||e.pointerId!==wActivePtrId)return;
+  const isPen=(typeof window.HanyuStylus!=='undefined'&&window.HanyuStylus.isStylusLikeEvent)?window.HanyuStylus.isStylusLikeEvent(e):(e.pointerType==='pen');
+  if(isPen)wLastPenAt=Date.now();
+  else if(e.pointerType==='touch'){
     if(typeof window.HanyuStylus!=='undefined'){if(!window.HanyuStylus.shouldAcceptPointer(e,wLastPenAt))return;}
     else if(wPenActive)return;
   }
-  e.preventDefault();const p=pt(e);
+  e.preventDefault();
+  const r=cv.getBoundingClientRect();
+  const evList=(typeof e.getCoalescedEvents==='function'&&e.getCoalescedEvents().length)?e.getCoalescedEvents():[e];
   const ptsArr=Array.isArray(curStroke)?curStroke:curStroke.pts;
-  const prev=ptsArr[ptsArr.length-1];
-  ptsArr.push(p);
-  if(!Array.isArray(curStroke)&&(curStroke.penType==='highlighter'||curStroke.tool==='eraser')){
-    redrawFreeCanvas();
-  }else{
-    drawPressurePath(cx,Array.isArray(curStroke)?[prev,p]:Object.assign({},curStroke,{pts:[prev,p]}),9.5,getComputedStyle(document.body).color);
+  const penType=Array.isArray(curStroke)?'fountain':(curStroke.penType||'fountain');
+  const strokeSz=Array.isArray(curStroke)?9.5:(curStroke.size||9.5);
+  for(let ei=0;ei<evList.length;ei++){
+    const ev=evList[ei];
+    const prev=ptsArr[ptsArr.length-1];
+    if(prev&&Math.hypot((ev.clientX-r.left)-prev.x,(ev.clientY-r.top)-prev.y)<1.1)continue;
+    const p=sampleWritePoint(ev,r,prev,strokeSz,penType,wStrokeDyn);
+    ptsArr.push(p);
+    if(!Array.isArray(curStroke)&&(curStroke.penType==='highlighter'||curStroke.tool==='eraser')){
+      redrawFreeCanvas();
+    }else{
+      drawLiveWriteSeg(cx,Array.isArray(curStroke)?{pts:ptsArr,size:9.5,penType:'fountain',opacity:1}:curStroke,ptsArr);
+    }
   }
 });
-['pointerup','pointercancel'].forEach(ev=>cv.addEventListener(ev,()=>{drawing=false;}));
+['pointerup','pointercancel'].forEach(ev=>cv.addEventListener(ev,e=>{
+  if(e.pointerId!==wActivePtrId)return;
+  try{cv.releasePointerCapture(e.pointerId);}catch(_){}
+  drawing=false;wActivePtrId=null;wStrokeDyn.smoothW=0;wStrokeDyn.hasRealP=false;
+}));
+['touchstart','touchmove'].forEach(evName=>cv.addEventListener(evName,e=>{
+  if(e.touches&&e.touches.length>=2)return;
+  const st=getStylusCfg();
+  if(wActivePtrId!==null||(st&&st.inputMode==='pen'))e.preventDefault();
+},{passive:false}));
 
 if(typeof window.HanyuStylus!=='undefined'){
   window.HanyuStylus.attachHanziWriterGuard(hwBox,()=>wLastPenAt);
@@ -1691,7 +1822,8 @@ function initExtraMiniPads(ch){
     </div>`).join('');
   $$('.w-extra-cell',grid).forEach(cell=>{
     const mcv=$('canvas',cell),mcx=mcv.getContext('2d'),clr=$('.w-extra-clr',cell);
-    let mDrawing=false,mStrokes=[],mCur=null;
+    let mDrawing=false,mStrokes=[],mCur=null,mActivePtrId=null;
+    const mDyn={hasRealP:false,smoothW:0};
     const col=getComputedStyle(document.body).color;
     const resizeMini=()=>{
       const r=mcv.getBoundingClientRect(),d=window.devicePixelRatio||1;
@@ -1701,40 +1833,69 @@ function initExtraMiniPads(ch){
       mStrokes.forEach(s=>drawPressurePath(mcx,s,5,col));
     };
     requestAnimationFrame(resizeMini);
-    const mPt=e=>{
-      const r=mcv.getBoundingClientRect();
-      const pr=(e.pointerType==='pen'&&Number.isFinite(e.pressure)&&e.pressure>0)?e.pressure:0.48;
-      return {x:e.clientX-r.left,y:e.clientY-r.top,p:pr};
-    };
     mcv.addEventListener('pointerdown',e=>{
-      if(e.pointerType==='pen'){wLastPenAt=Date.now();if(!wPenActive){wPenActive=true;updateStylusPill();}}
+      if(mActivePtrId!==null&&e.pointerId!==mActivePtrId)return;
+      const isPen=(typeof window.HanyuStylus!=='undefined'&&window.HanyuStylus.isStylusLikeEvent)?window.HanyuStylus.isStylusLikeEvent(e):(e.pointerType==='pen');
+      if(isPen){wLastPenAt=Date.now();if(!wPenActive){wPenActive=true;updateStylusPill();}}
       if(typeof window.HanyuStylus!=='undefined'){
         if(!window.HanyuStylus.shouldAcceptPointer(e,wLastPenAt))return;
       }else if(e.pointerType==='touch'&&wPenActive)return;
       e.preventDefault();
       if(!mcv.width)resizeMini();
-      mDrawing=true;const p=mPt(e);mCur=makeWriteStroke(e,p,1.15,5);mStrokes.push(mCur);
+      mDrawing=true;mActivePtrId=e.pointerId;mDyn.hasRealP=false;mDyn.smoothW=0;
+      const r=mcv.getBoundingClientRect(),stCfg=getStylusCfg();
+      const hwErase=typeof window.HanyuStylus!=='undefined'&&window.HanyuStylus.isHardwareEraser(e);
+      const useTool=hwErase?'eraser':(stCfg?stCfg.tool:'pen');
+      const strokeSz=useTool==='eraser'?Math.max(8,(stCfg?stCfg.eraserSize:18)*0.575):Math.max(2,(stCfg?stCfg.penSize:3.2)*1.15);
+      const penType=stCfg?(stCfg.penType||'fountain'):'fountain';
+      const p=sampleWritePoint(e,r,null,strokeSz,penType,mDyn);
+      mCur=makeWriteStroke(e,p,1.15,5);mStrokes.push(mCur);
       try{mcv.setPointerCapture(e.pointerId);}catch(_){}
-      mcx.save();mcx.setTransform(1,0,0,1,0,0);mcx.clearRect(0,0,mcv.width,mcv.height);mcx.restore();
-      mStrokes.forEach(s=>drawPressurePath(mcx,s,5,getComputedStyle(document.body).color));
-    });
-    mcv.addEventListener('pointermove',e=>{
-      if(!mDrawing||!mCur)return;
-      if(e.pointerType==='touch'){
-        if(typeof window.HanyuStylus!=='undefined'){if(!window.HanyuStylus.shouldAcceptPointer(e,wLastPenAt))return;}
-        else if(wPenActive)return;
-      }
-      e.preventDefault();const p=mPt(e);
-      const ptsArr=Array.isArray(mCur)?mCur:mCur.pts;
-      const prev=ptsArr[ptsArr.length-1];ptsArr.push(p);
-      if(!Array.isArray(mCur)&&(mCur.penType==='highlighter'||mCur.tool==='eraser')){
+      if(mCur.tool==='eraser'||mCur.penType==='highlighter'){
         mcx.save();mcx.setTransform(1,0,0,1,0,0);mcx.clearRect(0,0,mcv.width,mcv.height);mcx.restore();
         mStrokes.forEach(s=>drawPressurePath(mcx,s,5,getComputedStyle(document.body).color));
       }else{
-        drawPressurePath(mcx,Array.isArray(mCur)?[prev,p]:Object.assign({},mCur,{pts:[prev,p]}),5,getComputedStyle(document.body).color);
+        drawPressurePath(mcx,mCur,5,getComputedStyle(document.body).color);
       }
     });
-    ['pointerup','pointercancel'].forEach(ev=>mcv.addEventListener(ev,()=>{mDrawing=false;}));
+    mcv.addEventListener('pointermove',e=>{
+      if(!mDrawing||!mCur||e.pointerId!==mActivePtrId)return;
+      const isPen=(typeof window.HanyuStylus!=='undefined'&&window.HanyuStylus.isStylusLikeEvent)?window.HanyuStylus.isStylusLikeEvent(e):(e.pointerType==='pen');
+      if(isPen)wLastPenAt=Date.now();
+      else if(e.pointerType==='touch'){
+        if(typeof window.HanyuStylus!=='undefined'){if(!window.HanyuStylus.shouldAcceptPointer(e,wLastPenAt))return;}
+        else if(wPenActive)return;
+      }
+      e.preventDefault();
+      const r=mcv.getBoundingClientRect();
+      const evList=(typeof e.getCoalescedEvents==='function'&&e.getCoalescedEvents().length)?e.getCoalescedEvents():[e];
+      const ptsArr=Array.isArray(mCur)?mCur:mCur.pts;
+      const penType=Array.isArray(mCur)?'fountain':(mCur.penType||'fountain');
+      const strokeSz=Array.isArray(mCur)?5:(mCur.size||5);
+      for(let ei=0;ei<evList.length;ei++){
+        const ev=evList[ei];
+        const prev=ptsArr[ptsArr.length-1];
+        if(prev&&Math.hypot((ev.clientX-r.left)-prev.x,(ev.clientY-r.top)-prev.y)<1.0)continue;
+        const p=sampleWritePoint(ev,r,prev,strokeSz,penType,mDyn);
+        ptsArr.push(p);
+        if(!Array.isArray(mCur)&&(mCur.penType==='highlighter'||mCur.tool==='eraser')){
+          mcx.save();mcx.setTransform(1,0,0,1,0,0);mcx.clearRect(0,0,mcv.width,mcv.height);mcx.restore();
+          mStrokes.forEach(s=>drawPressurePath(mcx,s,5,getComputedStyle(document.body).color));
+        }else{
+          drawLiveWriteSeg(mcx,Array.isArray(mCur)?{pts:ptsArr,size:5,penType:'fountain',opacity:1}:mCur,ptsArr);
+        }
+      }
+    });
+    ['pointerup','pointercancel'].forEach(ev=>mcv.addEventListener(ev,e=>{
+      if(e.pointerId!==mActivePtrId)return;
+      try{mcv.releasePointerCapture(e.pointerId);}catch(_){}
+      mDrawing=false;mActivePtrId=null;mDyn.smoothW=0;mDyn.hasRealP=false;
+    }));
+    ['touchstart','touchmove'].forEach(evName=>mcv.addEventListener(evName,e=>{
+      if(e.touches&&e.touches.length>=2)return;
+      const st=getStylusCfg();
+      if(mActivePtrId!==null||(st&&st.inputMode==='pen'))e.preventDefault();
+    },{passive:false}));
     clr.onclick=()=>{mStrokes=[];mcx.save();mcx.setTransform(1,0,0,1,0,0);mcx.clearRect(0,0,mcv.width,mcv.height);mcx.restore();};
   });
 }
@@ -2320,6 +2481,9 @@ let chartRange='7',chartMetric='minutes',hiSkill='all',hiDate='all',focusedSkill
 function renderHomeStreakStrip(st){
   const box=$('#hm-streak-strip');
   if(!box)return;
+  box.innerHTML='';
+  box.classList.add('hide');
+  return;
   const now=new Date();
   const dow=now.getDay(); // 0=CN, 1=T2..6=T7
   const diffToMon=dow===0?-6:1-dow;

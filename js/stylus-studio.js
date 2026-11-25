@@ -62,6 +62,7 @@ window.HanyuStylus = (function(){
   const viewActions = {};
   let activeViewName = 'home';
   let lastBlockMsgAt = 0;
+  let lastWarnFlashAt = 0;
   let blockFlashTimer = null;
   let floatingDock = null;
   let floatingMount = null;
@@ -121,23 +122,62 @@ window.HanyuStylus = (function(){
 
   function notifyPalmBlocked(reason){
     const now = Date.now();
-    mountedPanels.forEach(p => {
-      if(p.statusEl){
-        p.statusEl.classList.add('warn');
-        clearTimeout(blockFlashTimer);
-        blockFlashTimer = setTimeout(() => {
-          mountedPanels.forEach(x => x.statusEl && x.statusEl.classList.remove('warn'));
-        }, 900);
-      }
-    });
+    if(now - lastWarnFlashAt >= 450){
+      lastWarnFlashAt = now;
+      mountedPanels.forEach(p => {
+        if(p.statusEl){
+          p.statusEl.classList.add('warn');
+          clearTimeout(blockFlashTimer);
+          blockFlashTimer = setTimeout(() => {
+            mountedPanels.forEach(x => x.statusEl && x.statusEl.classList.remove('warn'));
+          }, 900);
+        }
+      });
+    }
     if(now - lastBlockMsgAt > 2400 && reason === 'keyboard' && typeof toast === 'function'){
       lastBlockMsgAt = now;
       toast('Đang ở chế độ Gõ phím · Bấm “Viết bút” để vẽ S-Pen');
     }
   }
 
+  function isStylusLikeEvent(e){
+    if(!e) return false;
+    if(e.pointerType === 'pen' || e.touchType === 'stylus') return true;
+    if(Math.abs(e.tiltX || 0) > 0 || Math.abs(e.tiltY || 0) > 0 || Math.abs(e.twist || 0) > 0) return true;
+    if(e.pointerType === 'touch' && Number(e.width) > 0 && Number(e.width) <= 4 && Number(e.height) > 0 && Number(e.height) <= 4 && Number.isFinite(e.pressure) && e.pressure > 0 && e.pressure !== 0.5 && e.pressure !== 1){
+      return true;
+    }
+    return false;
+  }
+
+  function extractSamplePressure(e, hasRealPressure){
+    if(isStylusLikeEvent(e) && Number.isFinite(e.pressure) && e.pressure > 0){
+      if(e.pressure !== 0.5 && e.pressure !== 1){
+        return { p: Math.min(1, Math.max(0.05, e.pressure)), real: true };
+      }
+      if(hasRealPressure){
+        return { p: Math.min(1, Math.max(0.05, e.pressure)), real: true };
+      }
+    }
+    return { p: 0.5, real: false };
+  }
+
+  function computeStrokeWidth(penType, baseSize, pressure, hasRealPressure, velocityPxPerMs, angleRad){
+    const base = Number(baseSize) || 3.2;
+    if(penType === 'highlighter') return base * 2.35;
+    const vNorm = Math.min(1, Math.max(0, (velocityPxPerMs || 0) / 1.8));
+    const nibAngle = Math.PI * 0.24;
+    const nibFactor = 0.72 + 0.52 * Math.abs(Math.sin((angleRad || 0) - nibAngle));
+    const effP = hasRealPressure
+      ? Math.min(1, Math.max(0.04, (Number(pressure) || 0.5) * 0.8 + (1 - vNorm) * 0.25))
+      : Math.min(1, Math.max(0.12, 1.0 - vNorm * 0.82));
+    if(penType === 'ballpoint') return Math.max(0.8, base * (0.86 + effP * 0.28));
+    if(penType === 'brush') return Math.max(0.8, base * (0.18 + Math.pow(effP, 1.35) * 2.15) * (0.85 + 0.25 * (1 - vNorm)));
+    return Math.max(0.7, base * (0.30 + Math.pow(effP, 1.15) * 1.25) * nibFactor * (0.88 + 0.22 * (1 - vNorm)));
+  }
+
   function isHardwareEraser(e){
-    return !!(e && e.pointerType === 'pen' && (e.buttons === 32 || e.button === 5));
+    return !!(e && isStylusLikeEvent(e) && (e.buttons === 32 || e.button === 5));
   }
 
   function shouldAcceptPointer(e, lastPenAt){
@@ -146,6 +186,7 @@ window.HanyuStylus = (function(){
       return false;
     }
     if(!e) return true;
+    if(isStylusLikeEvent(e)) return true;
     const pt = e.pointerType;
     if(pt === 'pen' || pt === 'mouse' || !pt) return true;
     if(pt === 'touch'){
@@ -170,17 +211,34 @@ window.HanyuStylus = (function(){
   function attachHanziWriterGuard(hwEl, getLastPenAt){
     if(!hwEl || hwEl.dataset.szGuardAttached) return;
     hwEl.dataset.szGuardAttached = '1';
+    let penDown = false;
+    let activePenPtrId = null;
     let allowPenTouchUntil = 0;
     let rejectTouchUntil = 0;
 
+    function hasStylusTouch(e){
+      const lists = [e && e.touches, e && e.changedTouches];
+      for(let li = 0; li < lists.length; li++){
+        const lst = lists[li];
+        if(!lst) continue;
+        for(let i = 0; i < lst.length; i++){
+          if(lst[i] && lst[i].touchType === 'stylus') return true;
+        }
+      }
+      return false;
+    }
+
     hwEl.addEventListener('pointerdown', e => {
-      if(e.pointerType === 'pen'){
-        allowPenTouchUntil = Date.now() + 140;
+      if(isStylusLikeEvent(e)){
         if(state.inputMode === 'keyboard'){
           e.stopPropagation();
           e.preventDefault();
           notifyPalmBlocked('keyboard');
+          return;
         }
+        penDown = true;
+        activePenPtrId = e.pointerId;
+        allowPenTouchUntil = Date.now() + 1000;
         return;
       }
       const lp = typeof getLastPenAt === 'function' ? getLastPenAt() : 0;
@@ -192,25 +250,52 @@ window.HanyuStylus = (function(){
     }, true);
 
     hwEl.addEventListener('pointermove', e => {
+      if(isStylusLikeEvent(e) || (activePenPtrId !== null && e.pointerId === activePenPtrId)){
+        allowPenTouchUntil = Date.now() + 500;
+        return;
+      }
       if(e.pointerType === 'touch' && (Date.now() < rejectTouchUntil || !shouldAcceptPointer(e, typeof getLastPenAt === 'function' ? getLastPenAt() : 0))){
         e.stopPropagation();
       }
     }, true);
 
+    function endPenPtr(e){
+      if(activePenPtrId !== null && e.pointerId === activePenPtrId){
+        penDown = false;
+        activePenPtrId = null;
+        allowPenTouchUntil = Date.now() + 160;
+      }
+    }
+    hwEl.addEventListener('pointerup', endPenPtr, true);
+    hwEl.addEventListener('pointercancel', endPenPtr, true);
+
     hwEl.addEventListener('touchstart', e => {
       if(e.touches && e.touches.length >= 2) return;
       const now = Date.now();
-      if(state.inputMode === 'keyboard' || now < rejectTouchUntil || (!state.allowTouchDraw && now > allowPenTouchUntil)){
+      if(state.inputMode === 'keyboard'){
         e.stopPropagation();
         e.preventDefault();
-        notifyPalmBlocked(state.inputMode === 'keyboard' ? 'keyboard' : 'touch');
+        notifyPalmBlocked('keyboard');
+        return;
+      }
+      if(penDown || hasStylusTouch(e) || now <= allowPenTouchUntil) return;
+      if(now < rejectTouchUntil || !state.allowTouchDraw){
+        e.stopPropagation();
+        e.preventDefault();
+        notifyPalmBlocked('touch');
       }
     }, { passive: false, capture: true });
 
     hwEl.addEventListener('touchmove', e => {
       if(e.touches && e.touches.length >= 2) return;
       const now = Date.now();
-      if(state.inputMode === 'keyboard' || now < rejectTouchUntil || (!state.allowTouchDraw && now > allowPenTouchUntil)){
+      if(state.inputMode === 'keyboard'){
+        e.stopPropagation();
+        e.preventDefault();
+        return;
+      }
+      if(penDown || hasStylusTouch(e) || now <= allowPenTouchUntil) return;
+      if(now < rejectTouchUntil || !state.allowTouchDraw){
         e.stopPropagation();
         e.preventDefault();
       }
@@ -401,11 +486,9 @@ window.HanyuStylus = (function(){
     for(let i = 1; i < pts.length; i++){
       const a = pts[i - 1], b = pts[i];
       const p = (a[2] + b[2]) / 2;
-      let lw = base;
-      if(state.penType === 'ballpoint') lw = base * (0.9 + p * 0.2);
-      else if(state.penType === 'fountain') lw = base * (0.45 + p * 1.15);
-      else if(state.penType === 'brush') lw = base * (0.25 + Math.pow(p, 1.35) * 1.95);
-      ctx.lineWidth = Math.max(0.8, Math.min(h * 0.76, lw));
+      const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      const lw = computeStrokeWidth(state.penType, base, p, true, 0.55 * (1.15 - p), ang);
+      ctx.lineWidth = Math.max(0.7, Math.min(h * 0.76, lw));
       ctx.beginPath();
       ctx.moveTo(a[0], a[1]);
       ctx.lineTo(b[0], b[1]);
@@ -841,6 +924,9 @@ window.HanyuStylus = (function(){
     stepZoom,
     setZoomLocked,
     shouldAcceptPointer,
+    isStylusLikeEvent,
+    extractSamplePressure,
+    computeStrokeWidth,
     isHardwareEraser,
     attachHanziWriterGuard,
     mountPanel,

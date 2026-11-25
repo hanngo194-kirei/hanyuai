@@ -113,19 +113,16 @@
     return cleared;
   }
 
-  function isConfigured(cfg){
-    const c = cfg || getConfig();
-    return Boolean(c.key && c.key.length >= 8 && c.region);
+  function isConfigured(){
+    return false;
   }
 
   function isTtsEnabled(){
-    const c = getConfig();
-    return isConfigured(c) && c.useTts !== false;
+    return false;
   }
 
   function isAssessEnabled(){
-    const c = getConfig();
-    return isConfigured(c) && c.useAssess !== false;
+    return false;
   }
 
   function scoreZhVoice(v){
@@ -290,54 +287,9 @@
     const done = typeof onEnd === 'function' ? onEnd : () => {};
     if(!text){ done(); return; }
 
-    const seq = ++playSeq;
+    playSeq++;
     stopAudio(true);
-
-    if(!isTtsEnabled()){
-      speakLocal(text, rate, done, true);
-      return;
-    }
-
-    try{
-      const url = await synthesizeToUrl(text, rate);
-      if(seq !== playSeq) return;
-      const audio = getAudioEl();
-      activeAudio = audio;
-      let finished = false;
-      const finishOk = () => {
-        if(finished) return;
-        finished = true;
-        if(activeAudio === audio) activeAudio = null;
-        if(seq === playSeq) done();
-      };
-      const finishErr = () => {
-        if(finished) return;
-        finished = true;
-        if(activeAudio === audio) activeAudio = null;
-        if(seq !== playSeq) return;
-        speakLocal(text, rate, done, true);
-      };
-      audio.onended = finishOk;
-      audio.onerror = finishErr;
-      audio.src = url;
-      audio.volume = 1.0;
-      if(typeof boostAudioEl === 'function') boostAudioEl(audio, 1.75);
-      const p = audio.play();
-      if(p && typeof p.catch === 'function'){
-        p.catch(finishErr);
-      }
-    }catch(err){
-      if(seq !== playSeq) return;
-      if(!azureErrNotified){
-        azureErrNotified = true;
-        if(err && (err.status === 401 || err.status === 403)){
-          notify('Key hoặc Region Azure chưa đúng, tạm phát giọng trên máy');
-        }else{
-          notify('Không kết nối được Azure TTS, tạm phát giọng trên máy');
-        }
-      }
-      speakLocal(text, rate, done, true);
-    }
+    speakLocal(text, rate, done, true);
   }
 
   function encodeWav16kMono(float32Samples, sampleRate){
@@ -891,7 +843,7 @@
   /* ================= CHIVOX MCP (600 LƯỢT FREE · MANDARIN) ================= */
   const CHIVOX_STORAGE_KEY = 'hanyu_chivox_speech';
   const CHIVOX_ENDPOINT = 'https://mcp-global.cloud.chivox.com';
-  const CHIVOX_ASSESS_TIMEOUT_MS = 15000;
+  const CHIVOX_ASSESS_TIMEOUT_MS = 10000;
   const CHIVOX_TEST_TIMEOUT_MS = 8000;
   const CHIVOX_DEFAULT_CFG = { key: '', enabled: true };
   let chivoxSession = null;
@@ -1251,7 +1203,212 @@
     return out;
   }
 
-  /* ================= MODAL HỢP NHẤT (CHIVOX + GEMINI + AZURE + GIỌNG MÁY) ================= */
+  /* ================= TONEPERFECT API (50 CREDITS FREE · zh-CN) ================= */
+  const TONEPERFECT_STORAGE_KEY = 'hanyu_toneperfect_speech';
+  const TONEPERFECT_ENDPOINT = 'https://api.toneperfect.app/v1/assess';
+  const TONEPERFECT_TIMEOUT_MS = 10000;
+  const TONEPERFECT_DEFAULT_CFG = { key: '', enabled: true, endpoint: '' };
+
+  function getTonePerfectConfig(){
+    try{
+      const raw = localStorage.getItem(TONEPERFECT_STORAGE_KEY);
+      if(!raw) return Object.assign({}, TONEPERFECT_DEFAULT_CFG);
+      const parsed = JSON.parse(raw);
+      return Object.assign({}, TONEPERFECT_DEFAULT_CFG, {
+        key: typeof parsed.key === 'string' ? parsed.key.trim() : '',
+        enabled: parsed.enabled !== false,
+        endpoint: typeof parsed.endpoint === 'string' ? parsed.endpoint.trim() : ''
+      });
+    }catch(_){
+      return Object.assign({}, TONEPERFECT_DEFAULT_CFG);
+    }
+  }
+
+  function saveTonePerfectConfig(patch){
+    const next = Object.assign({}, getTonePerfectConfig(), patch || {});
+    next.key = String(next.key || '').trim();
+    next.enabled = next.enabled !== false;
+    next.endpoint = String(next.endpoint || '').trim();
+    try{
+      localStorage.setItem(TONEPERFECT_STORAGE_KEY, JSON.stringify(next));
+    }catch(_){}
+    return next;
+  }
+
+  function clearTonePerfectConfig(){
+    const cur = getTonePerfectConfig();
+    const cleared = Object.assign({}, cur, { key: '' });
+    try{
+      localStorage.setItem(TONEPERFECT_STORAGE_KEY, JSON.stringify(cleared));
+    }catch(_){}
+    return cleared;
+  }
+
+  function isTonePerfectConfigured(cfg){
+    const c = cfg || getTonePerfectConfig();
+    return Boolean(c.key && c.key.length >= 10);
+  }
+
+  function isTonePerfectAssessEnabled(){
+    const c = getTonePerfectConfig();
+    return isTonePerfectConfigured(c) && c.enabled !== false;
+  }
+
+  function buildTonePerfectFeedback(out){
+    const words = out.wordResults || [];
+    if(!words.length) return 'TonePerfect chưa trả về chi tiết từng chữ cho bản ghi này.';
+    const bad = words.filter(w => w.note || (w.accuracyScore !== null && w.accuracyScore < 75));
+    const mid = words.filter(w => !bad.includes(w) && w.accuracyScore !== null && w.accuracyScore < 85);
+    const parts = [];
+    if(bad.length){
+      parts.push('Cần sửa phát âm / thanh điệu: ' + bad.slice(0, 4).map(w => `${w.word} (${w.accuracyScore !== null ? w.accuracyScore + 'đ' : 'sai'}${w.note ? ' — ' + w.note : ''})`).join('; ') + '.');
+    }
+    if(mid.length && !bad.length){
+      parts.push('Có thể đọc rõ hơn: ' + mid.slice(0, 3).map(w => `${w.word} (${w.accuracyScore}đ)`).join(', ') + '.');
+    }
+    if(!parts.length) parts.push('TonePerfect đánh giá phát âm và thanh điệu rất tốt!');
+    return parts.join(' ');
+  }
+
+  async function assessWithTonePerfect(blob, referenceText, referencePinyin){
+    const cfg = getTonePerfectConfig();
+    if(!isTonePerfectConfigured(cfg)){
+      const e = new Error('NO_TONEPERFECT_KEY');
+      e.code = 'AUTH_ERROR';
+      throw e;
+    }
+    if(!blob || !blob.size) throw new Error('EMPTY_AUDIO_BLOB');
+    const refZh = String(referenceText || '').trim();
+    if(!refZh) throw new Error('EMPTY_REFERENCE_TEXT');
+
+    let audioPart = blob;
+    let fileName = 'recording.webm';
+    try{
+      const wavBytes = await blobToWav16kBytes(blob, true);
+      audioPart = new Blob([wavBytes], { type: 'audio/wav' });
+      fileName = 'recording.wav';
+    }catch(_){
+      const mime = String(blob.type || '').toLowerCase();
+      if(mime.includes('ogg')) fileName = 'recording.ogg';
+      else if(mime.includes('mp4') || mime.includes('m4a')) fileName = 'recording.mp4';
+      else if(mime.includes('wav')) fileName = 'recording.wav';
+    }
+
+    const endpoint = cfg.endpoint || TONEPERFECT_ENDPOINT;
+    const fd = new FormData();
+    fd.append('audio', audioPart, fileName);
+    fd.append('text', refZh);
+    fd.append('language', 'zh-CN');
+
+    const controller = new AbortController();
+    let timeoutId = null;
+    const timeoutErr = new Error(`TonePerfect chưa phản hồi sau ${TONEPERFECT_TIMEOUT_MS / 1000} giây`);
+    timeoutErr.code = 'CHIVOX_TIMEOUT';
+    timeoutErr.status = 504;
+
+    const timerPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(timeoutErr);
+        controller.abort(timeoutErr);
+      }, TONEPERFECT_TIMEOUT_MS);
+    });
+
+    const idemKey = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : (`tp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+
+    try{
+      const fetchPromise = fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + cfg.key,
+          'Idempotency-Key': idemKey
+        },
+        body: fd,
+        signal: controller.signal
+      });
+      const res = await Promise.race([fetchPromise, timerPromise]);
+      const data = await res.json().catch(() => null);
+      if(!res.ok){
+        const msg = (data && (data.message || data.error?.message || data.detail)) || (`HTTP ${res.status}`);
+        const err = new Error(String(msg));
+        err.status = res.status;
+        if(res.status === 401 || res.status === 403) err.code = 'AUTH_ERROR';
+        else if(res.status === 429 || res.status === 402) err.code = 'RATE_LIMIT';
+        else if(res.status === 408 || res.status === 504) err.code = 'CHIVOX_TIMEOUT';
+        else if(res.status >= 500) err.code = 'OVERLOADED';
+        else err.code = 'NETWORK_ERROR';
+        throw err;
+      }
+      if(!data || typeof data !== 'object'){
+        const err = new Error('INVALID_RESPONSE');
+        err.status = 502;
+        throw err;
+      }
+
+      const num = v => (v !== null && v !== undefined && Number.isFinite(Number(v))) ? Math.round(Number(v)) : null;
+      const sc = data.scores || data;
+      const rawWords = Array.isArray(data.words) ? data.words : [];
+      const wordResults = rawWords.map(w => {
+        const units = Array.isArray(w.units) ? w.units : [];
+        const notes = [];
+        const toneUnit = units.find(u => u && u.dimension === 'tone');
+        const initUnit = units.find(u => u && u.dimension === 'initial');
+        const finUnit = units.find(u => u && u.dimension === 'final');
+        if(toneUnit && toneUnit.expected && toneUnit.heard && String(toneUnit.expected) !== String(toneUnit.heard)){
+          notes.push(`Thanh ${toneUnit.expected} đọc thành Thanh ${toneUnit.heard}`);
+        }
+        if(initUnit && initUnit.expected && initUnit.heard && String(initUnit.expected) !== String(initUnit.heard)){
+          notes.push(`Âm đầu ${initUnit.expected} → ${initUnit.heard}`);
+        }
+        if(finUnit && finUnit.expected && finUnit.heard && String(finUnit.expected) !== String(finUnit.heard)){
+          notes.push(`Vần ${finUnit.expected} → ${finUnit.heard}`);
+        }
+        const score = num(w.score);
+        if(!notes.length && score !== null && score < 75){
+          notes.push(`Chưa chuẩn (${score}đ)`);
+        }
+        const py = w.pinyin ? String(w.pinyin) : '';
+        return {
+          word: String(w.text || ''),
+          accuracyScore: score,
+          errorType: (score !== null && score < 60) ? 'Mispronunciation' : 'None',
+          syllables: py ? [{ syllable: py }] : [],
+          note: notes.join(' · ')
+        };
+      }).filter(w => w.word);
+
+      const out = {
+        provider: 'toneperfect',
+        assessedAt: Date.now(),
+        referenceText: refZh,
+        referencePinyin: String(referencePinyin || '').trim(),
+        recognizedText: '',
+        overallScore: num(sc.overall !== undefined ? sc.overall : sc.pronunciation),
+        accuracyScore: num(sc.pronunciation !== undefined ? sc.pronunciation : sc.overall),
+        initialScore: num(sc.initial),
+        finalScore: num(sc.final),
+        toneScore: num(sc.tone),
+        fluencyScore: num(sc.fluency),
+        completenessScore: num(sc.completeness),
+        prosodyScore: num(sc.rhythm !== undefined ? sc.rhythm : sc.tone),
+        wordResults,
+        status: 'assessed'
+      };
+      out.feedback = buildTonePerfectFeedback(out);
+      return out;
+    }catch(err){
+      if(controller.signal.aborted && err && err.code === 'CHIVOX_TIMEOUT') throw err;
+      if(err && err.code) throw err;
+      const netErr = new Error(err && err.message ? err.message : 'Không kết nối được TonePerfect API');
+      netErr.code = 'NETWORK_ERROR';
+      throw netErr;
+    }finally{
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /* ================= MODAL HỢP NHẤT (TONEPERFECT + CHIVOX + GEMINI + GIỌNG MÁY) ================= */
   function showModalHtml(html){
     if(typeof openModal === 'function'){
       openModal(html);
@@ -1282,12 +1439,12 @@
     }catch(_){}
     const btn = document.getElementById('btn-azure-speech-cfg');
     if(btn){
-      if(isChivoxAssessEnabled()){
+      if(isTonePerfectAssessEnabled()){
+        btn.textContent = '🎙 AI Chấm phát âm (Đã bật TonePerfect)';
+      }else if(isChivoxAssessEnabled()){
         btn.textContent = '🎙 AI Chấm phát âm (Đã bật Chivox)';
       }else if(isGeminiAssessEnabled()){
         btn.textContent = '🎙 AI Chấm phát âm (Đã bật Gemini)';
-      }else if(isConfigured()){
-        btn.textContent = '🎙 AI Chấm phát âm (Đã bật Azure)';
       }else{
         btn.textContent = '🎙 AI Chấm phát âm & Giọng đọc';
       }
@@ -1302,26 +1459,25 @@
 
   function openSettingsModal(){
     const cfg = getConfig();
+    const tpCfg = getTonePerfectConfig();
     const gmCfg = getGeminiConfig();
     const cvCfg = getChivoxConfig();
-    const defaultTab = isChivoxConfigured(cvCfg)
-      ? 'chivox'
-      : (isGeminiConfigured(gmCfg) ? 'gemini' : (isConfigured(cfg) ? 'azure' : 'chivox'));
+    const defaultTab = isTonePerfectConfigured(tpCfg)
+      ? 'toneperfect'
+      : (isChivoxConfigured(cvCfg) ? 'chivox' : (isGeminiConfigured(gmCfg) ? 'gemini' : 'toneperfect'));
     const isHttpMobile = !window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
 
+    const tpStatusTxt = isTonePerfectConfigured(tpCfg)
+      ? 'Đã cấu hình TonePerfect API (Chấm âm đầu · Vần · Thanh điệu)'
+      : 'Chưa nhập TonePerfect Key · Có sẵn 50 Credits miễn phí khi tạo tài khoản';
     const cvStatusTxt = isChivoxConfigured(cvCfg)
       ? 'Đã cấu hình Chivox MCP (600 lượt Free / 30 ngày)'
       : 'Chưa nhập Chivox Key · Có sẵn 600 lượt chấm miễn phí không cần thẻ';
     const gmStatusTxt = isGeminiConfigured(gmCfg)
       ? `Đã cấu hình Gemini (${gmCfg.model})`
       : 'Chưa nhập Gemini Key · Miễn phí bằng tài khoản Google, không cần thẻ';
-    const azStatusTxt = isConfigured(cfg)
-      ? `Đã cấu hình Azure (${cfg.region} · ${cfg.voice})`
-      : 'Chưa nhập Azure Key (chỉ dùng nếu đã có tài khoản Azure)';
 
     const gmModelOpts = GEMINI_MODELS.map(m => `<option value="${esc(m.id)}" ${gmCfg.model === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('');
-    const voiceOpts = VOICES.map(v => `<option value="${esc(v.id)}" ${cfg.voice === v.id ? 'selected' : ''}>${esc(v.label)}</option>`).join('');
-    const regionOpts = REGIONS.map(r => `<option value="${esc(r.id)}" ${cfg.region === r.id ? 'selected' : ''}>${esc(r.label)}</option>`).join('');
     const localVoiceOpts = renderLocalVoiceOptions(cfg.localVoiceName);
 
     showModalHtml(`
@@ -1332,12 +1488,40 @@
         </div>
 
         <div class="az-tabs" id="ai-cfg-tabs">
+          <button type="button" class="${defaultTab === 'toneperfect' ? 'on' : ''}" data-aitab="toneperfect">TonePerfect (50 Free)</button>
           <button type="button" class="${defaultTab === 'chivox' ? 'on' : ''}" data-aitab="chivox">Chivox (600 Free)</button>
           <button type="button" class="${defaultTab === 'gemini' ? 'on' : ''}" data-aitab="gemini">Google Gemini</button>
-          <button type="button" class="${defaultTab === 'azure' ? 'on' : ''}" data-aitab="azure">Microsoft Azure</button>
         </div>
 
         ${isHttpMobile ? `<div class="az-warn"><b>Lưu ý Micro trên điện thoại / tablet:</b> Trình duyệt chặn quyền ghi âm khi mở qua <code>http://</code>. Nghe giọng đọc vẫn chạy bình thường, nhưng để ghi âm chấm phát âm trên iPhone/Samsung cần mở app qua <b>HTTPS</b> (ví dụ GitHub Pages).</div>` : ''}
+
+        <div id="tp-pane" class="${defaultTab === 'toneperfect' ? '' : 'hide'}" style="display:grid;gap:10px">
+          <div class="az-status ${isTonePerfectConfigured(tpCfg) ? 'ok' : ''}" id="tp-status-pill">${esc(tpStatusTxt)}</div>
+          <div class="fld">
+            <label for="tp-key">TonePerfect API Key (tp_live_... hoặc tp_test_...)</label>
+            <div class="az-key-row">
+              <input id="tp-key" type="password" value="${esc(tpCfg.key)}" autocomplete="off" placeholder="Dán API key từ TonePerfect → API keys"/>
+              <button type="button" class="chip" id="tp-toggle-key">Hiện</button>
+            </div>
+          </div>
+          <div class="fld">
+            <label for="tp-endpoint">Endpoint / Proxy (để trống = mặc định api.toneperfect.app/v1/assess)</label>
+            <input id="tp-endpoint" type="url" value="${esc(tpCfg.endpoint)}" autocomplete="off" placeholder="https://api.toneperfect.app/v1/assess"/>
+          </div>
+          <label class="az-chk"><input id="tp-enabled" type="checkbox" ${tpCfg.enabled ? 'checked' : ''}/><span>Bật chấm phát âm (Âm đầu, Vần, Thanh điệu) bằng TonePerfect (ưu tiên cao nhất)</span></label>
+          <div class="az-acts">
+            <button type="button" class="btn sm" id="tp-save">💾 Lưu cấu hình</button>
+            <button type="button" class="btn ghost sm" id="tp-clear">🗑 Xóa Key</button>
+            <button type="button" class="btn ghost sm" id="tp-close">Đóng</button>
+          </div>
+          <details class="az-help">
+            <summary>Hướng dẫn lấy Key TonePerfect &amp; lưu ý CORS trình duyệt</summary>
+            <ol>
+              <li>Vào Workspace TonePerfect → mục <b>API keys</b> → bấm <b>Create a key</b> để tạo key (<code>tp_live_...</code> hoặc <code>tp_test_...</code>).</li>
+              <li>Dán key vào ô trên → bấm <b>Lưu cấu hình</b>. Nếu gọi trực tiếp từ trình duyệt bị chặn CORS hoặc quá 10 giây, app tự fallback sang phân tích ngay trên web; hoặc điền link Cloudflare Worker/Proxy ở ô Endpoint.</li>
+            </ol>
+          </details>
+        </div>
 
         <div id="cv-pane" class="${defaultTab === 'chivox' ? '' : 'hide'}" style="display:grid;gap:10px">
           <div class="az-status ${isChivoxConfigured(cvCfg) ? 'ok' : ''}" id="cv-status-pill">${esc(cvStatusTxt)}</div>
@@ -1394,44 +1578,9 @@
           </details>
         </div>
 
-        <div id="az-pane" class="${defaultTab === 'azure' ? '' : 'hide'}" style="display:grid;gap:10px">
-          <div class="az-status ${isConfigured(cfg) ? 'ok' : ''}" id="az-status-pill">${esc(azStatusTxt)}</div>
-          <div class="fld">
-            <label for="az-key">Azure Speech Key (KEY 1 hoặc KEY 2)</label>
-            <div class="az-key-row">
-              <input id="az-key" type="password" value="${esc(cfg.key)}" autocomplete="off" placeholder="Dán chuỗi Subscription Key từ Azure Portal..."/>
-              <button type="button" class="chip" id="az-toggle-key">Hiện</button>
-            </div>
-          </div>
-          <div class="fld">
-            <label for="az-region">Location / Region</label>
-            <select id="az-region">${regionOpts}</select>
-          </div>
-          <div class="fld">
-            <label for="az-voice">Giọng đọc AI tiếng Trung (Neural zh-CN)</label>
-            <select id="az-voice">${voiceOpts}</select>
-          </div>
-          <label class="az-chk"><input id="az-use-tts" type="checkbox" ${cfg.useTts ? 'checked' : ''}/><span>Dùng giọng đọc AI Azure cho Luyện nghe, Bài khóa &amp; Từ vựng</span></label>
-          <label class="az-chk"><input id="az-use-assess" type="checkbox" ${cfg.useAssess ? 'checked' : ''}/><span>Bật chấm phát âm từng chữ &amp; thanh điệu bằng Azure</span></label>
-          <div class="az-acts">
-            <button type="button" class="btn ghost sm" id="az-test-tts">🔊 Nghe thử giọng Azure</button>
-            <button type="button" class="btn sm" id="az-save">💾 Lưu cấu hình</button>
-            <button type="button" class="btn ghost sm" id="az-clear">🗑 Xóa Key</button>
-            <button type="button" class="btn ghost sm" id="az-close">Đóng</button>
-          </div>
-          <details class="az-help">
-            <summary>Hướng dẫn lấy Key Azure Speech miễn phí F0 (5 giờ/tháng)</summary>
-            <ol>
-              <li>Đăng nhập <b>portal.azure.com</b> → tìm <b>Speech</b> → bấm <b>Create</b>.</li>
-              <li>Chọn Region <b>Southeast Asia</b> và gói giá <b>Free F0</b>.</li>
-              <li>Vào <b>Keys and Endpoint</b>, chép <b>KEY 1</b> và <b>Location/Region</b> dán vào ô trên.</li>
-            </ol>
-          </details>
-        </div>
-
         <div class="az-local-box">
           <div class="fld">
-            <label for="loc-voice-sel">Giọng đọc trên thiết bị (dùng cho Luyện nghe, Bài khóa khi không bật Azure TTS)</label>
+            <label for="loc-voice-sel">Giọng đọc trên thiết bị (dùng cho Luyện nghe, Bài khóa, Từ vựng &amp; Pinyin)</label>
             <div class="az-key-row">
               <select id="loc-voice-sel">${localVoiceOpts}</select>
               <button type="button" class="chip" id="loc-test-voice">🔊 Thử</button>
@@ -1441,9 +1590,9 @@
       </div>
     `);
 
+    const tpPane = document.getElementById('tp-pane');
     const cvPane = document.getElementById('cv-pane');
     const gmPane = document.getElementById('gm-pane');
-    const azPane = document.getElementById('az-pane');
     const tabsEl = document.getElementById('ai-cfg-tabs');
     if(tabsEl){
       tabsEl.addEventListener('click', e => {
@@ -1451,10 +1600,57 @@
         if(!b) return;
         const tab = b.dataset.aitab;
         tabsEl.querySelectorAll('button[data-aitab]').forEach(x => x.classList.toggle('on', x === b));
+        if(tpPane) tpPane.classList.toggle('hide', tab !== 'toneperfect');
         if(cvPane) cvPane.classList.toggle('hide', tab !== 'chivox');
         if(gmPane) gmPane.classList.toggle('hide', tab !== 'gemini');
-        if(azPane) azPane.classList.toggle('hide', tab !== 'azure');
       });
+    }
+    const closeX = document.getElementById('az-close-x');
+    if(closeX) closeX.onclick = hideModal;
+
+    // TonePerfect handlers
+    const tpKeyInp = document.getElementById('tp-key');
+    const tpEpInp = document.getElementById('tp-endpoint');
+    const tpEnChk = document.getElementById('tp-enabled');
+    const tpStatusEl = document.getElementById('tp-status-pill');
+    const readTpForm = () => ({
+      key: tpKeyInp ? tpKeyInp.value.trim() : '',
+      endpoint: tpEpInp ? tpEpInp.value.trim() : '',
+      enabled: tpEnChk ? tpEnChk.checked : true
+    });
+    const tpTog = document.getElementById('tp-toggle-key');
+    if(tpTog && tpKeyInp){
+      tpTog.onclick = () => {
+        const show = tpKeyInp.type === 'password';
+        tpKeyInp.type = show ? 'text' : 'password';
+        tpTog.textContent = show ? 'Ẩn' : 'Hiện';
+      };
+    }
+    const tpClose = document.getElementById('tp-close');
+    if(tpClose) tpClose.onclick = hideModal;
+    const tpSaveBtn = document.getElementById('tp-save');
+    if(tpSaveBtn){
+      tpSaveBtn.onclick = () => {
+        const locSelEl = document.getElementById('loc-voice-sel');
+        if(locSelEl) saveConfig({ localVoiceName: locSelEl.value });
+        const saved = saveTonePerfectConfig(readTpForm());
+        syncAfterConfigChange();
+        hideModal();
+        notify(isTonePerfectConfigured(saved) ? 'Đã lưu cấu hình TonePerfect API' : 'Đã lưu tùy chọn TonePerfect');
+      };
+    }
+    const tpClearBtn = document.getElementById('tp-clear');
+    if(tpClearBtn){
+      tpClearBtn.onclick = () => {
+        clearTonePerfectConfig();
+        if(tpKeyInp) tpKeyInp.value = '';
+        if(tpStatusEl){
+          tpStatusEl.className = 'az-status';
+          tpStatusEl.textContent = 'Đã xóa Key TonePerfect';
+        }
+        syncAfterConfigChange();
+        notify('Đã xóa TonePerfect Key khỏi trình duyệt');
+      };
     }
 
     // Chivox handlers
@@ -1648,99 +1844,6 @@
         notify('Đã xóa Gemini Key khỏi trình duyệt');
       };
     }
-
-    // Azure handlers
-    const keyInp = document.getElementById('az-key');
-    const regSel = document.getElementById('az-region');
-    const voiceSel = document.getElementById('az-voice');
-    const ttsChk = document.getElementById('az-use-tts');
-    const assessChk = document.getElementById('az-use-assess');
-    const statusEl = document.getElementById('az-status-pill');
-
-    const readForm = () => ({
-      key: keyInp ? keyInp.value.trim() : '',
-      region: regSel ? regSel.value : DEFAULT_CFG.region,
-      voice: voiceSel ? voiceSel.value : DEFAULT_CFG.voice,
-      useTts: ttsChk ? ttsChk.checked : true,
-      useAssess: assessChk ? assessChk.checked : true,
-      localVoiceName: locSel ? locSel.value : getConfig().localVoiceName
-    });
-
-    const toggleBtn = document.getElementById('az-toggle-key');
-    if(toggleBtn && keyInp){
-      toggleBtn.onclick = () => {
-        const show = keyInp.type === 'password';
-        keyInp.type = show ? 'text' : 'password';
-        toggleBtn.textContent = show ? 'Ẩn' : 'Hiện';
-      };
-    }
-
-    const closeX = document.getElementById('az-close-x');
-    const closeBtn = document.getElementById('az-close');
-    if(closeX) closeX.onclick = hideModal;
-    if(closeBtn) closeBtn.onclick = hideModal;
-
-    const testBtn = document.getElementById('az-test-tts');
-    if(testBtn){
-      testBtn.onclick = async () => {
-        const formCfg = readForm();
-        if(!isConfigured(formCfg)){
-          notify('Chưa nhập Azure Key — đang phát thử giọng trên máy');
-          speakLocal('你好，欢迎学习汉语！', 0.95);
-          return;
-        }
-        testBtn.disabled = true;
-        testBtn.textContent = 'Đang tạo giọng...';
-        try{
-          const url = await synthesizeToUrl('你好，欢迎学习汉语！', 1.0, formCfg);
-          stopAudio();
-          const audio = getAudioEl();
-          activeAudio = audio;
-          audio.onended = () => { if(activeAudio === audio) activeAudio = null; };
-          audio.src = url;
-          await audio.play();
-          if(statusEl){
-            statusEl.className = 'az-status ok';
-            statusEl.textContent = `Kết nối Azure TTS thành công (${formCfg.voice})`;
-          }
-        }catch(err){
-          if(statusEl){
-            statusEl.className = 'az-status err';
-            statusEl.textContent = (err && (err.status === 401 || err.status === 403))
-              ? 'Lỗi xác thực (401/403): Kiểm tra lại Key và Region!'
-              : 'Không kết nối được Azure TTS (kiểm tra mạng hoặc Region)';
-          }
-          notify('Thử giọng Azure thất bại, kiểm tra Key / Region');
-        }finally{
-          testBtn.disabled = false;
-          testBtn.textContent = '🔊 Nghe thử giọng Azure';
-        }
-      };
-    }
-
-    const saveBtn = document.getElementById('az-save');
-    if(saveBtn){
-      saveBtn.onclick = () => {
-        const saved = saveConfig(readForm());
-        syncAfterConfigChange();
-        hideModal();
-        notify(isConfigured(saved) ? 'Đã lưu cấu hình Azure AI Speech' : 'Đã lưu tùy chọn (chưa có Azure Key)');
-      };
-    }
-
-    const clearBtn = document.getElementById('az-clear');
-    if(clearBtn){
-      clearBtn.onclick = () => {
-        clearConfig();
-        if(keyInp) keyInp.value = '';
-        if(statusEl){
-          statusEl.className = 'az-status';
-          statusEl.textContent = 'Đã xóa Azure Key khỏi trình duyệt';
-        }
-        syncAfterConfigChange();
-        notify('Đã xóa Azure Key khỏi trình duyệt');
-      };
-    }
   }
 
   if(document.readyState === 'loading'){
@@ -1748,6 +1851,16 @@
   }else{
     setTimeout(syncAfterConfigChange, 0);
   }
+
+  window.TonePerfectSpeech = {
+    ENDPOINT: TONEPERFECT_ENDPOINT,
+    getConfig: getTonePerfectConfig,
+    saveConfig: saveTonePerfectConfig,
+    clearConfig: clearTonePerfectConfig,
+    isConfigured: isTonePerfectConfigured,
+    isAssessEnabled: isTonePerfectAssessEnabled,
+    assessPronunciation: assessWithTonePerfect
+  };
 
   window.ChivoxSpeech = {
     ENDPOINT: CHIVOX_ENDPOINT,

@@ -16,6 +16,9 @@
     let activeStroke = null;
     let activePtrId = null;
     let lastPenAt = 0;
+    let lastTime = 0;
+    let smoothW = 0;
+    let hasRealPressure = false;
     let cssW = 0, cssH = 0, dpr = 1;
     const ctx = canvas.getContext('2d');
     canvas.style.touchAction = 'none';
@@ -30,24 +33,74 @@
     function emitChange(){
       if(typeof opts.onChange === 'function') opts.onChange(strokes);
     }
-    function pointFromEvent(e){
+    function sampleMeta(e){
       const rect = canvas.getBoundingClientRect();
       const w = rect.width || cssW || 1, h = rect.height || cssH || 1;
       const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / w));
       const ny = Math.max(0, Math.min(1, (e.clientY - rect.top) / h));
-      let p = 0.55;
-      if(e.pointerType === 'pen'){
-        p = Number.isFinite(e.pressure) && e.pressure > 0 ? Math.min(1, Math.max(0.18, e.pressure)) : 0.62;
+      let p = 0.5, real = false;
+      if(window.HanyuStylus && window.HanyuStylus.extractSamplePressure){
+        const res = window.HanyuStylus.extractSamplePressure(e, hasRealPressure);
+        p = res.p;
+        real = res.real;
+      }else if(e.pointerType === 'pen' && Number.isFinite(e.pressure) && e.pressure > 0 && e.pressure !== 0.5 && e.pressure !== 1){
+        p = Math.min(1, Math.max(0.05, e.pressure));
+        real = true;
       }
-      return [Number(nx.toFixed(4)), Number(ny.toFixed(4)), Number(p.toFixed(2))];
+      if(real) hasRealPressure = true;
+      return { nx, ny, p, real, xPx: nx * (cssW || w), yPx: ny * (cssH || h) };
     }
-    function computeWidth(s, pressure){
+    function computeWidth(s, pressure, vel, ang){
       const base = Number(s.size) || opts.baseWidth || 2.8;
       const penType = s.penType || 'fountain';
+      if(window.HanyuStylus && window.HanyuStylus.computeStrokeWidth){
+        return window.HanyuStylus.computeStrokeWidth(penType, base, pressure, true, vel || 0, ang || 0);
+      }
       if(penType === 'ballpoint') return base * (0.9 + pressure * 0.2);
       if(penType === 'brush') return Math.max(1, base * (0.25 + Math.pow(pressure, 1.35) * 1.95));
       if(penType === 'highlighter') return base * 2.35;
       return Math.max(0.8, base * (0.45 + pressure * 1.15)); // fountain mặc định
+    }
+    function pointWidth(s, pt){
+      const base = Number(s.size) || opts.baseWidth || 2.8;
+      if(pt && pt.length >= 4 && Number.isFinite(pt[3]) && pt[3] > 0){
+        return Math.max(0.6, base * pt[3]);
+      }
+      return computeWidth(s, (pt && pt[2]) || 0.55, 0.35, 0);
+    }
+    function drawTaperedCurve(x0, y0, cx0, cy0, x1, y1, w0, w1){
+      const len = Math.hypot(cx0 - x0, cy0 - y0) + Math.hypot(x1 - cx0, y1 - cy0);
+      if(len < 0.05){
+        ctx.lineWidth = (w0 + w1) * 0.5;
+        ctx.beginPath();
+        ctx.arc(x0, y0, ctx.lineWidth * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
+      const steps = Math.max(1, Math.min(24, Math.ceil(len / 2.5)));
+      if(steps === 1 || Math.abs(w1 - w0) < 0.12){
+        ctx.lineWidth = (w0 + w1) * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.quadraticCurveTo(cx0, cy0, x1, y1);
+        ctx.stroke();
+        return;
+      }
+      let px = x0, py = y0;
+      for(let k = 1; k <= steps; k++){
+        const t = k / steps;
+        const mt = 1 - t;
+        const qx = mt * mt * x0 + 2 * mt * t * cx0 + t * t * x1;
+        const qy = mt * mt * y0 + 2 * mt * t * cy0 + t * t * y1;
+        const tm = (k - 0.5) / steps;
+        ctx.lineWidth = Math.max(0.6, w0 + (w1 - w0) * tm);
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(qx, qy);
+        ctx.stroke();
+        px = qx;
+        py = qy;
+      }
     }
     function drawFullStroke(s){
       if(!s || !s.pts || !s.pts.length || !cssW || !cssH) return;
@@ -121,38 +174,51 @@
 
       ctx.globalAlpha = opacity;
       if(pts.length === 1){
-        const r = computeWidth(s, pts[0][2] || 0.55) * 0.5;
+        const r = pointWidth(s, pts[0]) * 0.5;
         ctx.beginPath();
         ctx.arc(pts[0][0] * cssW, pts[0][1] * cssH, r, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
         return;
       }
-      for(let i = 1; i < pts.length; i++){
-        const p0 = pts[i - 1], p1 = pts[i];
-        const x0 = p0[0] * cssW, y0 = p0[1] * cssH;
-        const x1 = p1[0] * cssW, y1 = p1[1] * cssH;
-        const pr = ((p0[2] || 0.55) + (p1[2] || 0.55)) * 0.5;
-        ctx.lineWidth = computeWidth(s, pr);
-        ctx.beginPath();
-        if(i >= 2){
-          const pm = pts[i - 2];
-          const xm = (pm[0] * cssW + x0) / 2, ym = (pm[1] * cssH + y0) / 2;
-          const xc = (x0 + x1) / 2, yc = (y0 + y1) / 2;
-          ctx.moveTo(xm, ym);
-          ctx.quadraticCurveTo(x0, y0, xc, yc);
-          ctx.lineTo(x1, y1);
-        }else{
-          ctx.moveTo(x0, y0);
-          ctx.lineTo(x1, y1);
-        }
-        ctx.stroke();
+      if(pts.length === 2){
+        const x0 = pts[0][0] * cssW, y0 = pts[0][1] * cssH;
+        const x1 = pts[1][0] * cssW, y1 = pts[1][1] * cssH;
+        drawTaperedCurve(x0, y0, (x0 + x1) * 0.5, (y0 + y1) * 0.5, x1, y1, pointWidth(s, pts[0]), pointWidth(s, pts[1]));
+        ctx.restore();
+        return;
       }
+      let prevX = pts[0][0] * cssW, prevY = pts[0][1] * cssH;
+      let prevW = pointWidth(s, pts[0]);
+      for(let i = 1; i < pts.length - 1; i++){
+        const p0 = pts[i], p1 = pts[i + 1];
+        const x0 = p0[0] * cssW, y0 = p0[1] * cssH;
+        const xc = (x0 + p1[0] * cssW) * 0.5, yc = (y0 + p1[1] * cssH) * 0.5;
+        const w0 = pointWidth(s, p0), w1 = (w0 + pointWidth(s, p1)) * 0.5;
+        drawTaperedCurve(prevX, prevY, x0, y0, xc, yc, prevW, w1);
+        prevX = xc; prevY = yc; prevW = w1;
+      }
+      const last = pts[pts.length - 1];
+      const lx = last[0] * cssW, ly = last[1] * cssH;
+      drawTaperedCurve(prevX, prevY, (prevX + lx) * 0.5, (prevY + ly) * 0.5, lx, ly, prevW, pointWidth(s, last));
       ctx.restore();
     }
     function strokeLastSegment(s){
       if(!s || !s.pts.length || !cssW || !cssH) return;
       if(s.penType === 'highlighter' || s.pts.length === 1){
+        if(s.pts.length === 1 && s.penType !== 'highlighter' && s.tool !== 'eraser'){
+          ctx.save();
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          ctx.fillStyle = s.color || opts.color || '#2B1B15';
+          const rawOp = Number(s.opacity);
+          ctx.globalAlpha = Number.isFinite(rawOp) && rawOp > 0 ? rawOp : 1;
+          const r = pointWidth(s, s.pts[0]) * 0.5;
+          ctx.beginPath();
+          ctx.arc(s.pts[0][0] * cssW, s.pts[0][1] * cssH, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          return;
+        }
         redraw();
         return;
       }
@@ -174,34 +240,38 @@
         ctx.shadowBlur = 0;
         ctx.strokeStyle = 'rgba(0,0,0,1)';
         ctx.lineWidth = Number(s.size) || opts.eraserWidth || 18;
-      }else{
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = opacity;
-        ctx.strokeStyle = color;
-        const base = Number(s.size) || opts.baseWidth || 2.8;
-        if(softness > 0){
-          ctx.shadowBlur = Math.max(0.5, softness * (base * 1.35 + 3.5));
-          ctx.shadowColor = color;
-        }
-        const pr = ((pts[i - 1][2] || 0.55) + (pts[i][2] || 0.55)) * 0.5;
-        ctx.lineWidth = computeWidth(s, pr);
+        const p0 = pts[i - 1], p1 = pts[i];
+        ctx.beginPath();
+        ctx.moveTo(p0[0] * cssW, p0[1] * cssH);
+        ctx.lineTo(p1[0] * cssW, p1[1] * cssH);
+        ctx.stroke();
+        ctx.restore();
+        return;
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = opacity;
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      const base = Number(s.size) || opts.baseWidth || 2.8;
+      if(softness > 0){
+        ctx.shadowBlur = Math.max(0.5, softness * (base * 1.35 + 3.5));
+        ctx.shadowColor = color;
       }
       const p0 = pts[i - 1], p1 = pts[i];
       const x0 = p0[0] * cssW, y0 = p0[1] * cssH;
       const x1 = p1[0] * cssW, y1 = p1[1] * cssH;
-      ctx.beginPath();
+      const w0 = pointWidth(s, p0), w1 = pointWidth(s, p1);
       if(i >= 2){
         const pm = pts[i - 2];
-        const xm = (pm[0] * cssW + x0) / 2, ym = (pm[1] * cssH + y0) / 2;
-        const xc = (x0 + x1) / 2, yc = (y0 + y1) / 2;
-        ctx.moveTo(xm, ym);
-        ctx.quadraticCurveTo(x0, y0, xc, yc);
-        ctx.lineTo(x1, y1);
+        const xm = (pm[0] * cssW + x0) * 0.5, ym = (pm[1] * cssH + y0) * 0.5;
+        const wm = (pointWidth(s, pm) + w0) * 0.5;
+        const xc = (x0 + x1) * 0.5, yc = (y0 + y1) * 0.5;
+        const wc = (w0 + w1) * 0.5;
+        drawTaperedCurve(xm, ym, x0, y0, xc, yc, wm, wc);
+        drawTaperedCurve(xc, yc, (xc + x1) * 0.5, (yc + y1) * 0.5, x1, y1, wc, w1);
       }else{
-        ctx.moveTo(x0, y0);
-        ctx.lineTo(x1, y1);
+        drawTaperedCurve(x0, y0, (x0 + x1) * 0.5, (y0 + y1) * 0.5, x1, y1, w0, w1);
       }
-      ctx.stroke();
       ctx.restore();
     }
     function redraw(){
@@ -231,43 +301,79 @@
 
     canvas.addEventListener('pointerdown', e => {
       if(e.button && e.button !== 0 && !(window.HanyuStylus && window.HanyuStylus.isHardwareEraser(e))) return;
-      if(e.pointerType === 'pen') lastPenAt = Date.now();
+      if(activePtrId !== null && e.pointerId !== activePtrId) return;
+      const isPen = (window.HanyuStylus && window.HanyuStylus.isStylusLikeEvent)
+        ? window.HanyuStylus.isStylusLikeEvent(e)
+        : (e.pointerType === 'pen');
+      if(isPen) lastPenAt = Date.now();
       if(window.HanyuStylus){
         if(!window.HanyuStylus.shouldAcceptPointer(e, lastPenAt)) return;
       }else if(e.pointerType === 'touch' && (Date.now() - lastPenAt < 10000) && ((e.width && e.width > 24) || (e.height && e.height > 24))){
         return;
       }
+      e.preventDefault();
       if(!cssW || !cssH) resize();
       activePtrId = e.pointerId;
       try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
-      const pt = pointFromEvent(e);
+      hasRealPressure = false;
+      const sm = sampleMeta(e);
       const st = getStudioState();
       const hwErase = window.HanyuStylus && window.HanyuStylus.isHardwareEraser(e);
       const useTool = hwErase ? 'eraser' : currentTool();
       const baseScaleRatio = opts.widthRatio || 1;
+      const penType = st ? st.penType : 'fountain';
+      const strokeSz = useTool === 'eraser'
+        ? (st ? st.eraserSize : (opts.eraserWidth || 18))
+        : ((st ? st.penSize : (opts.baseWidth || 2.8)) * baseScaleRatio);
+      const w0 = (window.HanyuStylus && window.HanyuStylus.computeStrokeWidth)
+        ? window.HanyuStylus.computeStrokeWidth(penType, strokeSz, sm.p, sm.real, 0.12, 0)
+        : strokeSz;
+      smoothW = w0;
+      lastTime = e.timeStamp || performance.now();
+      const pt = [Number(sm.nx.toFixed(4)), Number(sm.ny.toFixed(4)), Number(sm.p.toFixed(2)), Number((w0 / Math.max(0.5, strokeSz)).toFixed(3))];
       activeStroke = {
         tool: useTool,
-        penType: st ? st.penType : 'fountain',
-        size: useTool === 'eraser'
-          ? (st ? st.eraserSize : (opts.eraserWidth || 18))
-          : ((st ? st.penSize : (opts.baseWidth || 2.8)) * baseScaleRatio),
+        penType,
+        size: strokeSz,
         softness: st ? st.softness : 0,
         opacity: st ? st.opacity : 1,
         color: st ? st.color : (opts.color || '#2B1B15'),
         pts: [pt]
       };
       strokes.push(activeStroke);
-      redraw();
+      strokeLastSegment(activeStroke);
       if(typeof opts.onInteract === 'function') opts.onInteract();
     });
     canvas.addEventListener('pointermove', e => {
       if(!activeStroke || e.pointerId !== activePtrId) return;
-      if(e.pointerType === 'touch' && window.HanyuStylus && !window.HanyuStylus.shouldAcceptPointer(e, lastPenAt)) return;
-      const pt = pointFromEvent(e);
-      const last = activeStroke.pts[activeStroke.pts.length - 1];
-      if(last && Math.hypot((pt[0] - last[0]) * cssW, (pt[1] - last[1]) * cssH) < 1.2) return;
-      activeStroke.pts.push(pt);
-      strokeLastSegment(activeStroke);
+      const isPen = (window.HanyuStylus && window.HanyuStylus.isStylusLikeEvent)
+        ? window.HanyuStylus.isStylusLikeEvent(e)
+        : (e.pointerType === 'pen');
+      if(isPen) lastPenAt = Date.now();
+      else if(e.pointerType === 'touch' && window.HanyuStylus && !window.HanyuStylus.shouldAcceptPointer(e, lastPenAt)) return;
+      e.preventDefault();
+      const evList = (typeof e.getCoalescedEvents === 'function' && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
+      const baseSz = Math.max(0.5, Number(activeStroke.size) || opts.baseWidth || 2.8);
+      for(let ei = 0; ei < evList.length; ei++){
+        const ev = evList[ei];
+        const sm = sampleMeta(ev);
+        const last = activeStroke.pts[activeStroke.pts.length - 1];
+        const dx = (sm.nx - last[0]) * cssW, dy = (sm.ny - last[1]) * cssH;
+        const dist = Math.hypot(dx, dy);
+        if(dist < 1.1) continue;
+        const nowT = ev.timeStamp || performance.now();
+        const dt = Math.max(1, nowT - lastTime);
+        lastTime = nowT;
+        const vel = dist / dt;
+        const ang = Math.atan2(dy, dx);
+        const targetW = (window.HanyuStylus && window.HanyuStylus.computeStrokeWidth)
+          ? window.HanyuStylus.computeStrokeWidth(activeStroke.penType, baseSz, sm.p, sm.real || hasRealPressure, vel, ang)
+          : computeWidth(activeStroke, sm.p, vel, ang);
+        smoothW = smoothW ? (smoothW * 0.65 + targetW * 0.35) : targetW;
+        const pt = [Number(sm.nx.toFixed(4)), Number(sm.ny.toFixed(4)), Number(sm.p.toFixed(2)), Number((smoothW / baseSz).toFixed(3))];
+        activeStroke.pts.push(pt);
+        strokeLastSegment(activeStroke);
+      }
     });
     function finishPtr(e){
       if(!activeStroke || e.pointerId !== activePtrId) return;
@@ -275,11 +381,20 @@
       const needRedraw = activeStroke.penType === 'highlighter';
       activeStroke = null;
       activePtrId = null;
+      smoothW = 0;
+      hasRealPressure = false;
       if(needRedraw) redraw();
       emitChange();
     }
     canvas.addEventListener('pointerup', finishPtr);
     canvas.addEventListener('pointercancel', finishPtr);
+    ['touchstart', 'touchmove'].forEach(evName => {
+      canvas.addEventListener(evName, e => {
+        if(e.touches && e.touches.length >= 2) return;
+        const st = getStudioState();
+        if(activePtrId !== null || (st && st.inputMode === 'pen')) e.preventDefault();
+      }, { passive: false });
+    });
 
     return {
       resize,

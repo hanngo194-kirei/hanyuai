@@ -73,7 +73,7 @@ function fakeRecord(btn,label,done){
 }
 
 /* ---------- Router (hoạt động cả khi WebView chặn hashchange) ---------- */
-const TAB={home:'home',roadmap:'learn',learn:'learn',lesson:'learn',vocab:'learn',exercise:'learn',grammar:'learn',dialog:'learn',copy:'learn',trans:'learn',listen:'learn',writing:'learn',review:'review',wordbook:'review',speak:'speak',me:'me','course-detail':'learn','lesson-editor':'learn','pdf-import':'learn','textbook-reader':'learn'};
+const TAB={home:'home',pinyin:'home',roadmap:'learn',learn:'learn',lesson:'learn',vocab:'learn',exercise:'learn',grammar:'learn',dialog:'learn',copy:'learn',trans:'learn',listen:'learn',writing:'learn',review:'review',wordbook:'review',speak:'speak',me:'me','course-detail':'learn','lesson-editor':'learn','pdf-import':'learn','textbook-reader':'learn'};
 let curView='home';
 const _secStartTimes={};
 window.getSectionElapsedSec=function(key){
@@ -97,7 +97,8 @@ function route(forced){
   $$('.tabs a').forEach(a=>{const on=a.dataset.tab===TAB[id];a.classList.toggle('on',on);on?a.setAttribute('aria-current','page'):a.removeAttribute('aria-current')});
   const sbTab=(id==='wordbook')?'wordbook':TAB[id];
   $$('.sidebar [data-tab]').forEach(a=>{const on=a.dataset.tab===sbTab;a.classList.toggle('on',on);on?a.setAttribute('aria-current','page'):a.removeAttribute('aria-current')});
-  document.body.classList.toggle('sub',['lesson','vocab','exercise','grammar','dialog','copy','trans','listen','writing','wordbook','course-detail','lesson-editor','pdf-import','textbook-reader'].includes(id));
+  document.body.classList.toggle('sub',['pinyin','lesson','vocab','exercise','grammar','dialog','copy','trans','listen','writing','wordbook','course-detail','lesson-editor','pdf-import','textbook-reader'].includes(id));
+  document.body.classList.toggle('view-pinyin',id==='pinyin');
   document.body.classList.toggle('view-roadmap',id==='roadmap');
   document.body.classList.toggle('view-vocab',id==='vocab');
   document.body.classList.toggle('view-lesson',id==='lesson');
@@ -115,6 +116,7 @@ function route(forced){
   if(id!=='speak'&&window._stopSpeak)window._stopSpeak();
   if(id!=='dialog'&&window._stopDialog)window._stopDialog();
   if(id==='writing'&&typeof setupPadForChar==='function'){fitPad();setupPadForChar();}
+  if(id==='pinyin'&&typeof window.initPinyinView==='function'){window.initPinyinView();}
   if(window._v8Ready&&typeof onViewEntered==='function')onViewEntered(id);
 }
 function goView(id){route(id);}
