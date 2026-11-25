@@ -406,6 +406,9 @@ function onViewEntered(id){
   if(id==='dialog'&&typeof LISTEN_DIALOG!=='undefined'&&LISTEN_DIALOG.length&&typeof markLessonSectionDone==='function'){
     markLessonSectionDone(store.activeLessonId,'dialog',true);
   }
+  if(typeof window.HanyuStylus!=='undefined'&&typeof window.HanyuStylus.syncActiveView==='function'){
+    window.HanyuStylus.syncActiveView(id);
+  }
 }
 
 document.addEventListener('click',async e=>{

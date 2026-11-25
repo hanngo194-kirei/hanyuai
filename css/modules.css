@@ -1220,3 +1220,12 @@ button,a{touch-action:manipulation}
   #review .rv-ex-body .zh{font-size:15px}
   #review .rv-footbar{padding:6px 10px;font-size:12px}
 }
+
+/* Khoảng trống thoáng hơn cho các cụm nút trên Tablet & Desktop */
+@media (min-width: 760px){
+  .btnrow{gap:12px}
+  .tools{gap:12px}
+  .w-modes{gap:10px;margin-bottom:12px}
+  .switches{gap:12px}
+  .view>*+*{margin-top:14px}
+}

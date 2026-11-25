@@ -1478,25 +1478,121 @@ function ensureHanziWriter(){
   return hwLibPromise;
 }
 
+let wLastPenAt=0;
+function getStylusCfg(){
+  return (typeof window.HanyuStylus!=='undefined')?window.HanyuStylus.getState():null;
+}
 function updateStylusPill(){
   const pill=$('#w-stylus-pill');if(!pill)return;
+  const st=getStylusCfg();
+  if(st){
+    const active=(st.inputMode==='pen');
+    pill.classList.toggle('pen-on',active||wPenActive);
+    if(st.inputMode==='keyboard'){
+      pill.textContent='Đang ở chế độ Gõ phím · Bấm “Viết bút” ở bảng bên để viết S-Pen';
+    }else if(st.allowTouchDraw){
+      pill.textContent=wPenActive?'Đang viết S-Pen · Chống chạm lòng bàn tay':'Cho phép Bút + Ngón tay · Chống chạm lòng bàn tay';
+    }else{
+      pill.textContent='Chỉ nhận bút S-Pen / Apple Pencil · Chạm tay không hiển thị nét';
+    }
+    return;
+  }
   pill.classList.toggle('pen-on',wPenActive);
   pill.textContent=wPenActive?'Đang viết bằng bút cảm ứng · Đã bật chống chạm lòng bàn tay':'Hỗ trợ chuột, cảm ứng & Apple Pencil / S Pen';
 }
-function drawPressurePath(ctx,pts,baseW,color,scaleX=1,scaleY=1){
+function computeWriteWidth(baseW,penType,p){
+  if(penType==='ballpoint')return Math.max(1.5,baseW*(0.9+p*0.2));
+  if(penType==='brush')return Math.max(1.2,baseW*(0.28+Math.pow(p,1.35)*1.85));
+  if(penType==='highlighter')return Math.max(3,baseW*1.9);
+  return Math.max(1.8,baseW*(0.45+p*1.1));
+}
+function drawPressurePath(ctx,stObj,baseW,color,scaleX=1,scaleY=1){
+  const isObj=stObj&&!Array.isArray(stObj)&&Array.isArray(stObj.pts);
+  const pts=isObj?stObj.pts:stObj;
   if(!pts||!pts.length)return;
-  ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineCap='round';ctx.lineJoin='round';
+  const tool=isObj?(stObj.tool||'pen'):'pen';
+  const penType=isObj?(stObj.penType||'fountain'):'fountain';
+  const strokeSize=isObj&&Number(stObj.size)?Number(stObj.size)*scaleX:baseW;
+  const strokeCol=isObj&&stObj.color?stObj.color:color;
+  const softness=isObj&&Number.isFinite(Number(stObj.softness))?Number(stObj.softness):0;
+  const rawOp=isObj&&Number(stObj.opacity)>0?Number(stObj.opacity):1;
+
+  ctx.save();
+  ctx.lineCap='round';ctx.lineJoin='round';
+  if(tool==='eraser'){
+    ctx.globalCompositeOperation='destination-out';
+    ctx.globalAlpha=1;ctx.shadowBlur=0;
+    ctx.strokeStyle='rgba(0,0,0,1)';ctx.fillStyle='rgba(0,0,0,1)';
+    const ew=Math.max(4,strokeSize);
+    if(pts.length===1){
+      ctx.beginPath();ctx.arc(pts[0].x*scaleX,pts[0].y*scaleY,ew/2,0,Math.PI*2);ctx.fill();
+    }else{
+      ctx.lineWidth=ew;
+      ctx.beginPath();ctx.moveTo(pts[0].x*scaleX,pts[0].y*scaleY);
+      for(let k=1;k<pts.length;k++)ctx.lineTo(pts[k].x*scaleX,pts[k].y*scaleY);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  ctx.globalCompositeOperation='source-over';
+  ctx.strokeStyle=strokeCol;ctx.fillStyle=strokeCol;
+  if(softness>0){
+    ctx.shadowBlur=Math.max(0.5,softness*(strokeSize*0.85+3));
+    ctx.shadowColor=strokeCol;
+  }
+  if(penType==='highlighter'){
+    ctx.globalAlpha=Math.min(0.42,rawOp*0.42);
+    const hw=computeWriteWidth(strokeSize,'highlighter',0.5);
+    if(pts.length===1){
+      ctx.beginPath();ctx.arc(pts[0].x*scaleX,pts[0].y*scaleY,hw/2,0,Math.PI*2);ctx.fill();
+    }else{
+      ctx.lineWidth=hw;
+      ctx.beginPath();ctx.moveTo(pts[0].x*scaleX,pts[0].y*scaleY);
+      for(let k=1;k<pts.length;k++)ctx.lineTo(pts[k].x*scaleX,pts[k].y*scaleY);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  ctx.globalAlpha=rawOp;
   if(pts.length===1){
-    const w=Math.max(2,baseW*(0.45+(pts[0].p||0.5)*1.1));
+    const w=computeWriteWidth(strokeSize,penType,pts[0].p||0.5);
     ctx.beginPath();ctx.arc(pts[0].x*scaleX,pts[0].y*scaleY,w/2,0,Math.PI*2);ctx.fill();
+    ctx.restore();
     return;
   }
   for(let k=1;k<pts.length;k++){
     const a=pts[k-1],b=pts[k];
     const p=((a.p||0.5)+(b.p||0.5))/2;
-    ctx.lineWidth=Math.max(2,baseW*(0.45+p*1.1));
+    ctx.lineWidth=computeWriteWidth(strokeSize,penType,p);
     ctx.beginPath();ctx.moveTo(a.x*scaleX,a.y*scaleY);ctx.lineTo(b.x*scaleX,b.y*scaleY);ctx.stroke();
   }
+  ctx.restore();
+}
+
+function makeWriteStroke(e,ptVal,multiplier,fallbackW){
+  const st=getStylusCfg();
+  const hwErase=typeof window.HanyuStylus!=='undefined'&&window.HanyuStylus.isHardwareEraser(e);
+  const tool=hwErase?'eraser':(st?st.tool:'pen');
+  const defaultCol=getComputedStyle(document.body).color||'#2B1B15';
+  if(!st){
+    return {tool:'pen',penType:'fountain',size:fallbackW,softness:0,opacity:1,color:defaultCol,pts:[ptVal]};
+  }
+  const sz=tool==='eraser'
+    ?Math.max(8,st.eraserSize*(multiplier*0.5))
+    :Math.max(2,st.penSize*multiplier);
+  return {
+    tool,
+    penType:st.penType||'fountain',
+    size:sz,
+    softness:st.softness||0,
+    opacity:st.opacity==null?1:st.opacity,
+    color:st.color||defaultCol,
+    pts:[ptVal]
+  };
 }
 
 function fitPad(){
@@ -1518,21 +1614,67 @@ const pt=e=>{
 cv.addEventListener('pointerdown',e=>{
   const freeCanvasActive=wMode==='free'||!pad.classList.contains('hw-on');
   if(!freeCanvasActive)return;
-  if(e.pointerType==='pen'){if(!wPenActive){wPenActive=true;updateStylusPill();}}
-  else if(e.pointerType==='touch'&&wPenActive)return;
-  else if(e.pointerType==='mouse'&&wPenActive){wPenActive=false;updateStylusPill();}
-  e.preventDefault();drawing=true;const p=pt(e);curStroke=[p];strokesHist.push(curStroke);
+  if(e.pointerType==='pen'){wLastPenAt=Date.now();if(!wPenActive){wPenActive=true;updateStylusPill();}}
+  if(typeof window.HanyuStylus!=='undefined'){
+    if(!window.HanyuStylus.shouldAcceptPointer(e,wLastPenAt))return;
+  }else if(e.pointerType==='touch'&&wPenActive)return;
+  if(e.pointerType==='mouse'&&wPenActive){wPenActive=false;updateStylusPill();}
+  e.preventDefault();drawing=true;const p=pt(e);
+  curStroke=makeWriteStroke(e,p,2.4,9.5);
+  strokesHist.push(curStroke);
   try{cv.setPointerCapture(e.pointerId);}catch(_){}
-  drawPressurePath(cx,[p],9.5,getComputedStyle(document.body).color);
+  redrawFreeCanvas();
 });
 cv.addEventListener('pointermove',e=>{
   const freeCanvasActive=wMode==='free'||!pad.classList.contains('hw-on');
   if(!drawing||!freeCanvasActive)return;
-  if(e.pointerType==='touch'&&wPenActive)return;
-  e.preventDefault();const p=pt(e);const prev=curStroke[curStroke.length-1];curStroke.push(p);
-  drawPressurePath(cx,[prev,p],9.5,getComputedStyle(document.body).color);
+  if(e.pointerType==='touch'){
+    if(typeof window.HanyuStylus!=='undefined'){if(!window.HanyuStylus.shouldAcceptPointer(e,wLastPenAt))return;}
+    else if(wPenActive)return;
+  }
+  e.preventDefault();const p=pt(e);
+  const ptsArr=Array.isArray(curStroke)?curStroke:curStroke.pts;
+  const prev=ptsArr[ptsArr.length-1];
+  ptsArr.push(p);
+  if(!Array.isArray(curStroke)&&(curStroke.penType==='highlighter'||curStroke.tool==='eraser')){
+    redrawFreeCanvas();
+  }else{
+    drawPressurePath(cx,Array.isArray(curStroke)?[prev,p]:Object.assign({},curStroke,{pts:[prev,p]}),9.5,getComputedStyle(document.body).color);
+  }
 });
 ['pointerup','pointercancel'].forEach(ev=>cv.addEventListener(ev,()=>{drawing=false;}));
+
+if(typeof window.HanyuStylus!=='undefined'){
+  window.HanyuStylus.attachHanziWriterGuard(hwBox,()=>wLastPenAt);
+  window.HanyuStylus.registerViewActions('writing',{
+    onUndo(){
+      if(wMode==='free'||!pad.classList.contains('hw-on')){
+        if(!strokesHist.length)return;
+        strokesHist.pop();redrawFreeCanvas();
+      }else if(wMode==='order'&&hwCharData){
+        stopOrderAnim();hwStrokeIdx=Math.max(0,hwStrokeIdx-1);renderOrderSvg(hwStrokeIdx);
+      }else{
+        setupPadForChar();
+      }
+    },
+    onClear(){
+      if(wMode==='free'||!pad.classList.contains('hw-on')){
+        strokesHist=[];redrawFreeCanvas();
+        if($('#w-compare-card'))$('#w-compare-card').classList.add('hide');
+      }else{
+        setupPadForChar();
+      }
+    },
+    onInputModeChange(){ updateStylusPill(); },
+    onZoomResize(){
+      if(typeof curView==='undefined'||curView==='writing'){
+        requestAnimationFrame(()=>fitPad());
+      }
+    }
+  });
+  window.HanyuStylus.subscribe(()=>{ updateStylusPill(); });
+  updateStylusPill();
+}
 
 function initExtraMiniPads(ch){
   const grid=$('#w-extra-grid');if(!grid)return;
@@ -1544,7 +1686,7 @@ function initExtraMiniPads(ch){
     </div>`).join('');
   $$('.w-extra-cell',grid).forEach(cell=>{
     const mcv=$('canvas',cell),mcx=mcv.getContext('2d'),clr=$('.w-extra-clr',cell);
-    let mDrawing=false,mStrokes=[],mCur=[];
+    let mDrawing=false,mStrokes=[],mCur=null;
     const col=getComputedStyle(document.body).color;
     const resizeMini=()=>{
       const r=mcv.getBoundingClientRect(),d=window.devicePixelRatio||1;
@@ -1560,19 +1702,32 @@ function initExtraMiniPads(ch){
       return {x:e.clientX-r.left,y:e.clientY-r.top,p:pr};
     };
     mcv.addEventListener('pointerdown',e=>{
-      if(e.pointerType==='pen'&&!wPenActive){wPenActive=true;updateStylusPill();}
-      else if(e.pointerType==='touch'&&wPenActive)return;
+      if(e.pointerType==='pen'){wLastPenAt=Date.now();if(!wPenActive){wPenActive=true;updateStylusPill();}}
+      if(typeof window.HanyuStylus!=='undefined'){
+        if(!window.HanyuStylus.shouldAcceptPointer(e,wLastPenAt))return;
+      }else if(e.pointerType==='touch'&&wPenActive)return;
       e.preventDefault();
       if(!mcv.width)resizeMini();
-      mDrawing=true;const p=mPt(e);mCur=[p];mStrokes.push(mCur);
+      mDrawing=true;const p=mPt(e);mCur=makeWriteStroke(e,p,1.15,5);mStrokes.push(mCur);
       try{mcv.setPointerCapture(e.pointerId);}catch(_){}
-      drawPressurePath(mcx,[p],5,getComputedStyle(document.body).color);
+      mcx.save();mcx.setTransform(1,0,0,1,0,0);mcx.clearRect(0,0,mcv.width,mcv.height);mcx.restore();
+      mStrokes.forEach(s=>drawPressurePath(mcx,s,5,getComputedStyle(document.body).color));
     });
     mcv.addEventListener('pointermove',e=>{
-      if(!mDrawing)return;
-      if(e.pointerType==='touch'&&wPenActive)return;
-      e.preventDefault();const p=mPt(e),prev=mCur[mCur.length-1];mCur.push(p);
-      drawPressurePath(mcx,[prev,p],5,getComputedStyle(document.body).color);
+      if(!mDrawing||!mCur)return;
+      if(e.pointerType==='touch'){
+        if(typeof window.HanyuStylus!=='undefined'){if(!window.HanyuStylus.shouldAcceptPointer(e,wLastPenAt))return;}
+        else if(wPenActive)return;
+      }
+      e.preventDefault();const p=mPt(e);
+      const ptsArr=Array.isArray(mCur)?mCur:mCur.pts;
+      const prev=ptsArr[ptsArr.length-1];ptsArr.push(p);
+      if(!Array.isArray(mCur)&&(mCur.penType==='highlighter'||mCur.tool==='eraser')){
+        mcx.save();mcx.setTransform(1,0,0,1,0,0);mcx.clearRect(0,0,mcv.width,mcv.height);mcx.restore();
+        mStrokes.forEach(s=>drawPressurePath(mcx,s,5,getComputedStyle(document.body).color));
+      }else{
+        drawPressurePath(mcx,Array.isArray(mCur)?[prev,p]:Object.assign({},mCur,{pts:[prev,p]}),5,getComputedStyle(document.body).color);
+      }
     });
     ['pointerup','pointercancel'].forEach(ev=>mcv.addEventListener(ev,()=>{mDrawing=false;}));
     clr.onclick=()=>{mStrokes=[];mcx.save();mcx.setTransform(1,0,0,1,0,0);mcx.clearRect(0,0,mcv.width,mcv.height);mcx.restore();};

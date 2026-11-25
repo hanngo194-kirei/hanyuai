@@ -11,7 +11,7 @@
   /* ---------- 1. BỘ VIẾT TAY STYLUS DÙNG CHUNG (Apple Pencil / S Pen) ---------- */
   function createStylusPad(canvas, opts){
     opts = opts || {};
-    let tool = 'pen';
+    let localTool = null;
     let strokes = [];
     let activeStroke = null;
     let activePtrId = null;
@@ -20,6 +20,13 @@
     const ctx = canvas.getContext('2d');
     canvas.style.touchAction = 'none';
 
+    function getStudioState(){
+      return (typeof window.HanyuStylus !== 'undefined') ? window.HanyuStylus.getState() : null;
+    }
+    function currentTool(){
+      const st = getStudioState();
+      return st ? st.tool : (localTool || 'pen');
+    }
     function emitChange(){
       if(typeof opts.onChange === 'function') opts.onChange(strokes);
     }
@@ -30,44 +37,159 @@
       const ny = Math.max(0, Math.min(1, (e.clientY - rect.top) / h));
       let p = 0.55;
       if(e.pointerType === 'pen'){
-        p = Number.isFinite(e.pressure) && e.pressure > 0 ? Math.min(1, Math.max(0.28, e.pressure)) : 0.62;
+        p = Number.isFinite(e.pressure) && e.pressure > 0 ? Math.min(1, Math.max(0.18, e.pressure)) : 0.62;
       }
       return [Number(nx.toFixed(4)), Number(ny.toFixed(4)), Number(p.toFixed(2))];
     }
-    function strokeSegment(s, i){
-      if(!s || !s.pts.length || !cssW || !cssH) return;
+    function computeWidth(s, pressure){
+      const base = Number(s.size) || opts.baseWidth || 2.8;
+      const penType = s.penType || 'fountain';
+      if(penType === 'ballpoint') return base * (0.9 + pressure * 0.2);
+      if(penType === 'brush') return Math.max(1, base * (0.25 + Math.pow(pressure, 1.35) * 1.95));
+      if(penType === 'highlighter') return base * 2.35;
+      return Math.max(0.8, base * (0.45 + pressure * 1.15)); // fountain mặc định
+    }
+    function drawFullStroke(s){
+      if(!s || !s.pts || !s.pts.length || !cssW || !cssH) return;
       const pts = s.pts;
+      const isEraser = s.tool === 'eraser';
+      const penType = s.penType || 'fountain';
+      const color = s.color || opts.color || '#2B1B15';
+      const softness = Number.isFinite(Number(s.softness)) ? Number(s.softness) : 0;
+      const rawOp = Number(s.opacity);
+      const opacity = Number.isFinite(rawOp) && rawOp > 0 ? rawOp : 1;
+
       ctx.save();
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      if(s.tool === 'eraser'){
+      if(isEraser){
         ctx.globalCompositeOperation = 'destination-out';
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 0;
         ctx.strokeStyle = 'rgba(0,0,0,1)';
-        ctx.lineWidth = s.size || (opts.eraserWidth || 18);
-      }else{
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.strokeStyle = opts.color || '#2B1B15';
-        const p = pts[i] ? pts[i][2] : 0.55;
-        ctx.lineWidth = (s.size || opts.baseWidth || 2.8) * (0.68 + p * 0.68);
-      }
-      if(pts.length === 1){
-        const x = pts[0][0] * cssW, y = pts[0][1] * cssH;
-        ctx.beginPath();
-        ctx.arc(x, y, ctx.lineWidth * 0.5, 0, Math.PI * 2);
-        if(s.tool === 'eraser'){
-          ctx.fillStyle = 'rgba(0,0,0,1)';
+        ctx.fillStyle = 'rgba(0,0,0,1)';
+        const ew = Number(s.size) || opts.eraserWidth || 18;
+        if(pts.length === 1){
+          ctx.beginPath();
+          ctx.arc(pts[0][0] * cssW, pts[0][1] * cssH, ew * 0.5, 0, Math.PI * 2);
+          ctx.fill();
         }else{
-          ctx.fillStyle = ctx.strokeStyle;
+          ctx.lineWidth = ew;
+          ctx.beginPath();
+          ctx.moveTo(pts[0][0] * cssW, pts[0][1] * cssH);
+          for(let i = 1; i < pts.length; i++){
+            ctx.lineTo(pts[i][0] * cssW, pts[i][1] * cssH);
+          }
+          ctx.stroke();
         }
+        ctx.restore();
+        return;
+      }
+
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      const base = Number(s.size) || opts.baseWidth || 2.8;
+      if(softness > 0){
+        ctx.shadowBlur = Math.max(0.5, softness * (base * 1.35 + 3.5));
+        ctx.shadowColor = color;
+      }
+
+      if(penType === 'highlighter'){
+        ctx.globalAlpha = Math.min(0.42, opacity * 0.42);
+        const hw = base * 2.35;
+        if(pts.length === 1){
+          ctx.beginPath();
+          ctx.arc(pts[0][0] * cssW, pts[0][1] * cssH, hw * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+        }else{
+          ctx.lineWidth = hw;
+          ctx.beginPath();
+          ctx.moveTo(pts[0][0] * cssW, pts[0][1] * cssH);
+          for(let i = 1; i < pts.length; i++){
+            const p0 = pts[i - 1], p1 = pts[i];
+            const xc = (p0[0] + p1[0]) * 0.5 * cssW, yc = (p0[1] + p1[1]) * 0.5 * cssH;
+            ctx.quadraticCurveTo(p0[0] * cssW, p0[1] * cssH, xc, yc);
+          }
+          const last = pts[pts.length - 1];
+          ctx.lineTo(last[0] * cssW, last[1] * cssH);
+          ctx.stroke();
+        }
+        ctx.restore();
+        return;
+      }
+
+      ctx.globalAlpha = opacity;
+      if(pts.length === 1){
+        const r = computeWidth(s, pts[0][2] || 0.55) * 0.5;
+        ctx.beginPath();
+        ctx.arc(pts[0][0] * cssW, pts[0][1] * cssH, r, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
         return;
       }
-      const p0 = pts[Math.max(0, i - 1)], p1 = pts[i];
+      for(let i = 1; i < pts.length; i++){
+        const p0 = pts[i - 1], p1 = pts[i];
+        const x0 = p0[0] * cssW, y0 = p0[1] * cssH;
+        const x1 = p1[0] * cssW, y1 = p1[1] * cssH;
+        const pr = ((p0[2] || 0.55) + (p1[2] || 0.55)) * 0.5;
+        ctx.lineWidth = computeWidth(s, pr);
+        ctx.beginPath();
+        if(i >= 2){
+          const pm = pts[i - 2];
+          const xm = (pm[0] * cssW + x0) / 2, ym = (pm[1] * cssH + y0) / 2;
+          const xc = (x0 + x1) / 2, yc = (y0 + y1) / 2;
+          ctx.moveTo(xm, ym);
+          ctx.quadraticCurveTo(x0, y0, xc, yc);
+          ctx.lineTo(x1, y1);
+        }else{
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y1);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    function strokeLastSegment(s){
+      if(!s || !s.pts.length || !cssW || !cssH) return;
+      if(s.penType === 'highlighter' || s.pts.length === 1){
+        redraw();
+        return;
+      }
+      const pts = s.pts;
+      const i = pts.length - 1;
+      const isEraser = s.tool === 'eraser';
+      const color = s.color || opts.color || '#2B1B15';
+      const softness = Number.isFinite(Number(s.softness)) ? Number(s.softness) : 0;
+      const rawOp = Number(s.opacity);
+      const opacity = Number.isFinite(rawOp) && rawOp > 0 ? rawOp : 1;
+
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if(isEraser){
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(0,0,0,1)';
+        ctx.lineWidth = Number(s.size) || opts.eraserWidth || 18;
+      }else{
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = opacity;
+        ctx.strokeStyle = color;
+        const base = Number(s.size) || opts.baseWidth || 2.8;
+        if(softness > 0){
+          ctx.shadowBlur = Math.max(0.5, softness * (base * 1.35 + 3.5));
+          ctx.shadowColor = color;
+        }
+        const pr = ((pts[i - 1][2] || 0.55) + (pts[i][2] || 0.55)) * 0.5;
+        ctx.lineWidth = computeWidth(s, pr);
+      }
+      const p0 = pts[i - 1], p1 = pts[i];
       const x0 = p0[0] * cssW, y0 = p0[1] * cssH;
       const x1 = p1[0] * cssW, y1 = p1[1] * cssH;
       ctx.beginPath();
-      ctx.moveTo(x0, y0);
       if(i >= 2){
         const pm = pts[i - 2];
         const xm = (pm[0] * cssW + x0) / 2, ym = (pm[1] * cssH + y0) / 2;
@@ -76,6 +198,7 @@
         ctx.quadraticCurveTo(x0, y0, xc, yc);
         ctx.lineTo(x1, y1);
       }else{
+        ctx.moveTo(x0, y0);
         ctx.lineTo(x1, y1);
       }
       ctx.stroke();
@@ -87,10 +210,7 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, cssW, cssH);
       for(let si = 0; si < strokes.length; si++){
-        const s = strokes[si];
-        if(!s || !s.pts || !s.pts.length) continue;
-        if(s.pts.length === 1){ strokeSegment(s, 0); continue; }
-        for(let pi = 1; pi < s.pts.length; pi++){ strokeSegment(s, pi); }
+        drawFullStroke(strokes[si]);
       }
       ctx.restore();
     }
@@ -110,43 +230,52 @@
     }
 
     canvas.addEventListener('pointerdown', e => {
-      if(e.button && e.button !== 0) return;
+      if(e.button && e.button !== 0 && !(window.HanyuStylus && window.HanyuStylus.isHardwareEraser(e))) return;
       if(e.pointerType === 'pen') lastPenAt = Date.now();
-      else if(e.pointerType === 'touch' && (Date.now() - lastPenAt < 10000) && ((e.width && e.width > 24) || (e.height && e.height > 24))){
-        return; // Palm rejection khi mới sử dụng bút cảm ứng
+      if(window.HanyuStylus){
+        if(!window.HanyuStylus.shouldAcceptPointer(e, lastPenAt)) return;
+      }else if(e.pointerType === 'touch' && (Date.now() - lastPenAt < 10000) && ((e.width && e.width > 24) || (e.height && e.height > 24))){
+        return;
       }
       if(!cssW || !cssH) resize();
       activePtrId = e.pointerId;
       try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
       const pt = pointFromEvent(e);
+      const st = getStudioState();
+      const hwErase = window.HanyuStylus && window.HanyuStylus.isHardwareEraser(e);
+      const useTool = hwErase ? 'eraser' : currentTool();
+      const baseScaleRatio = opts.widthRatio || 1;
       activeStroke = {
-        tool,
-        size: tool === 'eraser' ? (opts.eraserWidth || 18) : (opts.baseWidth || 2.8),
+        tool: useTool,
+        penType: st ? st.penType : 'fountain',
+        size: useTool === 'eraser'
+          ? (st ? st.eraserSize : (opts.eraserWidth || 18))
+          : ((st ? st.penSize : (opts.baseWidth || 2.8)) * baseScaleRatio),
+        softness: st ? st.softness : 0,
+        opacity: st ? st.opacity : 1,
+        color: st ? st.color : (opts.color || '#2B1B15'),
         pts: [pt]
       };
       strokes.push(activeStroke);
-      ctx.save();
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      strokeSegment(activeStroke, 0);
-      ctx.restore();
+      redraw();
       if(typeof opts.onInteract === 'function') opts.onInteract();
     });
     canvas.addEventListener('pointermove', e => {
       if(!activeStroke || e.pointerId !== activePtrId) return;
+      if(e.pointerType === 'touch' && window.HanyuStylus && !window.HanyuStylus.shouldAcceptPointer(e, lastPenAt)) return;
       const pt = pointFromEvent(e);
       const last = activeStroke.pts[activeStroke.pts.length - 1];
-      if(last && Math.hypot((pt[0] - last[0]) * cssW, (pt[1] - last[1]) * cssH) < 1.3) return;
+      if(last && Math.hypot((pt[0] - last[0]) * cssW, (pt[1] - last[1]) * cssH) < 1.2) return;
       activeStroke.pts.push(pt);
-      ctx.save();
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      strokeSegment(activeStroke, activeStroke.pts.length - 1);
-      ctx.restore();
+      strokeLastSegment(activeStroke);
     });
     function finishPtr(e){
       if(!activeStroke || e.pointerId !== activePtrId) return;
       try{ canvas.releasePointerCapture(e.pointerId); }catch(_){}
+      const needRedraw = activeStroke.penType === 'highlighter';
       activeStroke = null;
       activePtrId = null;
+      if(needRedraw) redraw();
       emitChange();
     }
     canvas.addEventListener('pointerup', finishPtr);
@@ -155,13 +284,33 @@
     return {
       resize,
       redraw,
-      setTool(t){ tool = (t === 'eraser') ? 'eraser' : 'pen'; },
-      getTool(){ return tool; },
+      setTool(t){ localTool = (t === 'eraser') ? 'eraser' : 'pen'; },
+      getTool(){ return currentTool(); },
       undo(){ if(!strokes.length) return false; strokes.pop(); redraw(); emitChange(); return true; },
       clear(){ strokes = []; redraw(); emitChange(); },
-      getStrokes(){ return strokes.map(s => ({tool: s.tool, size: s.size, pts: s.pts.map(p => p.slice())})); },
+      getStrokes(){
+        return strokes.map(s => ({
+          tool: s.tool,
+          penType: s.penType || 'fountain',
+          size: s.size,
+          softness: s.softness || 0,
+          opacity: s.opacity == null ? 1 : s.opacity,
+          color: s.color || (opts.color || '#2B1B15'),
+          pts: s.pts.map(p => p.slice())
+        }));
+      },
       setStrokes(arr){
-        strokes = Array.isArray(arr) ? arr.filter(s => s && Array.isArray(s.pts) && s.pts.length).map(s => ({tool: s.tool === 'eraser' ? 'eraser' : 'pen', size: Number(s.size) || 2.8, pts: s.pts})) : [];
+        strokes = Array.isArray(arr)
+          ? arr.filter(s => s && Array.isArray(s.pts) && s.pts.length).map(s => ({
+              tool: s.tool === 'eraser' ? 'eraser' : 'pen',
+              penType: s.penType || 'fountain',
+              size: Number(s.size) || 2.8,
+              softness: Number(s.softness) || 0,
+              opacity: s.opacity == null ? 1 : Number(s.opacity),
+              color: s.color || (opts.color || '#2B1B15'),
+              pts: s.pts
+            }))
+          : [];
         if(!resize()) redraw();
       },
       hasInk(){ return strokes.some(s => s.tool !== 'eraser' && s.pts && s.pts.length); }
@@ -692,6 +841,7 @@
   /* ---------- 4. MODULE CHÉP BÀI KHÓA (#copy) ---------- */
   const copyCtrl = (function(){
     let rowPads = [];
+    let rowInputs = [];
     let activeRow = 0;
     let curTool = 'pen';
     let showGuide = true;
@@ -702,13 +852,27 @@
       const src = (LISTEN_DIALOG && LISTEN_DIALOG.length) ? LISTEN_DIALOG : SENT;
       return (src || []).filter(x => x && x.zh);
     }
+    function isRowFilled(idx){
+      const p = rowPads[idx];
+      if(p && p.hasInk()) return true;
+      const inp = rowInputs[idx];
+      return !!(inp && inp.value && inp.value.trim().length > 0);
+    }
+    function countFilled(){
+      const lines = getLines();
+      let c = 0;
+      for(let i = 0; i < lines.length; i++){
+        if(isRowFilled(i)) c++;
+      }
+      return c;
+    }
     function openCopySummary(){
       clearTimeout(autoSumTimer);
       persistDrafts(true);
       const lid = store.activeLessonId;
       const lines = getLines();
       const total = lines.length || 1;
-      const filled = rowPads.filter(p => p && p.hasInk()).length;
+      const filled = countFilled();
       if(typeof recordLearningEvent === 'function'){
         recordLearningEvent({type:'write', skill:'write', title:'Chép bài khóa', result:`${filled}/${lines.length} dòng`, view:'copy'});
       }
@@ -729,7 +893,7 @@
     function updateProg(){
       const lines = getLines();
       const total = lines.length;
-      const filled = rowPads.filter(p => p && p.hasInk()).length;
+      const filled = countFilled();
       const bar = $('#cp-bar'), cnt = $('#cp-cnt');
       if(bar) bar.style.width = total ? Math.round(filled / total * 100) + '%' : '0%';
       if(cnt) cnt.textContent = `${filled} / ${total} dòng`;
@@ -745,6 +909,7 @@
       const lid = store.activeLessonId;
       if(!lid) return;
       if(!store.copyDrafts || typeof store.copyDrafts !== 'object') store.copyDrafts = {};
+      if(!store.copyTextDrafts || typeof store.copyTextDrafts !== 'object') store.copyTextDrafts = {};
       const out = {};
       rowPads.forEach((p, idx) => {
         if(!p) return;
@@ -752,20 +917,43 @@
         if(st.length) out[idx] = st;
       });
       store.copyDrafts[lid] = out;
+      const txtOut = {};
+      rowInputs.forEach((inp, idx) => {
+        if(inp && inp.value && inp.value.trim()) txtOut[idx] = inp.value;
+      });
+      store.copyTextDrafts[lid] = txtOut;
       saveStore(store);
-      if(!silent) toast('Đã lưu nét chép bài khóa vào máy');
+      if(!silent) toast('Đã lưu bài chép vào máy');
     }
     let draftTimer = null;
     function scheduleSave(){
       clearTimeout(draftTimer);
       draftTimer = setTimeout(() => persistDrafts(true), 600);
     }
-    function setActiveTool(t){
+    function setActiveTool(t, fromStudio){
       curTool = (t === 'eraser') ? 'eraser' : 'pen';
       const pBtn = $('#cp-tool-pen'), eBtn = $('#cp-tool-eraser');
       if(pBtn) pBtn.classList.toggle('on', curTool === 'pen');
       if(eBtn) eBtn.classList.toggle('on', curTool === 'eraser');
       rowPads.forEach(p => { if(p) p.setTool(curTool); });
+      if(!fromStudio && typeof window.HanyuStylus !== 'undefined'){
+        window.HanyuStylus.setTool(curTool);
+      }
+    }
+    function syncInputMode(){
+      const st = (typeof window.HanyuStylus !== 'undefined') ? window.HanyuStylus.getState() : { inputMode: 'pen' };
+      const isKb = st.inputMode === 'keyboard';
+      const box = $('#cp-rows');
+      if(box) box.classList.toggle('cp-kb-mode', isKb);
+      const hintEl = $('#copy .cp-hint-pill span');
+      if(hintEl){
+        hintEl.textContent = isKb
+          ? 'Đang ở chế độ Gõ phím · Bấm “Viết bút” ở bảng bên để dùng S-Pen.'
+          : (st.allowTouchDraw
+              ? 'Đang bật viết bút + ngón tay · Đã kích hoạt chống tì đè lòng bàn tay.'
+              : 'Đang ở chế độ chỉ bút S-Pen / Apple Pencil · Chạm tay sẽ không vẽ nét.');
+      }
+      if(!isKb) requestAnimationFrame(resizeAll);
     }
     function syncRowFocus(){
       $$('#cp-rows .cp-card').forEach((c, idx) => c.classList.toggle('active', idx === activeRow));
@@ -784,6 +972,7 @@
       clearTimeout(autoSumTimer);
       autoSumDone = false;
       rowPads = [];
+      rowInputs = [];
       activeRow = 0;
       if(!lines.length){
         box.innerHTML = '<div class="card"><p class="muted small" style="margin:0">Bài học này chưa có câu bài khóa để chép.</p></div>';
@@ -792,6 +981,7 @@
       }
       const lid = store.activeLessonId;
       const savedDrafts = (store.copyDrafts && lid && store.copyDrafts[lid]) || {};
+      const savedTextDrafts = (store.copyTextDrafts && lid && store.copyTextDrafts[lid]) || {};
 
       box.innerHTML = lines.map((line, idx) => {
         const chars = [...String(line.zh || '')].filter(c => !/\s/.test(c));
@@ -802,6 +992,7 @@
           const ch = chars[ci] || '';
           return `<span class="cp-cell">${showGuide && ch ? `<i>${esc(ch)}</i>` : ''}</span>`;
         }).join('');
+        const kbVal = savedTextDrafts[idx] || '';
         return `<div class="cp-card${idx === 0 ? ' active' : ''}" data-cprow="${idx}">
           <div class="cp-head">
             <div class="cp-model">
@@ -814,33 +1005,66 @@
             <div aria-hidden="true" class="cp-cells">${cellsHtml}</div>
             <canvas class="cp-cv" id="cp-cv-${idx}"></canvas>
           </div>
+          <div class="cp-kb-box">
+            <input class="cp-kb-input" id="cp-kb-${idx}" data-cpkb="${idx}" type="text" value="${esc(kbVal)}" placeholder="Gõ lại câu ${idx + 1}: ${esc(line.zh)}" autocomplete="off" autocorrect="off" spellcheck="false"/>
+          </div>
         </div>`;
       }).join('');
 
       lines.forEach((_, idx) => {
         const cvEl = $(`#cp-cv-${idx}`);
-        if(!cvEl) return;
-        const pad = createStylusPad(cvEl, {
-          baseWidth: 2.6,
-          eraserWidth: 16,
-          onInteract(){
+        if(cvEl){
+          const pad = createStylusPad(cvEl, {
+            baseWidth: 2.6,
+            widthRatio: 0.85,
+            eraserWidth: 16,
+            onInteract(){
+              activeRow = idx;
+              syncRowFocus();
+            },
+            onChange(){
+              updateProg();
+              scheduleSave();
+            }
+          });
+          pad.setTool(curTool);
+          if(Array.isArray(savedDrafts[idx])) pad.setStrokes(savedDrafts[idx]);
+          rowPads[idx] = pad;
+        }
+        const kbEl = $(`#cp-kb-${idx}`);
+        if(kbEl){
+          kbEl.addEventListener('focus', () => { activeRow = idx; syncRowFocus(); });
+          kbEl.addEventListener('input', () => {
             activeRow = idx;
             syncRowFocus();
-          },
-          onChange(){
             updateProg();
             scheduleSave();
-          }
-        });
-        pad.setTool(curTool);
-        if(Array.isArray(savedDrafts[idx])) pad.setStrokes(savedDrafts[idx]);
-        rowPads[idx] = pad;
+          });
+          rowInputs[idx] = kbEl;
+        }
       });
+      syncInputMode();
       updateProg();
     }
 
     function resizeAll(){
       rowPads.forEach(p => { if(p) p.resize(); });
+    }
+    function doUndo(){
+      const p = rowPads[activeRow] || rowPads.find(x => x && x.hasInk());
+      if(p) p.undo();
+    }
+    function doClear(){
+      const isKb = typeof window.HanyuStylus !== 'undefined' && window.HanyuStylus.getState().inputMode === 'keyboard';
+      if(isKb && rowInputs[activeRow]){
+        rowInputs[activeRow].value = '';
+        persistDrafts(true);
+        updateProg();
+        toast(`Đã xóa chữ ở dòng ${activeRow + 1}`);
+        return;
+      }
+      const p = rowPads[activeRow];
+      if(p){ p.clear(); persistDrafts(true); toast(`Đã xóa nét ở dòng ${activeRow + 1}`); }
     }
 
     if($('#cp-guide-btn')) $('#cp-guide-btn').onclick = () => {
@@ -851,20 +1075,28 @@
     };
     if($('#cp-tool-pen')) $('#cp-tool-pen').onclick = () => setActiveTool('pen');
     if($('#cp-tool-eraser')) $('#cp-tool-eraser').onclick = () => setActiveTool('eraser');
-    if($('#cp-tool-undo')) $('#cp-tool-undo').onclick = () => {
-      const p = rowPads[activeRow] || rowPads.find(x => x && x.hasInk());
-      if(p) p.undo();
-    };
-    if($('#cp-tool-clear')) $('#cp-tool-clear').onclick = () => {
-      const p = rowPads[activeRow];
-      if(p){ p.clear(); persistDrafts(true); toast(`Đã xóa nét ở dòng ${activeRow + 1}`); }
-    };
+    if($('#cp-tool-undo')) $('#cp-tool-undo').onclick = doUndo;
+    if($('#cp-tool-clear')) $('#cp-tool-clear').onclick = doClear;
     if($('#cp-tool-save')) $('#cp-tool-save').onclick = () => persistDrafts(false);
-    if($('#cp-info-btn')) $('#cp-info-btn').onclick = () => toast('Khung viết hỗ trợ Apple Pencil / S Pen (lực nhấn & chống chạm lòng bàn tay)');
+    if($('#cp-info-btn')) $('#cp-info-btn').onclick = () => toast('Khung viết hỗ trợ Apple Pencil / S Pen, chống tì đè tay và khóa zoom');
     if($('#cp-done-btn')) $('#cp-done-btn').onclick = openCopySummary;
     window.addEventListener('resize', () => {
       if(typeof curView !== 'undefined' && curView === 'copy') requestAnimationFrame(resizeAll);
     });
+
+    if(typeof window.HanyuStylus !== 'undefined'){
+      window.HanyuStylus.registerViewActions('copy', {
+        onUndo: doUndo,
+        onClear: doClear,
+        onSave: () => persistDrafts(false),
+        onInputModeChange: () => syncInputMode(),
+        onZoomResize: () => resizeAll()
+      });
+      window.HanyuStylus.subscribe((st, kind) => {
+        setActiveTool(st.tool, true);
+        if(kind === 'inputMode' || kind === 'touch') syncInputMode();
+      });
+    }
 
     return {
       render,
@@ -880,8 +1112,8 @@
   /* ---------- 5. MODULE LUYỆN DỊCH (#trans) ---------- */
   const transCtrl = (function(){
     let dir = 'vi2zh';
-    let inputMode = 'draw';
-    let tool = 'pen';
+    let inputMode = (typeof window.HanyuStylus !== 'undefined' && window.HanyuStylus.getState().inputMode === 'keyboard') ? 'type' : 'draw';
+    let tool = (typeof window.HanyuStylus !== 'undefined') ? window.HanyuStylus.getState().tool : 'pen';
     let qi = 0;
     let pad = null;
     let doneSet = new Set();
@@ -908,6 +1140,7 @@
       if(!cv || pad) return;
       pad = createStylusPad(cv, {
         baseWidth: 2.9,
+        widthRatio: 0.95,
         eraserWidth: 18,
         onChange(){ syncWatermark(); }
       });
@@ -953,6 +1186,13 @@
       const tp = $('#tr-tool-pen'), te = $('#tr-tool-eraser');
       if(tp) tp.classList.toggle('on', tool === 'pen');
       if(te) te.classList.toggle('on', tool === 'eraser');
+      const badgeEl = $('#trans .tr-stylus-badge span');
+      if(badgeEl && typeof window.HanyuStylus !== 'undefined'){
+        const st = window.HanyuStylus.getState();
+        badgeEl.textContent = inputMode === 'type'
+          ? 'Đang ở chế độ Bàn phím · Không nhận nét bút'
+          : (st.allowTouchDraw ? 'Bút + ngón tay · Chống tì đè lòng bàn tay' : 'Chỉ S-Pen / Apple Pencil · Tay chạm không vẽ');
+      }
 
       const items = getItems();
       const cnt = $('#tr-cnt'), lbl = $('#tr-prompt-lbl'), txt = $('#tr-prompt-txt'), pyEl = $('#tr-prompt-py'), spk = $('#tr-prompt-spk');
@@ -1103,6 +1343,9 @@
       const b = e.target.closest('button[data-trmode]');
       if(!b) return;
       inputMode = b.dataset.trmode;
+      if(typeof window.HanyuStylus !== 'undefined'){
+        window.HanyuStylus.setInputMode(inputMode === 'type' ? 'keyboard' : 'pen', true);
+      }
       render();
       if(inputMode === 'draw') requestAnimationFrame(() => { initPad(); if(pad) pad.resize(); });
     });
@@ -1121,10 +1364,27 @@
     };
     if($('#tr-prompt-spk')) $('#tr-prompt-spk').onclick = () => { const cur = getItems()[qi]; if(cur && typeof speak === 'function') speak(cur.zh, 0.9); };
     if($('#tr-ans-spk')) $('#tr-ans-spk').onclick = () => { const cur = getItems()[qi]; if(cur && typeof speak === 'function') speak(cur.zh, 0.9); };
-    if($('#tr-tool-pen')) $('#tr-tool-pen').onclick = () => { tool = 'pen'; if(pad) pad.setTool('pen'); render(); };
-    if($('#tr-tool-eraser')) $('#tr-tool-eraser').onclick = () => { tool = 'eraser'; if(pad) pad.setTool('eraser'); render(); };
+    if($('#tr-tool-pen')) $('#tr-tool-pen').onclick = () => {
+      tool = 'pen';
+      if(pad) pad.setTool('pen');
+      if(typeof window.HanyuStylus !== 'undefined') window.HanyuStylus.setTool('pen');
+      render();
+    };
+    if($('#tr-tool-eraser')) $('#tr-tool-eraser').onclick = () => {
+      tool = 'eraser';
+      if(pad) pad.setTool('eraser');
+      if(typeof window.HanyuStylus !== 'undefined') window.HanyuStylus.setTool('eraser');
+      render();
+    };
     if($('#tr-tool-undo')) $('#tr-tool-undo').onclick = () => { if(pad) pad.undo(); };
-    if($('#tr-tool-clear')) $('#tr-tool-clear').onclick = () => { if(pad) pad.clear(); };
+    if($('#tr-tool-clear')) $('#tr-tool-clear').onclick = () => {
+      if(inputMode === 'type'){
+        const ta = $('#tr-textarea');
+        if(ta){ ta.value = ''; ta.focus(); }
+      }else if(pad){
+        pad.clear();
+      }
+    };
     if($('#tr-type-clr')) $('#tr-type-clr').onclick = () => { const ta = $('#tr-textarea'); if(ta){ ta.value = ''; ta.focus(); } };
     if($('#tr-hint-btn')) $('#tr-hint-btn').onclick = showHint;
     if($('#tr-check-btn')) $('#tr-check-btn').onclick = checkAnswer;
@@ -1133,9 +1393,51 @@
       if(typeof curView !== 'undefined' && curView === 'trans' && pad) requestAnimationFrame(() => pad.resize());
     });
 
+    if(typeof window.HanyuStylus !== 'undefined'){
+      window.HanyuStylus.registerViewActions('trans', {
+        onUndo(){ if(pad) pad.undo(); },
+        onClear(){
+          if(inputMode === 'type'){
+            const ta = $('#tr-textarea');
+            if(ta){ ta.value = ''; ta.focus(); }
+          }else if(pad){
+            pad.clear();
+          }
+        },
+        onInputModeChange(m){
+          inputMode = (m === 'keyboard') ? 'type' : 'draw';
+          render();
+          if(inputMode === 'draw') requestAnimationFrame(() => { initPad(); if(pad) pad.resize(); });
+        },
+        onZoomResize(){
+          if(pad) pad.resize();
+        }
+      });
+      window.HanyuStylus.subscribe((st, kind) => {
+        tool = st.tool;
+        if(pad) pad.setTool(tool);
+        if(kind === 'inputMode' || kind === 'touch'){
+          const nextMode = st.inputMode === 'keyboard' ? 'type' : 'draw';
+          if(inputMode !== nextMode || kind === 'touch'){
+            inputMode = nextMode;
+            render();
+            if(inputMode === 'draw') requestAnimationFrame(() => { initPad(); if(pad) pad.resize(); });
+          }
+        }else if(kind === 'tool'){
+          const tp = $('#tr-tool-pen'), te = $('#tr-tool-eraser');
+          if(tp) tp.classList.toggle('on', tool === 'pen');
+          if(te) te.classList.toggle('on', tool === 'eraser');
+        }
+      });
+    }
+
     return {
       render,
       enter(){
+        if(typeof window.HanyuStylus !== 'undefined'){
+          inputMode = window.HanyuStylus.getState().inputMode === 'keyboard' ? 'type' : 'draw';
+          tool = window.HanyuStylus.getState().tool;
+        }
         initPad();
         render();
         requestAnimationFrame(() => { if(pad) pad.resize(); });
@@ -1145,10 +1447,11 @@
     };
   })();
 
-  /* ---------- 6. BẢNG GHI CHÚ BÀI HỌC 3 CỘT (TEXT + BÚT CẢM ỨNG) ---------- */
+  /* ---------- 6. BẢNG BÚT VIẾT + GHI CHÚ BÀI HỌC 3 CỘT (TEXT + STYLUS) ---------- */
   const notesCtrl = (function(){
     const panels = [];
     let noteMode = 'text';
+    const hostTabMap = { dialog: 'notes', copy: 'stylus', trans: 'stylus' };
     let saveTimer = null;
 
     function getNoteRec(lid){
@@ -1170,41 +1473,85 @@
       store.lessonNotes[lid] = { text: cur.text || '', strokes };
       saveStore(store);
     }
+    function syncPanelTabs(p){
+      const activeTab = hostTabMap[p.hostId] || 'notes';
+      p.host.querySelectorAll('[data-railtab]').forEach(b => b.classList.toggle('on', b.dataset.railtab === activeTab));
+      p.host.querySelectorAll('[data-railpane]').forEach(pane => pane.classList.toggle('hide', pane.dataset.railpane !== activeTab));
+      if(activeTab === 'stylus' && typeof window.HanyuStylus !== 'undefined'){
+        requestAnimationFrame(() => window.HanyuStylus.redrawPreviews());
+      }
+      if(activeTab === 'notes' && noteMode === 'draw'){
+        const rec = getNoteRec(store.activeLessonId);
+        requestAnimationFrame(() => p.pad.setStrokes(rec.strokes || []));
+      }
+    }
 
     function initHosts(){
       if(panels.length) return;
       $$('.d2-notes-panel[data-notes-host]').forEach(host => {
         const hostId = host.dataset.notesHost;
-        host.innerHTML = `<div class="d2-np-head">
-          <b>Ghi chú bài học</b>
-          <div class="d2-np-tabs">
-            <button class="on" data-nptab="text" type="button">Ghi chú</button>
-            <button data-nptab="draw" type="button">Viết tay</button>
+        host.classList.add('d2-side-rail');
+        host.innerHTML = `<div class="d2-rail-top">
+          <div class="d2-rail-tabs">
+            <button type="button" data-railtab="stylus"><svg class="ic"><use href="#i-pencil"></use></svg><span>Bút viết</span></button>
+            <button type="button" data-railtab="notes"><svg class="ic"><use href="#i-book"></use></svg><span>Ghi chú</span></button>
           </div>
-          <button aria-label="Đóng ghi chú" class="d2-np-close" type="button"><svg class="ic"><use href="#i-x"></use></svg></button>
+          <button aria-label="Đóng bảng" class="d2-np-close" type="button"><svg class="ic"><use href="#i-x"></use></svg></button>
         </div>
-        <div class="d2-np-body">
-          <textarea class="d2-np-ta" placeholder="Ghi chép từ vựng, ngữ pháp, lưu ý phát âm..."></textarea>
-          <div class="d2-np-draw hide">
-            <div class="d2-np-paper"><canvas class="d2-np-cv"></canvas></div>
-            <div class="d2-np-tools">
-              <button class="on" data-nptool="pen" type="button">Bút</button>
-              <button data-nptool="eraser" type="button">Tẩy</button>
-              <button data-nptool="undo" type="button">Hoàn tác</button>
-              <button data-nptool="clear" type="button">Xóa</button>
+        <div class="d2-rail-pane" data-railpane="stylus">
+          <div class="d2-stylus-host"></div>
+        </div>
+        <div class="d2-rail-pane" data-railpane="notes">
+          <div class="d2-np-head">
+            <b>Ghi chú bài học</b>
+            <div class="d2-np-tabs">
+              <button class="on" data-nptab="text" type="button">Ghi chú</button>
+              <button data-nptab="draw" type="button">Viết tay</button>
             </div>
           </div>
-        </div>
-        <div class="d2-np-foot">Tự động lưu cục bộ theo từng bài học</div>`;
+          <div class="d2-np-body">
+            <textarea class="d2-np-ta" placeholder="Ghi chép từ vựng, ngữ pháp, lưu ý phát âm..."></textarea>
+            <div class="d2-np-draw hide">
+              <div class="d2-np-paper"><canvas class="d2-np-cv"></canvas></div>
+              <div class="d2-np-tools">
+                <button class="on" data-nptool="pen" type="button">Bút</button>
+                <button data-nptool="eraser" type="button">Tẩy</button>
+                <button data-nptool="undo" type="button">Hoàn tác</button>
+                <button data-nptool="clear" type="button">Xóa</button>
+              </div>
+              <button class="d2-np-penlink" type="button">Chỉnh cỡ, màu bút &amp; khóa zoom ›</button>
+            </div>
+          </div>
+          <div class="d2-np-foot">Tự động lưu cục bộ theo từng bài học</div>
+        </div>`;
+
+        const stylusHost = host.querySelector('.d2-stylus-host');
+        if(stylusHost && typeof window.HanyuStylus !== 'undefined'){
+          window.HanyuStylus.mountPanel(stylusHost, { showSave: hostId === 'copy' });
+        }
 
         const ta = host.querySelector('.d2-np-ta');
         const drawBox = host.querySelector('.d2-np-draw');
         const cv = host.querySelector('.d2-np-cv');
         const pad = createStylusPad(cv, {
           baseWidth: 2.3,
+          widthRatio: 0.78,
           eraserWidth: 15,
           onChange(st){ setNoteStrokes(store.activeLessonId, st); }
         });
+
+        host.querySelectorAll('[data-railtab]').forEach(b => b.addEventListener('click', () => {
+          hostTabMap[hostId] = b.dataset.railtab;
+          const curPanel = panels.find(x => x.hostId === hostId);
+          if(curPanel) syncPanelTabs(curPanel);
+        }));
+
+        const penLinkBtn = host.querySelector('.d2-np-penlink');
+        if(penLinkBtn) penLinkBtn.onclick = () => {
+          hostTabMap[hostId] = 'stylus';
+          const curPanel = panels.find(x => x.hostId === hostId);
+          if(curPanel) syncPanelTabs(curPanel);
+        };
 
         ta.addEventListener('input', () => {
           setNoteText(store.activeLessonId, ta.value);
@@ -1219,6 +1566,7 @@
           const act = b.dataset.nptool;
           if(act === 'pen' || act === 'eraser'){
             pad.setTool(act);
+            if(typeof window.HanyuStylus !== 'undefined') window.HanyuStylus.setTool(act);
             host.querySelectorAll('[data-nptool="pen"],[data-nptool="eraser"]').forEach(x => x.classList.toggle('on', x.dataset.nptool === act));
           }else if(act === 'undo'){
             pad.undo();
@@ -1226,8 +1574,42 @@
             pad.clear();
           }
         }));
-        panels.push({ hostId, host, ta, drawBox, pad });
+        const entry = { hostId, host, ta, drawBox, pad };
+        panels.push(entry);
+        syncPanelTabs(entry);
       });
+
+      if(typeof window.HanyuStylus !== 'undefined'){
+        window.HanyuStylus.registerViewActions('dialog', {
+          onUndo(){
+            const p = panels.find(x => x.hostId === 'dialog');
+            if(p && noteMode === 'draw') p.pad.undo();
+          },
+          onClear(){
+            const p = panels.find(x => x.hostId === 'dialog');
+            if(p && noteMode === 'draw') p.pad.clear();
+          },
+          onInputModeChange(m){
+            const activeV = (typeof curView === 'string') ? curView : '';
+            if(activeV === 'dialog'){
+              noteMode = (m === 'keyboard') ? 'text' : 'draw';
+              hostTabMap.dialog = 'notes';
+              sync();
+            }
+          },
+          onZoomResize(){
+            panels.forEach(p => { if(noteMode === 'draw') p.pad.resize(); });
+          }
+        });
+        window.HanyuStylus.subscribe((st, kind) => {
+          if(kind === 'tool'){
+            panels.forEach(p => {
+              p.pad.setTool(st.tool);
+              p.host.querySelectorAll('[data-nptool="pen"],[data-nptool="eraser"]').forEach(x => x.classList.toggle('on', x.dataset.nptool === st.tool));
+            });
+          }
+        });
+      }
     }
 
     function sync(){
@@ -1238,6 +1620,7 @@
         p.ta.classList.toggle('hide', noteMode !== 'text');
         p.drawBox.classList.toggle('hide', noteMode !== 'draw');
         p.host.querySelectorAll('[data-nptab]').forEach(b => b.classList.toggle('on', b.dataset.nptab === noteMode));
+        syncPanelTabs(p);
         if(noteMode === 'draw'){
           requestAnimationFrame(() => p.pad.setStrokes(rec.strokes || []));
         }
@@ -1250,11 +1633,21 @@
       initHosts();
       const host = $(`.d2-notes-panel[data-notes-host="${btn.dataset.toggleNotes}"]`);
       if(!host) return;
+      hostTabMap[btn.dataset.toggleNotes] = 'notes';
       host.classList.toggle('open');
       if(host.classList.contains('open')) sync();
     });
 
-    return { sync, initHosts };
+    return {
+      sync,
+      initHosts,
+      openHostTab(hostId, tab){
+        initHosts();
+        if(hostId && (tab === 'stylus' || tab === 'notes')) hostTabMap[hostId] = tab;
+        const p = panels.find(x => x.hostId === hostId);
+        if(p) syncPanelTabs(p);
+      }
+    };
   })();
 
   window.appendLessonNote = function(line){
@@ -1265,6 +1658,7 @@
     const nextTxt = cur.text ? (cur.text.trimEnd() + '\n' + line) : line;
     store.lessonNotes[lid] = { text: nextTxt, strokes: cur.strokes || [] };
     saveStore(store);
+    notesCtrl.openHostTab('dialog', 'notes');
     notesCtrl.sync();
   };
 

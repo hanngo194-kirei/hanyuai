@@ -153,7 +153,7 @@
   border:1px solid var(--line);font-size:13px;cursor:pointer;
 }
 
-.bk-foot-acts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.bk-foot-acts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:14px;margin-bottom:14px}
 .bk-act{
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
   padding:11px 6px;border-radius:16px;border:1px solid #EAD3C4;
@@ -167,6 +167,10 @@
 }
 .bk-act.on .ic{color:#fff}
 .bk-act.saved{background:#FDF1E6;border-color:#C7463B;color:#9E3228}
+#bk-done-btn{
+  width:100%;margin-top:2px;padding:14px 18px;border-radius:18px;
+  font-size:15.5px;justify-content:center;gap:8px;
+}
 
 /* --- Chép bài khóa (#copy) --- */
 .cp-prog-row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
@@ -432,12 +436,28 @@
 .d2-np-foot{font-size:11px;color:var(--muted);margin-top:7px;text-align:center}
 
 @media (min-width: 760px){
+  .d2-head{padding:12px 0 16px;gap:12px}
+  .d2-seg3{gap:8px;padding:5px;margin-bottom:14px}
+  .bk-player{padding:12px 16px;gap:12px;margin-bottom:14px}
+  .bk-card{padding:16px 18px;margin-bottom:16px}
+  .bk-lines{gap:14px}
+  .cp-prog-row{margin-bottom:14px}
+  .cp-rows{gap:14px;margin-bottom:14px}
+  .cp-card{padding:14px 16px}
+  .cp-head{margin-bottom:10px}
+  .cp-tools{gap:12px;margin-bottom:14px}
+  .tr-dir-seg{gap:8px;padding:5px;margin-bottom:14px}
+  .tr-prompt-card{padding:14px 18px;margin-bottom:14px}
+  .tr-mode-row{gap:12px;margin-bottom:14px}
+  .tr-pad-card{margin-bottom:14px}
   .tr-paper{height:240px}
+  .tr-act-row{gap:14px;margin-bottom:14px}
 }
 @media (min-width: 1060px){
-  .d2-layout{display:grid;grid-template-columns:minmax(0,1fr) 292px;gap:16px;align-items:start}
+  .d2-layout{display:grid;grid-template-columns:minmax(0,1fr) 304px;gap:20px;align-items:start}
   .d2-note-toggle,.d2-np-close{display:none}
-  .d2-notes-panel{display:block;position:sticky;top:14px;margin-top:0}
+  .d2-notes-panel{display:block;position:sticky;top:14px;margin-top:0;max-height:calc(100vh - 28px);overflow-y:auto}
+  #copy .cp-tools{display:none}
 }
 
 @media (prefers-color-scheme: dark){

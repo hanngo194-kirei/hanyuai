@@ -13,6 +13,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&amp;family=Noto+Serif+SC:wght@500;700&amp;display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="css/tokens-core.css"/>
 <link rel="stylesheet" href="css/dot4.css"/>
+<link rel="stylesheet" href="css/stylus-studio.css"/>
 </head><body>
 <svg aria-hidden="true" focusable="false" height="0" style="position:absolute" width="0">
 <defs>
@@ -604,6 +605,8 @@
 </section>
 <!-- ================= LUYỆN VIẾT CHỮ HÁN ================= -->
 <section class="view" data-view="writing" id="writing">
+<div class="w-layout">
+<div class="w-main">
 <div class="title-row"><a aria-label="Quay lại" class="back" data-go="lesson" href="javascript:void(0)"><svg class="ic"><use href="#i-back"></use></svg></a><div><h1>Luyện viết chữ Hán</h1><span class="sub" id="w-sub">Bài học • Thứ tự nét &amp; đối chiếu mẫu</span></div></div>
 <div class="barrow"><span class="small" id="wcount" style="font-weight:600">1 / 8</span><div class="bar"><i id="wbar" style="width:12.5%"></i></div><button aria-label="Chữ trước" class="back" id="wprev" style="width:34px;height:34px" type="button"><svg class="ic"><use href="#i-back"></use></svg></button><button aria-label="Chữ sau" class="back" id="wnext" style="width:34px;height:34px" type="button"><svg class="ic"><use href="#i-chev"></use></svg></button></div>
 <div class="card w-info">
@@ -623,11 +626,13 @@
 <button data-m="guided" type="button">Hướng dẫn</button>
 <button data-m="free" type="button">Tự viết</button>
 </div>
-<div class="w-stylus-bar"><span class="w-stylus-pill" id="w-stylus-pill">Hỗ trợ chuột, cảm ứng &amp; Apple Pencil / S Pen</span></div>
+<div class="w-stylus-bar"><span class="w-stylus-pill" id="w-stylus-pill">Chỉ nhận bút S-Pen / Apple Pencil · Chạm tay không hiển thị nét</span></div>
+<div class="w-pad-scroll">
 <div class="pad" id="pad">
 <div class="ghost" id="wghost">—</div>
 <div class="hw-box" id="hw-target"></div>
-<canvas aria-label="Khung tự viết chữ Hán, dùng chuột, ngón tay hoặc bút cảm ứng" id="cv"></canvas>
+<canvas aria-label="Khung tự viết chữ Hán, dùng chuột hoặc bút cảm ứng S-Pen" id="cv"></canvas>
+</div>
 </div>
 <!-- Dải nét cho chế độ Xem nét -->
 <div class="card hide" id="w-order-panel" style="padding:10px 12px">
@@ -682,6 +687,9 @@
 <div><b id="wr-hints">0</b><span>Lần xem gợi ý</span></div>
 </div>
 <div class="btnrow"><button class="btn ghost sm" id="wr-again" type="button"><svg class="ic"><use href="#i-refresh"></use></svg>Luyện lại chữ này</button><button class="btn sm" id="wr-next" type="button">Chữ tiếp theo <svg class="ic"><use href="#i-chev"></use></svg></button></div>
+</div>
+</div>
+<aside class="w-side-rail" id="w-side-rail" aria-label="Công cụ bút viết"></aside>
 </div>
 </section>
 <!-- ================= ÔN LUYỆN ================= -->
@@ -1187,6 +1195,7 @@ B: 我去图书馆。 | Wǒ qù túshūguǎn. | Tôi đi thư viện." style="wi
 <script src="data/hanzi-ext-db.js"></script>
 <script src="data/course-covers.js"></script>
 <script src="js/core-storage.js"></script>
+<script src="js/stylus-studio.js"></script>
 <script src="js/azure-speech.js"></script>
 <script src="js/local-speech-analyzer.js"></script>
 <script src="js/modules-vocab-grammar.js"></script>
