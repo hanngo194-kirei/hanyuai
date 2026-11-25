@@ -232,19 +232,37 @@ function getPartMeaning(p,db){
 function extractUniqueHanzi(zh){
   return [...new Set(String(zh||'').match(/\p{Script=Han}/gu)||[])];
 }
+function hasCurriculumVocabExtensions(lessonId){
+  return typeof parseLessonPackRef==='function'&&Boolean(parseLessonPackRef(lessonId));
+}
 function getVocabExtensionEntries(word,tab){
-  const db=tab==='hacknao'
+  const isHack=tab==='hacknao';
+  const db=isHack
     ?(typeof HANZI_HACKNAO_DB==='undefined'?{}:HANZI_HACKNAO_DB)
     :(typeof HANZI_MINDMAP_DB==='undefined'?{}:HANZI_MINDMAP_DB);
-  const isHanyuLesson=typeof parseHnLessonId==='function'&&Boolean(parseHnLessonId(store.activeLessonId));
+  const isCurriculumLesson=hasCurriculumVocabExtensions(store.activeLessonId);
   const radicals=typeof HANZI_RADICAL_STROKES==='undefined'?{}:HANZI_RADICAL_STROKES;
+  const books=typeof HANZI_BOOK_REFERENCES==='undefined'?null:HANZI_BOOK_REFERENCES;
+  const samples=isHack?books?.hackDetails:books?.mindDetails;
   return extractUniqueHanzi(word?.zh).flatMap(ch=>{
-    const entry=db[ch];
-    if(!isHanyuLesson)return entry?[{ch,entry}]:[];
+    const entry=db[ch]||(isCurriculumLesson?samples?.[ch]:null);
+    if(!isCurriculumLesson)return entry?[{ch,entry}]:[];
     const [radical,strokes]=radicals[ch]||[];
     const lessonWords=[word,...WORDS.filter(w=>w.zh!==word.zh&&w.zh.includes(ch))];
-    return [{ch,entry,radical,strokes,lessonWords}];
+    const references=isHack?books?.hack?.[ch]:books?.mind?.[ch];
+    return [{ch,entry,radical,strokes,lessonWords,references,
+      similar:isHack?books?.hackSimilar?.[ch]:null,related:isHack?null:books?.related?.[ch]}];
   });
+}
+function renderVocabBookReference(item,tab){
+  const refs=item.references;
+  if(tab==='hacknao'&&refs?.length){
+    const locations=refs.map(([volume,pages])=>`Tập ${volume}, ${pages}`).join(' · ');
+    const similar=item.similar?`<p class="vc-ext-ref">Chữ cùng nhóm hình dạng ở Tập 2 · <b>${escH(item.similar)}</b></p>`:'';
+    return `<p class="vc-ext-ref">Đối chiếu <i>Hack não 3000 chữ Hán</i> · ${escH(locations)}</p>${similar}`;
+  }
+  if(tab==='mindmap'&&refs)return `<p class="vc-ext-ref">Đối chiếu mục lục <i>Sơ đồ tư duy 3300 chữ Hán</i> · trang in ${escH(refs)}</p>`;
+  return '';
 }
 function mergeExtensionWords(lessonWords,curatedWords){
   const words=new Map();
@@ -259,6 +277,7 @@ function getMindMapItems(item){
   if(!item.lessonWords)return curated;
   const related=mergeExtensionWords(item.lessonWords.filter(w=>w.zh!==item.ch),curated);
   if(item.entry&&related.length)return related;
+  if(!related.length&&item.related)related.push(...item.related);
   if(item.radical)related.push({fact:'Bộ tra chữ',value:item.radical});
   if(item.strokes)related.push({fact:'Số nét',value:String(item.strokes)});
   if(!related.length)related.push({fact:'Nghĩa trong bài',value:item.lessonWords[0].vi});
@@ -308,7 +327,7 @@ function renderVocabExtension(w){
     const curated=e.compounds||[];
     const compounds=curItem.lessonWords?mergeExtensionWords([w,...curated],curItem.lessonWords).slice(0,6):curated;
     const comps=compounds.map(cp=>`<button class="vc-comp-chip" data-say="${escH(cp.zh)}" type="button"><b>${escH(cp.zh)}</b><span>${escH(cp.py)} · ${escH(cp.vi)}</span></button>`).join('');
-    panel.innerHTML=`<div class="vc-ext-head"><div class="vc-ext-head-l">${brainIc}<span class="vc-ext-title">${title}</span></div>${pillsHtml(matched)}</div><div class="vc-hn-eqbox">${eqInner}</div><div class="vc-hn-tiprow"><span class="vc-bulb" aria-hidden="true">💡</span><div class="vc-hn-tip"><b>Mẹo nhớ:</b><p>${escH(tip)}</p></div>${hnNav}</div>${comps?`<div class="vc-comp-list">${comps}</div>`:''}`;
+    panel.innerHTML=`<div class="vc-ext-head"><div class="vc-ext-head-l">${brainIc}<span class="vc-ext-title">${title}</span></div>${pillsHtml(matched)}</div><div class="vc-hn-eqbox">${eqInner}</div><div class="vc-hn-tiprow"><span class="vc-bulb" aria-hidden="true">💡</span><div class="vc-hn-tip"><b>Mẹo nhớ:</b><p>${escH(tip)}</p></div>${hnNav}</div>${comps?`<div class="vc-comp-list">${comps}</div>`:''}${renderVocabBookReference(curItem,vcExtTab)}`;
     return;
   }
 
@@ -340,8 +359,8 @@ function renderVocabExtension(w){
   const topHtml=top.length?`<div class="vc-mm-row mm-top${top.length===1?' single':''}">${top.map(renderPill).join('')}</div>`:'';
   const botHtml=bot.length?`<div class="vc-mm-row mm-bot${bot.length===1?' single':''}">${bot.map(renderPill).join('')}</div>`:'';
   const midHtml=`<div class="vc-mm-row mm-mid${(!midL&&!midR)?' center-only':''}"><div class="vc-mm-slot left">${midL?renderPill(midL):''}</div><button class="vc-mm-center" data-say="${escH(curItem.ch)}" title="${escH(charPy)}" type="button"><b>${escH(curItem.ch)}</b><span>${escH(shortVi)}</span></button><div class="vc-mm-slot right">${midR?renderPill(midR):''}</div></div>`;
-  const title=curItem.entry?'Sơ đồ tư duy 3300 chữ Hán':'Sơ đồ tư duy theo từ trong bài';
-  panel.innerHTML=`<div class="vc-ext-head"><div class="vc-ext-head-l">${mmIc}<span class="vc-ext-title">${title}</span></div>${pillsHtml(matched)}</div><div class="vc-mm-stage" id="vc-mm-stage"><svg aria-hidden="true" class="vc-mm-svg"></svg>${topHtml}${midHtml}${botHtml}</div>${navHtml}${moreHtml}`;
+  const title=curItem.entry?'Sơ đồ tư duy 3300 chữ Hán':'Sơ đồ tư duy từ vựng';
+  panel.innerHTML=`<div class="vc-ext-head"><div class="vc-ext-head-l">${mmIc}<span class="vc-ext-title">${title}</span></div>${pillsHtml(matched)}</div><div class="vc-mm-stage" id="vc-mm-stage"><svg aria-hidden="true" class="vc-mm-svg"></svg>${topHtml}${midHtml}${botHtml}</div>${navHtml}${moreHtml}${renderVocabBookReference(curItem,vcExtTab)}`;
   requestAnimationFrame(syncMindMapLines);
 }
 function syncMindMapLines(){
@@ -362,6 +381,7 @@ function syncMindMapLines(){
 }
 window.syncMindMapLines=syncMindMapLines;
 window.addEventListener('resize',()=>requestAnimationFrame(syncMindMapLines));
+$('#vc-ext-sec')?.addEventListener('toggle',()=>requestAnimationFrame(syncMindMapLines));
 function getMmTotalPages(item){
   return Math.max(1,Math.ceil(getMindMapItems(item).length/VC_MIND_MAP_PAGE_SIZE));
 }
@@ -479,7 +499,8 @@ function makeVocabQuiz(root,opts){
     const revealed=Boolean(ans);
     const exData=w?resolveWordExample(w):{ex:''};
     const exBox=f('exbox');if(exBox)exBox.classList.toggle('hide',!revealed||!exData.ex);
-    const extSec=$('#vc-ext-sec');if(extSec)extSec.classList.toggle('hide',!revealed);
+    const extSec=$('#vc-ext-sec');
+    if(extSec)extSec.classList.toggle('hide',!w||(!revealed&&!hasCurriculumVocabExtensions(store.activeLessonId)));
     const act=$('#vc-actions');
     if(act){
       act.classList.toggle('hide',!revealed);

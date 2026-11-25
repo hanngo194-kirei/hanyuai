@@ -693,10 +693,15 @@ button,a{touch-action:manipulation}
 #vocab .flash-foot.vc-foot4 button[data-f="star"].on{color:var(--accent);font-weight:700}
 #vocab .flash-foot.vc-foot4 button[data-f="star"].on .vc-bm-ic{fill:currentColor}
 
-.vc-ext-sec{margin-top:14px}
-.vc-ext-hd{display:flex;align-items:center;gap:8px;margin:0 2px 10px}
+.vc-ext-sec{margin-top:14px;margin-bottom:12px}
+.vc-ext-hd{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;margin:0 0 8px;padding:10px 12px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);cursor:pointer;list-style:none}
+.vc-ext-hd::-webkit-details-marker{display:none}
+.vc-ext-hd::after{content:'▾';margin-left:auto;color:var(--accent)}
+.vc-ext-sec[open] .vc-ext-hd::after{content:'▴'}
+.vc-ext-hd strong{font-size:14px}
+.vc-ext-hd span:last-child{font-size:12px;color:var(--muted)}
 .vc-ext-bar{width:4px;height:18px;border-radius:99px;background:var(--accent);flex-shrink:0}
-.vc-ext-hd h3{font-size:17px;font-weight:800;color:var(--brand-dark,#8B2E2E)}
+.vc-ext-ref{margin:10px 0 0;font-size:12px;line-height:1.4;color:var(--muted)}
 .vc-ext-tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
 .vc-ext-tabs button{
   display:flex;align-items:center;justify-content:center;gap:8px;padding:11px 12px;
@@ -932,7 +937,6 @@ button,a{touch-action:manipulation}
 @media (prefers-color-scheme: dark){
 :root:not([data-theme="light"]) .vc-head h1,
 :root:not([data-theme="light"]) .vc-sub-pill,
-:root:not([data-theme="light"]) .vc-ext-hd h3,
 :root:not([data-theme="light"]) .vc-ext-title,
 :root:not([data-theme="light"]) .vc-hn-tip,
 :root:not([data-theme="light"]) .vc-hn-ch{color:var(--ink)}
@@ -952,7 +956,6 @@ button,a{touch-action:manipulation}
 :root:not([data-theme="light"]) .vc-hn-sub{color:var(--muted)}}
 :root[data-theme="dark"] .vc-head h1,
 :root[data-theme="dark"] .vc-sub-pill,
-:root[data-theme="dark"] .vc-ext-hd h3,
 :root[data-theme="dark"] .vc-ext-title,
 :root[data-theme="dark"] .vc-hn-tip,
 :root[data-theme="dark"] .vc-hn-ch{color:var(--ink)}

@@ -537,7 +537,7 @@ function renderLessonDetail(){
     const ext=l.optionalExtensions||{};
     const hn=Array.isArray(ext.hackNaoIds)?ext.hackNaoIds:[];
     const mm=Array.isArray(ext.mindMapRootChars)?ext.mindMapRootChars:[];
-    const hasVocabExt=Boolean(parseHnLessonId(l.id))&&wList.some(w=>extractUniqueHanzi(w.zh).length);
+    const hasVocabExt=hasCurriculumVocabExtensions(l.id)&&wList.some(w=>extractUniqueHanzi(w.zh).length);
     if(!hasVocabExt&&!hn.length&&!mm.length){extCard.classList.add('hide');extCard.innerHTML='';}
     else{
       extCard.classList.remove('hide');
@@ -1264,7 +1264,10 @@ function renderTextbookReader(){
     if(words.length){
       bodyHtml += `
         <div class="card" style="margin-bottom:12px">
-          <h3 style="margin:0 0 8px;font-size:16px">1. Từ mới (${words.length} từ)</h3>
+          <div class="barrow" style="justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+            <h3 style="margin:0;font-size:16px">1. Từ mới (${words.length} từ)</h3>
+            ${hasCurriculumVocabExtensions(l.id)?`<button type="button" class="chip" data-tb-vocab="${escHtml(l.id)}">Mở rộng từ vựng</button>`:''}
+          </div>
           <div style="display:grid;gap:6px">
             ${words.map((w,wi)=>`
               <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line,#eadfd3);border-radius:10px">
@@ -1375,13 +1378,16 @@ document.addEventListener('click', e=>{
   if(vcBtn){ openTextbookReader(vcBtn.dataset.tbCourse); return; }
   const lBtn = e.target.closest('[data-tb-lesson]');
   if(lBtn && !lBtn.disabled){ curTextbookLessonId = lBtn.dataset.tbLesson; renderTextbookReader(); try{window.scrollTo(0,0);}catch(_){} return; }
-  const stBtn = e.target.closest('[data-tb-study]');
+  const stBtn = e.target.closest('[data-tb-study],[data-tb-vocab]');
   if(stBtn){
-    const l = LESSONS.find(x=>x.id===stBtn.dataset.tbStudy);
+    const directVocab = Boolean(stBtn.dataset.tbVocab);
+    const l = LESSONS.find(x=>x.id===(stBtn.dataset.tbVocab||stBtn.dataset.tbStudy));
     if(l){
       if(typeof switchToCourse==='function') switchToCourse(l.courseId, l.id);
       else{ store.activeCourseId=l.courseId; store.activeLessonId=l.id; saveStore(store); applyActiveLesson(); renderRoadmap(); }
-      goView('lesson');
+      goView(directVocab?'vocab':'lesson');
+      const extension = directVocab && $('#vc-ext-sec');
+      if(extension) extension.open = true;
     }
   }
 });

@@ -298,6 +298,14 @@
 <span aria-hidden="true" class="vc-head-sp"></span>
 </div>
 <div class="vc-prog-pill"><div class="bar"><i data-f="bar" style="width:10%"></i></div><span class="vc-cnt" data-f="count">1 / 12 từ</span></div>
+<details class="vc-ext-sec hide" id="vc-ext-sec">
+<summary class="vc-ext-hd"><span aria-hidden="true" class="vc-ext-bar"></span><strong>Mở rộng từ vựng</strong><span>Hack não · Sơ đồ tư duy</span></summary>
+<div class="vc-ext-tabs" id="vc-ext-tabs">
+<button class="on" data-vext="hacknao" id="vc-tab-hacknao" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M9.5 4a3.5 3.5 0 0 0-3.3 4.7A3.2 3.2 0 0 0 4.5 11.5a3.2 3.2 0 0 0 1.2 2.5A3.2 3.2 0 0 0 9 19h2.5V4H9.5z"/><path d="M14.5 4a3.5 3.5 0 0 1 3.3 4.7 3.2 3.2 0 0 1 1.7 2.8 3.2 3.2 0 0 1-1.2 2.5A3.2 3.2 0 0 1 15 19h-2.5V4h2z"/></svg><span>Hack não</span></button>
+<button data-vext="mindmap" id="vc-tab-mindmap" type="button"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.8"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M9.8 10.2L6.6 7.4M14.2 10.2l3.2-2.8M9.8 13.8l-3.2 2.8M14.2 13.8l3.2 2.8"/></svg><span>Sơ đồ tư duy</span></button>
+</div>
+<div class="vc-ext-panel" id="vc-ext-panel"></div>
+</details>
 <div class="flash vc-card vc-quiz-card" data-f="card">
 <span aria-hidden="true" class="vc-corner tl"></span>
 <span aria-hidden="true" class="vc-corner tr"></span>
@@ -336,14 +344,6 @@
 <div class="btnrow hide" id="vc-actions">
 <button class="btn ghost sm" id="vc-prev-btn" type="button"><svg class="ic"><use href="#i-back"></use></svg>Từ trước</button>
 <button class="btn sm" id="vc-next-btn" type="button">Từ tiếp theo →</button>
-</div>
-<div class="vc-ext-sec hide" id="vc-ext-sec">
-<div class="vc-ext-hd"><span aria-hidden="true" class="vc-ext-bar"></span><h3>Mở rộng</h3></div>
-<div class="vc-ext-tabs" id="vc-ext-tabs">
-<button class="on" data-vext="hacknao" id="vc-tab-hacknao" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M9.5 4a3.5 3.5 0 0 0-3.3 4.7A3.2 3.2 0 0 0 4.5 11.5a3.2 3.2 0 0 0 1.2 2.5A3.2 3.2 0 0 0 9 19h2.5V4H9.5z"/><path d="M14.5 4a3.5 3.5 0 0 1 3.3 4.7 3.2 3.2 0 0 1 1.7 2.8 3.2 3.2 0 0 1-1.2 2.5A3.2 3.2 0 0 1 15 19h-2.5V4h2z"/></svg><span>Hack não</span></button>
-<button data-vext="mindmap" id="vc-tab-mindmap" type="button"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.8"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M9.8 10.2L6.6 7.4M14.2 10.2l3.2-2.8M9.8 13.8l-3.2 2.8M14.2 13.8l3.2 2.8"/></svg><span>Sơ đồ tư duy</span></button>
-</div>
-<div class="vc-ext-panel" id="vc-ext-panel"></div>
 </div>
 </section>
 <!-- ================= NGỮ PHÁP ================= -->
@@ -1200,6 +1200,7 @@ B: 我去图书馆。 | Wǒ qù túshūguǎn. | Tôi đi thư viện." style="wi
 <script src="data/hn1-ext.js"></script>
 <script src="data/hanzi-ext-db.js"></script>
 <script src="data/hanzi-radicals.js"></script>
+<script src="data/hanzi-book-references.js"></script>
 <script src="data/course-covers.js"></script>
 <script src="js/core-storage.js"></script>
 <script src="js/supabase-config.js"></script>
