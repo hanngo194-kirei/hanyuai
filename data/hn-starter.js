@@ -4,7 +4,8 @@ const LESSON_PACK_MANIFEST = {
   1: { packId: 'hn1', src: 'data/hn1-full.js', varName: 'HN1_FULL_DATA', lessons: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] },
   2: { packId: 'hn2', src: 'data/hn2-full.js', varName: 'HN2_FULL_DATA', lessons: [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30] },
   'hsk30_1': { packId: 'hsk30_1', src: 'data/hsk30-1-full.js', varName: 'HSK30_1_FULL_DATA', lessons: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 'mock'] },
-  'hsk30_2': { packId: 'hsk30_2', src: 'data/hsk30-2-full.js', varName: 'HSK30_2_FULL_DATA', lessons: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 'mock'] }
+  'hsk30_2': { packId: 'hsk30_2', src: 'data/hsk30-2-full.js', varName: 'HSK30_2_FULL_DATA', lessons: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 'mock'] },
+  'hsk30_3': { packId: 'hsk30_3', src: 'data/hsk30-3-full.js', varName: 'HSK30_3_FULL_DATA', lessons: [1, 2, 3, 4, 5, 6, 7, 8, 9] }
 };
 
 const HN_STARTER_DATA = {

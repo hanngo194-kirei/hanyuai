@@ -245,6 +245,7 @@
     if(typeof HSK30_STARTER_DATA !== 'undefined') ingestVol(HSK30_STARTER_DATA);
     if(typeof HSK30_1_FULL_DATA !== 'undefined') ingestVol({1: HSK30_1_FULL_DATA});
     if(typeof HSK30_2_FULL_DATA !== 'undefined') ingestVol({2: HSK30_2_FULL_DATA});
+    if(typeof HSK30_3_FULL_DATA !== 'undefined') ingestVol({3: HSK30_3_FULL_DATA});
     // 4. Dữ liệu chữ Hán & từ ghép trong Hack não / Sơ đồ tư duy
     if(typeof HANZI_HACKNAO_DB !== 'undefined'){
       Object.entries(HANZI_HACKNAO_DB).forEach(([ch, e]) => {
