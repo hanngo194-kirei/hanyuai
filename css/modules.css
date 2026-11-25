@@ -1229,3 +1229,37 @@ button,a{touch-action:manipulation}
   .switches{gap:12px}
   .view>*+*{margin-top:14px}
 }
+
+/* Căn thẳng hàng tuyệt đối các thẻ & thanh tiến độ trên Trang chủ */
+.view[data-view="home"] .grid2{align-items:stretch}
+.view[data-view="home"] .grid2 > .card{
+  display:flex;flex-direction:column;gap:12px;
+}
+.view[data-view="home"] .grid2 > .card > * + *{margin-top:0}
+.view[data-view="home"] .grid2 > .card .head{
+  min-height:44px;align-items:center;
+}
+.view[data-view="home"] .grid2 > .card .head > div{
+  min-width:0;flex:1;
+}
+.view[data-view="home"] .grid2 > .card .head .small{
+  display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;
+}
+.view[data-view="home"] .grid2 > .card .barrow{
+  min-height:22px;display:flex;align-items:center;gap:10px;
+}
+.view[data-view="home"] .grid2 > .card .tasks{
+  margin:0;gap:9px;
+}
+.view[data-view="home"] .grid2 > .card .stats3{
+  margin-block:auto;align-items:start;
+}
+@media (min-width: 760px){
+  .view[data-view="home"] .grid2{gap:14px}
+}
+@media (max-width: 460px){
+  .view[data-view="home"] .grid2 > .card{gap:9px}
+  .view[data-view="home"] .grid2 > .card .head{min-height:38px}
+  .view[data-view="home"] .grid2 > .card .barrow{min-height:18px}
+  .view[data-view="home"] .grid2 > .card .tasks{gap:6px}
+}
