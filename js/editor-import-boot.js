@@ -169,7 +169,7 @@ function openLessonEditor(lessonId,prefill){
     if(prefill.grammar)draftLesson._editGrams=prefill.grammar;
   }
   if(!draftLesson._editWords){
-    draftLesson._editWords=(draftLesson.wordIds||[]).map(id=>store.vocabBank[id]).filter(Boolean).map(w=>({zh:w.zh,py:w.py,vi:w.vi}));
+    draftLesson._editWords=getLessonVocab(draftLesson).map(w=>({zh:w.zh,py:w.py,vi:w.vi,pos:w.pos}));
   }
   if(!draftLesson._editGrams){
     draftLesson._editGrams=Object.values(draftLesson.grammarPoints||{}).map(g=>({title:g.title||'',explain:g.explain||'',exZh:(g.examples&&g.examples[0]?g.examples[0].zh:'')}));
@@ -261,12 +261,9 @@ function syncDraftFromInputs(){
 
 async function saveEditedLesson(targetStatus){
   syncDraftFromInputs();
-  const wordIds=[];
-  (draftLesson._editWords||[]).forEach(w=>{
-    if(!w.zh||!w.zh.trim())return;
-    const id=registerVocabWord(w);
-    if(id&&!wordIds.includes(id))wordIds.push(id);
-  });
+  const wordDetails=draftLesson.wordDetails?{}:null;
+  const wordIds=registerLessonWords(draftLesson._editWords,wordDetails);
+  if(wordDetails)draftLesson.wordDetails=wordDetails;
   const gramObj={};
   (draftLesson._editGrams||[]).forEach((g,idx)=>{
     if(!g.title&&!g.explain)return;

@@ -22,10 +22,10 @@
 *(Đọc trực tiếp ảnh trang từng file `GT Hán Ngữ 2..6.pdf` trong `data hanyu/` hoặc `sources/` vì PDF scan có lớp OCR lỗi)*
 - [x] Kiến trúc Tải bài theo yêu cầu (On-demand Lesson Download): mặc định chỉ tải sẵn Bài 1–2 Hán ngữ 1 (`data/hn-starter.js`), các bài còn lại bấm **⬇ Tải** ở từng bài để nạp lười từ `data/*-full.js` (hỗ trợ cả `file://`, HTTP cục bộ & bản 1 file `dist/hanyu-ai.html`, tự dọn gọn 1 lần các bài chưa học trên trình duyệt cũ và giữ nguyên 100% SRS)
 - [x] Quyển 2 (Bài 16–30, từ `GT Hán Ngữ 2 .pdf` → `data/hn2-full.js`; đã xử lý lỗi in trùng trang tập viết p.171 của Bài 26)
-- [ ] Quyển 3 (Bài 1–10, từ `sources/GT Hán Ngữ 3.pdf` → `data/hn3-full.js`)
-- [ ] Quyển 4 (Bài 11–20, từ `sources/GT Hán Ngữ 4.pdf` → `data/hn4-full.js`)
-- [ ] Quyển 5 (Bài 1–13, từ `sources/GT Hán Ngữ 5.pdf` → `data/hn5-full.js`)
-- [ ] Quyển 6 (Bài 14–26, từ `sources/GT Hán Ngữ 6.pdf` → `data/hn6-full.js`)
+- [x] Quyển 3 (Bài 1–10, đối chiếu ảnh trang in 1–160 và đáp án 161–164 của `GT Hán Ngữ 3.pdf` trong `data hanyu/` → `data/hn3-full.js`). Gói tải theo yêu cầu gồm 405 mục từ, 260 đoạn hoặc lượt bài khóa, 34 điểm ngữ pháp, 156 chữ tập viết và 199 câu tương tác. Các phần luyện theo tranh và một số bài tập mở dẫn đến trang in.
+- [x] Quyển 4 (Bài 11–20, đối chiếu ảnh trang in 1–156 và đáp án 157–161 của `GT Hán Ngữ 4.pdf` trong `data hanyu/` → `data/hn4-full.js`). Gói tải theo yêu cầu gồm 440 mục từ, 303 đoạn hoặc lượt bài khóa, 33 điểm ngữ pháp, 129 mục tập viết và 250 câu tương tác. Hai chỗ mất chữ ở trang 47 được đánh dấu trong bài khóa. Các bài mở dài, phần luyện theo tranh và những câu có sai lệch giữa đề và đáp án có ghi chú đối chiếu.
+- [x] Quyển 5 (Bài 1–13, đối chiếu ảnh trang in 1–172 và đáp án 173–180 của `GT Hán Ngữ 5.pdf` trong `data hanyu/` → `data/hn5-full.js`). Gói tải theo yêu cầu gồm 656 mục từ, 149 đoạn hoặc lượt bài khóa, 80 mục ngữ pháp và cách dùng, 265 câu tương tác. Các bài tập mở có ghi chú và số trang đối chiếu.
+- [x] Quyển 6 (Bài 14–26, đối chiếu ảnh trang in 1–195 và đáp án 196–203 của `GT Hán Ngữ 6.pdf` trong `data hanyu/` → `data/hn6-full.js`). Gói tải theo yêu cầu gồm 838 mục từ, 181 đoạn hoặc lượt bài khóa, 84 mục ngữ pháp và cách dùng, 236 câu tương tác. Chỗ scan mất chữ ở Bài 15 được đánh dấu. Các câu có sai lệch giữa đề và phụ lục, gồm bài điền tổng hợp của Bài 17, có ghi chú đối chiếu ngoài phần chấm tự động.
 
 ---
 

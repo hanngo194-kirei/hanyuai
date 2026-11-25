@@ -125,6 +125,25 @@ function registerVocabWord(w){
   return id;
 }
 
+function registerLessonWords(words,wordDetails){
+  const ids=new Set();
+  for(const w of Array.isArray(words)?words:[]){
+    const id=registerVocabWord(w);
+    if(!id||ids.has(id))continue;
+    ids.add(id);
+    // Giữ cách đọc và nghĩa theo bài, dùng chung mã từ để ôn tập SRS.
+    if(wordDetails)wordDetails[id]={zh:w.zh.trim(),py:(w.py||'').trim(),vi:(w.vi||'').trim(),pos:(w.pos||'').trim()};
+  }
+  return [...ids];
+}
+
+function getLessonVocab(lesson){
+  return (lesson?.wordIds||[]).map(id=>{
+    const word=store.vocabBank?.[id],details=lesson.wordDetails?.[id];
+    return word&&details?{...word,...details}:word;
+  }).filter(Boolean);
+}
+
 
 /* ---------- Khung Giáo trình chuẩn & Bộ nạp bài theo yêu cầu (On-demand) ---------- */
 const SEED_TS=1700000200000;
@@ -237,13 +256,12 @@ function populateLessonFromPackData(l,full,volNum,bNum){
   const ref=(volNum&&typeof volNum==='object')
     ?volNum
     :{system:'hanngu',packKey:String(volNum||''),vol:Number(volNum),num:bNum,dataKey:String(bNum||'')};
-  const wordIds=[];
-  if(full&&Array.isArray(full.words)){
-    full.words.forEach(w=>{const wid=registerVocabWord(w);if(wid&&!wordIds.includes(wid))wordIds.push(wid);});
-  }
+  const wordDetails=getPackManifestForVol(ref.packKey)?.keepWordDetails?{}:null;
+  const wordIds=registerLessonWords(full?.words,wordDetails);
   const dlg=(full&&Array.isArray(full.dialog))?full.dialog:[];
   const chars=(full&&Array.isArray(full.chars))?full.chars.map(ch=>({id:'c_'+ch.charCodeAt(0),ch,py:'',vi:'',rad:'',strokes:0})):[];
   l.wordIds=wordIds;
+  if(wordDetails)l.wordDetails=wordDetails;
   l.dialog=dlg;
   if(ref.system==='hsk30'&&ref.num==='mock'){
     l.sentences=[];
@@ -254,6 +272,8 @@ function populateLessonFromPackData(l,full,volNum,bNum){
   l.grammarPoints=(full&&full.grammar)?full.grammar:{};
   l.grammarQuiz=(full&&Array.isArray(full.grammarQuiz))?full.grammarQuiz:(l.grammarQuiz||[]);
   l.orderBank=(full&&Array.isArray(full.orderBank))?full.orderBank:(l.orderBank||[]);
+  if(full&&full.workbook)l.workbook=Object.assign({},l.workbook||{},full.workbook);
+  if(full&&Array.isArray(full.notes))l.notes=full.notes.slice();
   l.chars=chars;
   if(full&&full.titleZh)l.titleZh=full.titleZh;
   if(full&&full.titlePy)l.py=full.titlePy;
@@ -268,7 +288,6 @@ function populateLessonFromPackData(l,full,volNum,bNum){
     }else{
       l.goals=[trCnt?`Đã gắn ${trCnt} file MP3 chuẩn HSK ${ref.lvl} (3.0)`:`Giáo trình NEW HSK ${ref.lvl} (3.0)`,'Đã tải từ vựng, bài khóa, ngữ pháp, bài tập & SBT'];
     }
-    if(full&&full.workbook)l.workbook=Object.assign({},l.workbook||{},full.workbook);
     const suppParts=[];
     if(full&&full.rhyme&&full.rhyme.zh){
       suppParts.push(`Bài vè luyện âm (${full.rhyme.audio||'audio'}):\n${full.rhyme.zh}${full.rhyme.py?'\n'+full.rhyme.py:''}${full.rhyme.vi?'\n'+full.rhyme.vi:''}`);
@@ -278,10 +297,10 @@ function populateLessonFromPackData(l,full,volNum,bNum){
     }
     if(suppParts.length)l.supplementalContent=suppParts.join('\n\n');
     if(full&&full.rhyme)l.rhyme=full.rhyme;
-    if(full&&Array.isArray(full.notes))l.notes=full.notes.slice();
   }else{
     l.sourceRef={fileName:`GT Hán Ngữ ${ref.vol}.pdf`,fileHash:'',pageRange:(full&&full.pages)||'—'};
     l.goals=[`Đối chiếu audio: Quyển ${ref.vol} Bài ${ref.num}.mp3`,'Đã tải từ vựng, bài khóa, ngữ pháp & tập viết'];
+    if(full&&Array.isArray(full.notes)&&full.notes.length)l.supplementalContent=full.notes.join('\n');
     const extMap=getExtMapForVol(ref.vol);
     const ext=extMap&&(extMap[ref.num]||extMap[String(ref.num)]);
     if(ext&&(!l.optionalExtensions||(!(l.optionalExtensions.hackNaoIds||[]).length&&!(l.optionalExtensions.mindMapRootChars||[]).length))){
@@ -368,10 +387,8 @@ function buildStandardCatalogSeed(){
       const shouldPreload=preloadedSet.has(lId)||!packMeta;
       const full=shouldPreload?((starterVol&&(starterVol[b]||starterVol[String(b)]))||(packVol&&(packVol[b]||packVol[String(b)]))||null):null;
       if(full)loadedCnt++;
-      const wordIds=[];
-      if(full&&full.words){
-        full.words.forEach(w=>{const wid=registerVocabWord(w);if(wid&&!wordIds.includes(wid))wordIds.push(wid);});
-      }
+      const wordDetails=full&&packMeta?.keepWordDetails?{}:null;
+      const wordIds=registerLessonWords(full?.words,wordDetails);
       const chars=(full&&full.chars)?full.chars.map(ch=>({id:'c_'+ch.charCodeAt(0),ch,py:'',vi:'',rad:'',strokes:0})):[];
       const dlg=(full&&full.dialog)?full.dialog:[];
       const hasPack=hasPackForLesson(lId);
@@ -382,14 +399,15 @@ function buildStandardCatalogSeed(){
         downloaded:Boolean(full),
         sourceRef:{fileName:`GT Hán Ngữ ${num}.pdf`,fileHash:'',pageRange:full?full.pages:'—'},
         audioTracks:[makeAudioTrack(mp3,'dialog',`Audio bài khóa (${mp3})`)],
-        workbook:null,optionalExtensions:(volExt&&(volExt[b]||volExt[String(b)]))||( {hackNaoIds:[],mindMapRootChars:[]} ),
-        originalContent:'',supplementalContent:'',
+        workbook:(full&&full.workbook)||null,optionalExtensions:(volExt&&(volExt[b]||volExt[String(b)]))||( {hackNaoIds:[],mindMapRootChars:[]} ),
+        originalContent:'',supplementalContent:(full&&Array.isArray(full.notes))?full.notes.join('\n'):'',
         wordIds,
+        ...(wordDetails&&{wordDetails}),
         sentences:dlg.map(d=>({zh:d.zh,py:d.py,vi:d.vi})),
         dialog:dlg,
-        dialogQuestions:[],
+        dialogQuestions:(full&&full.dialogQuestions)||[],
         grammarPoints:(full&&full.grammar)?full.grammar:{},
-        grammarQuiz:[],orderBank:[],chars,updatedAt:now
+        grammarQuiz:(full&&full.grammarQuiz)||[],orderBank:(full&&full.orderBank)||[],chars,updatedAt:now
       });
     });
     const desc=packMeta

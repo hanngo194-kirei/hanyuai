@@ -13,7 +13,7 @@ function applyActiveLesson(){
     LISTEN_DIALOG=JSON.parse(JSON.stringify(DEFAULT_LISTEN_DIALOG_SNAP));
     DIALOG_QUESTIONS=JSON.parse(JSON.stringify(DEFAULT_DIALOG_QUESTIONS_SNAP));
   }else{
-    WORDS=(l.wordIds||[]).map(id=>store.vocabBank[id]).filter(Boolean);
+    WORDS=getLessonVocab(l);
     const dlg=(l.dialog||[]);
     LISTEN_DIALOG=dlg.map((d,i)=>({section:d.section||'',context:d.context||'',audio:d.audio||'',speaker:d.speaker||(i%2===0?'A':'B'),name:d.name||(i%2===0?'Người A':'Người B'),zh:d.zh||'',py:d.py||'',vi:d.vi||''})).filter(d=>d.zh);
     SENT=(l.sentences&&l.sentences.length)?l.sentences:LISTEN_DIALOG.map(d=>({zh:d.zh,py:d.py,vi:d.vi}));
@@ -88,7 +88,7 @@ const LS_ALL_SECTIONS=[
 ];
 function getLessonSectionProgress(l){
   const sec=(store.lessonSections&&l&&l.id&&store.lessonSections[l.id])||{};
-  const wList=((l&&l.wordIds)||[]).map(id=>store.vocabBank[id]).filter(Boolean);
+  const wList=getLessonVocab(l);
   const allWordsStudied=Boolean(l&&l.id==='lesson_sample_b4')&&wList.length>0&&wList.every(w=>store.words&&store.words[w.id]&&store.words[w.id].status!=='new');
   const doneMap={
     vocab:!!(sec.vocab||allWordsStudied),
@@ -437,7 +437,7 @@ function renderLessonDetail(){
     else if(prog.reqDone>=5)progNote.textContent='Đã hoàn thành 5 mục bắt buộc · Có thể qua bài tiếp theo';
     else progNote.textContent=`Hoàn thành ${prog.reqDone}/5 mục bắt buộc · Còn ${5-prog.reqDone} mục để qua bài tiếp theo`;
   }
-  const wList=(l.wordIds||[]).map(id=>store.vocabBank[id]).filter(Boolean);
+  const wList=getLessonVocab(l);
   const gList=Object.values(l.grammarPoints||{});
   const cList=l.chars||[];
   if(heroZh){
@@ -1216,7 +1216,7 @@ function renderTextbookReader(){
   if(!l) return;
   curTextbookLessonId = l.id;
 
-  const words = (l.wordIds||[]).map(id=>store.vocabBank[id]).filter(Boolean);
+  const words = getLessonVocab(l);
   const dlg = l.dialog || [];
   const grams = Object.values(l.grammarPoints||{});
   const chars = l.chars || [];
@@ -1464,9 +1464,9 @@ function renderCourseDetail(courseId){
   }
 
   // Vocab tab
-  const allWIds=[...new Set(ls.flatMap(l=>l.wordIds||[]))];
-  $('#cd-pane-vocab').innerHTML=allWIds.length
-    ? allWIds.map(id=>store.vocabBank[id]).filter(Boolean).map(w=>`<div class="card" style="margin-bottom:8px;padding:10px 12px"><b>${escHtml(w.zh)}</b> <span class="small muted">${escHtml(w.py)}</span> — ${escHtml(w.vi)}</div>`).join('')
+  const courseWords=new Map(ls.flatMap(getLessonVocab).map(w=>[JSON.stringify([w.id,w.py,w.vi]),w]));
+  $('#cd-pane-vocab').innerHTML=courseWords.size
+    ? [...courseWords.values()].map(w=>`<div class="card" style="margin-bottom:8px;padding:10px 12px"><b>${escHtml(w.zh)}</b> <span class="small muted">${escHtml(w.py)}</span> — ${escHtml(w.vi)}</div>`).join('')
     : '<div class="card"><p class="muted small" style="margin:0">Chưa có từ vựng nào trong giáo trình này.</p></div>';
 
   // Grammar tab
