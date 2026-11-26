@@ -204,7 +204,7 @@
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'zh-CN';
       u.volume = 1.0;
-      u.rate = Math.min(2, Math.max(0.5, Number(rate) || 0.9));
+      u.rate = Math.min(2, Math.max(0.4, Number(rate) || 0.65));
       const voices = speechSynthesis.getVoices() || [];
       const best = pickBestZhVoice();
       if(best) u.voice = best;
@@ -229,8 +229,8 @@
 
   function calcProsodyRate(rate){
     const r = Number(rate);
-    const num = Number.isFinite(r) && r > 0 ? r : 1.0;
-    const pct = Math.max(-50, Math.min(100, Math.round((num - 1) * 100)));
+    const num = Number.isFinite(r) && r > 0 ? r : 0.65;
+    const pct = Math.max(-60, Math.min(100, Math.round((num - 1) * 100)));
     return (pct >= 0 ? '+' : '') + pct + '%';
   }
 

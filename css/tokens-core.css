@@ -122,7 +122,8 @@ body.sub .bg{background-image:var(--bg-sub);background-position:center center;ba
 .search{display:flex;align-items:center;gap:10px;padding:0 16px;border-radius:99px;border:1px solid var(--line);background:var(--surface);box-shadow:var(--shadow);color:var(--muted)}
 .search input{flex:1;min-width:0;border:0;background:none;font:inherit;color:var(--ink);padding:13px 0;outline:0}
 .search:focus-within{outline:2px solid var(--accent)}
-.chips{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}
+input,textarea,select{scroll-margin-bottom:120px}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:2px 22px 6px 2px;scrollbar-width:none;-webkit-mask-image:linear-gradient(to right,#000 0%,#000 calc(100% - 20px),transparent 100%);mask-image:linear-gradient(to right,#000 0%,#000 calc(100% - 20px),transparent 100%)}
 .chip{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;padding:9px 16px;border-radius:99px;border:1px solid var(--line);background:var(--surface);font-weight:500;font-size:14px}
 .chip .ic{width:1.1em;height:1.1em}
 .chip.on{background:linear-gradient(180deg,var(--btn-a),var(--btn-b));color:#fff;border-color:transparent}
@@ -263,7 +264,7 @@ body.sub .bg{background-image:var(--bg-sub);background-position:center center;ba
 .mic .ic{width:34px;height:34px}
 .mic.rec{animation:pulse 1s ease-in-out infinite}
 @keyframes pulse{50%{box-shadow:0 0 0 16px color-mix(in srgb,var(--accent) 10%,transparent),0 10px 22px rgba(166,58,38,.32)}}
-@media (prefers-reduced-motion:reduce){.mic.rec{animation:none}.knob,.knob::after{transition:none}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}.mic.rec{animation:none}.knob,.knob::after{transition:none}}
 .micwrap.big{justify-content:center;gap:18px}
 .speedsel{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:9px 12px;font:inherit;color:var(--ink)}
 .sentence{background:var(--surface2);border-radius:14px;padding:12px;text-align:center;font-family:var(--han);font-size:21px;font-weight:700}
@@ -488,7 +489,12 @@ body.view-roadmap .app>.top,body.view-vocab .app>.top,body.view-lesson .app>.top
   #me-skills-pane{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   #textbook-reader .tb-grid{display:grid;grid-template-columns:280px minmax(0,1fr);gap:14px;align-items:start}
   #textbook-reader #tb-lesson-toc{position:sticky;top:14px;max-height:calc(100vh - 28px);overflow-y:auto}
-  #textbook-reader .tb-grid > #tb-lesson-content{margin-top:0}
+  #textbook-reader .tb-grid > #tb-lesson-content{margin-top:0;min-width:0}
+}
+@media (min-width: 760px) and (max-width: 899px){
+  #textbook-reader .tb-grid{display:grid;grid-template-columns:230px minmax(0,1fr);gap:14px;align-items:start}
+  #textbook-reader #tb-lesson-toc{position:sticky;top:14px;max-height:calc(100vh - 28px);overflow-y:auto}
+  #textbook-reader .tb-grid > #tb-lesson-content{margin-top:0;min-width:0}
 }
 @media (min-width: 1040px){
   .app{max-width:1120px;padding:0 28px 40px}

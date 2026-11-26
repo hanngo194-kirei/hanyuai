@@ -585,6 +585,7 @@
     let speed = 1.0;
     let playing = false;
     let shadowMode = false;
+    let loopLine = false;
     let playSeqToken = 0;
     let activeAudioEl = null;
     let curLineIdx = -1;
@@ -625,6 +626,11 @@
       if(tTitle) tTitle.textContent = l ? `Bài khóa · ${l.code || l.titleVi || 'Bài học'}` : 'Bài khóa';
       const spdBtn = $('#bk-speed-btn');
       if(spdBtn) spdBtn.textContent = speed.toFixed(speed === 0.75 ? 2 : 1) + '×';
+      const loopBtn = $('#bk-loop-btn');
+      if(loopBtn){
+        loopBtn.classList.toggle('on', loopLine);
+        loopBtn.setAttribute('aria-pressed', String(loopLine));
+      }
       const timeEl = $('#bk-time');
       if(timeEl && !activeAudioEl && !playing){
         timeEl.textContent = `0 / ${dlgs.length} câu`;
@@ -711,25 +717,32 @@
         }
         curLineIdx = idx;
         const line = dlgs[idx];
-        $$('#bk-lines .bk-line').forEach((el, i) => el.classList.toggle('speaking', i === idx));
+        $$('#bk-lines .bk-line').forEach((el, i) => {
+          const isCur = i === idx;
+          el.classList.toggle('speaking', isCur);
+          if(isCur){
+            try{ el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }catch(_){}
+          }
+        });
         const seek = $('#bk-seek'), tEl = $('#bk-time');
         if(seek) seek.value = String(Math.round((idx + 1) / dlgs.length * 100));
         if(tEl) tEl.textContent = `${idx + 1} / ${dlgs.length} câu`;
         const effSpeed = shadowMode ? Math.min(speed, 0.8) : speed;
-        const delayMs = shadowMode ? 1100 : 280;
+        const ttsSpeed = Math.max(0.4, effSpeed * 0.65);
+        const delayMs = shadowMode ? 1100 : (loopLine ? 650 : 280);
         let doneCalled = false;
         const nextLine = () => {
           if(doneCalled) return;
           doneCalled = true;
-          idx++;
+          if(!loopLine) idx++;
           setTimeout(step, delayMs);
         };
         if(typeof AzureSpeech !== 'undefined' && AzureSpeech.speak && line.zh){
           const maxWait = AzureSpeech.isTtsEnabled && AzureSpeech.isTtsEnabled()
             ? Math.max(8000, (line.zh.length || 6) * 800)
-            : Math.max(2800, (line.zh.length || 6) * 480);
+            : Math.max(3200, (line.zh.length || 6) * 680);
           const fbTimer = setTimeout(nextLine, maxWait);
-          AzureSpeech.speak(line.zh, effSpeed, () => {
+          AzureSpeech.speak(line.zh, ttsSpeed, () => {
             clearTimeout(fbTimer);
             nextLine();
           });
@@ -738,7 +751,7 @@
             const u = new SpeechSynthesisUtterance(line.zh);
             u.lang = 'zh-CN';
             u.volume = 1.0;
-            u.rate = effSpeed;
+            u.rate = ttsSpeed;
             const vs = speechSynthesis.getVoices() || [];
             const v = vs.find(x => x.lang && x.lang.toLowerCase().startsWith('zh'));
             if(v) u.voice = v;
@@ -865,10 +878,10 @@
       if(!tb) return;
       const lineEl = tb.closest('.bk-line');
       openTokenPop(tb.dataset.bktok, lineEl, tb);
-      if(typeof speak === 'function') speak(tb.dataset.bktok, speed);
+      if(typeof speak === 'function') speak(tb.dataset.bktok, Math.max(0.4, speed * 0.65));
     });
     if($('#bk-pop-close')) $('#bk-pop-close').onclick = closePop;
-    if($('#bk-pop-spk')) $('#bk-pop-spk').onclick = () => { if(curPopWord && typeof speak === 'function') speak(curPopWord.zh, speed); };
+    if($('#bk-pop-spk')) $('#bk-pop-spk').onclick = () => { if(curPopWord && typeof speak === 'function') speak(curPopWord.zh, Math.max(0.4, speed * 0.65)); };
     if($('#bk-pop-note-btn')) $('#bk-pop-note-btn').onclick = () => {
       if(!curPopWord) return;
       const line = `• ${curPopWord.zh}${curPopWord.py ? ' (' + curPopWord.py + ')' : ''}: ${curPopWord.vi}${curPopWord.pos ? ' [' + curPopWord.pos + ']' : ''}`;
@@ -883,6 +896,27 @@
       speed = order[(order.indexOf(speed) + 1) % order.length];
       if(activeAudioEl) activeAudioEl.playbackRate = speed;
       syncPlayerUI();
+    };
+    if($('#bk-loop-btn')) $('#bk-loop-btn').onclick = () => {
+      loopLine = !loopLine;
+      syncPlayerUI();
+      toast(loopLine ? 'Đã bật lặp lại câu đang phát' : 'Đã tắt lặp lại câu');
+    };
+    if($('#bk-rw-btn')) $('#bk-rw-btn').onclick = () => {
+      if(activeAudioEl && Number.isFinite(activeAudioEl.duration) && activeAudioEl.duration > 0){
+        activeAudioEl.currentTime = Math.max(0, (activeAudioEl.currentTime || 0) - 5);
+        return;
+      }
+      const dlgs = LISTEN_DIALOG && LISTEN_DIALOG.length ? LISTEN_DIALOG : SENT;
+      if(!dlgs.length) return;
+      const target = Math.max(0, curLineIdx > 0 ? curLineIdx - 1 : 0);
+      const wasShadow = shadowMode;
+      stopPlayback();
+      playing = true;
+      shadowMode = wasShadow;
+      const playBtn = $('#bk-play-btn');
+      if(playBtn) playBtn.innerHTML = '<svg class="ic" viewBox="0 0 24 24"><rect x="7" y="5" width="3.5" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="13.5" y="5" width="3.5" height="14" rx="1" fill="currentColor" stroke="none"/></svg>';
+      playTtsSeq(target, ++playSeqToken);
     };
     if($('#bk-seek')) $('#bk-seek').addEventListener('input', e => {
       const pct = Number(e.target.value) || 0;
@@ -1469,8 +1503,8 @@
         openTransSummary();
       }
     };
-    if($('#tr-prompt-spk')) $('#tr-prompt-spk').onclick = () => { const cur = getItems()[qi]; if(cur && typeof speak === 'function') speak(cur.zh, 0.9); };
-    if($('#tr-ans-spk')) $('#tr-ans-spk').onclick = () => { const cur = getItems()[qi]; if(cur && typeof speak === 'function') speak(cur.zh, 0.9); };
+    if($('#tr-prompt-spk')) $('#tr-prompt-spk').onclick = () => { const cur = getItems()[qi]; if(cur && typeof speak === 'function') speak(cur.zh, 0.65); };
+    if($('#tr-ans-spk')) $('#tr-ans-spk').onclick = () => { const cur = getItems()[qi]; if(cur && typeof speak === 'function') speak(cur.zh, 0.65); };
     if($('#tr-tool-pen')) $('#tr-tool-pen').onclick = () => {
       tool = 'pen';
       if(pad) pad.setTool('pen');

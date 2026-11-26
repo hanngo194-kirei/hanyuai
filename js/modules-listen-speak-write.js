@@ -8,6 +8,7 @@ function stopListeningAudio(){
 function playItemAudio(item,rate,onEnd){
   stopListeningAudio();
   const spd=Number(rate)||1;
+  const ttsSpd=(rate===undefined||rate===null||spd===1)?0.65:(spd>=0.9?Math.max(0.4,spd-0.25):Math.max(0.4,spd));
   const text=typeof item==='string'?item:(item&&item.zh)||'';
   const url=item&&typeof item==='object'?item.audio:null;
   if(url){
@@ -15,13 +16,13 @@ function playItemAudio(item,rate,onEnd){
       const a=new Audio(url);activeAudio=a;a.playbackRate=spd;a.volume=1.0;
       if(typeof boostAudioEl==='function')boostAudioEl(a,1.75);
       if(onEnd)a.onended=onEnd;
-      a.onerror=()=>speak(text,spd,onEnd);
-      const p=a.play();if(p&&p.catch)p.catch(()=>speak(text,spd,onEnd));
+      a.onerror=()=>speak(text,ttsSpd,onEnd);
+      const p=a.play();if(p&&p.catch)p.catch(()=>speak(text,ttsSpd,onEnd));
       return;
     }catch(_){}
   }
   if(!text){if(onEnd)onEnd();return;}
-  speak(text,spd,onEnd);
+  speak(text,ttsSpd,onEnd);
 }
 
 // So sánh ký tự chính tả (LCS) -> phân loại đúng / sai / thiếu / thừa
@@ -269,7 +270,7 @@ function buildListenQuestions(mode){
 }
 
 const listenCtrl=(function(){
-  let mode='choice',qs=[],qi=0,correct=0,wrong=0,wrongQs=[],answered=false,recorded=false,dlgPlaying=false,dlgTimer=null;
+  let mode='choice',qs=[],qi=0,correct=0,wrong=0,wrongQs=[],answered=false,recorded=false,dlgPlaying=false,dlgTimer=null,dlgLoop=false,dlgCurIdx=0;
 
   function syncHeader(){
     const l=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
@@ -308,12 +309,17 @@ const listenCtrl=(function(){
   function playDialogSeq(idx=0){
     if(idx>=LISTEN_DIALOG.length){stopDlg();return;}
     dlgPlaying=true;
+    dlgCurIdx=idx;
     const btn=$('#ln-dlg-play');if(btn)btn.innerHTML='<svg class="ic"><use href="#i-x"/></svg>';
     const st=$('#ln-dlg-status');if(st)st.textContent=`Đang phát câu ${idx+1} / ${LISTEN_DIALOG.length} (${LISTEN_DIALOG[idx].name})`;
-    $$('#ln-dlg-list .bub').forEach((b,k)=>b.classList.toggle('active',k===idx));
+    $$('#ln-dlg-list .bub').forEach((b,k)=>{
+      const on=k===idx;
+      b.classList.toggle('active',on);
+      if(on){try{b.scrollIntoView({behavior:'smooth',block:'nearest'});}catch(_){}}
+    });
     playItemAudio(LISTEN_DIALOG[idx],store.listening.speed,()=>{
       if(!dlgPlaying)return;
-      dlgTimer=setTimeout(()=>playDialogSeq(idx+1),450);
+      dlgTimer=setTimeout(()=>playDialogSeq(dlgLoop?idx:idx+1),dlgLoop?650:450);
     });
   }
   function renderDialogList(){
@@ -490,9 +496,27 @@ const listenCtrl=(function(){
 
   $('#ln-modes').addEventListener('click',e=>{const b=e.target.closest('button');if(b)start(b.dataset.lm);});
   $$('#ln-speeds,#ln-dlg-speeds').forEach(row=>row.addEventListener('click',e=>{
-    const b=e.target.closest('button');if(!b)return;
+    const b=e.target.closest('button');if(!b||!b.dataset.spd)return;
     store.listening.speed=Number(b.dataset.spd);saveStore(store);applySpeedUI();
   }));
+  const dlgLoopBtn=$('#ln-dlg-loop');
+  if(dlgLoopBtn){
+    dlgLoopBtn.onclick=()=>{
+      dlgLoop=!dlgLoop;
+      dlgLoopBtn.classList.toggle('on',dlgLoop);
+      dlgLoopBtn.setAttribute('aria-pressed',String(dlgLoop));
+      toast(dlgLoop?'Đã bật lặp lại câu đang phát':'Đã tắt lặp lại câu');
+    };
+  }
+  const dlgRwBtn=$('#ln-dlg-rw');
+  if(dlgRwBtn){
+    dlgRwBtn.onclick=()=>{
+      if(!LISTEN_DIALOG.length)return;
+      const target=Math.max(0,dlgCurIdx>0?dlgCurIdx-1:0);
+      stopDlg();
+      playDialogSeq(target);
+    };
+  }
   $('#ln-play-btn').onclick=()=>{const q=qs[qi];if(q)playItemAudio({zh:q.audioText||q.zh,audio:q.audio},store.listening.speed);};
   $('#ln-dlg-play').onclick=()=>{if(dlgPlaying)stopDlg();else playDialogSeq(0);};
   $('#ln-dlg-list').addEventListener('click',e=>{
@@ -597,22 +621,33 @@ const TONE_PATHS={
 
 // Lớp đánh giá phát âm: ưu tiên Chivox MCP, tiếp theo Gemini Free, Azure Speech, cuối cùng endpoint tùy biến
 const PronunciationAssessor={
-  getConfig(){
+  getEnabledProviders(){
+    const list=[];
     if(typeof TonePerfectSpeech!=='undefined'&&TonePerfectSpeech&&TonePerfectSpeech.isAssessEnabled&&TonePerfectSpeech.isAssessEnabled()){
-      return {configured:true,provider:'toneperfect',mode:'toneperfect-rest',label:'TonePerfect AI (zh-CN)'};
+      list.push({configured:true,provider:'toneperfect',mode:'toneperfect-rest',label:'TonePerfect AI (zh-CN)',shortLabel:'TonePerfect'});
     }
     if(typeof ChivoxSpeech!=='undefined'&&ChivoxSpeech&&ChivoxSpeech.isAssessEnabled&&ChivoxSpeech.isAssessEnabled()){
-      return {configured:true,provider:'chivox',mode:'chivox-mcp',label:'Chivox Mandarin AI'};
+      list.push({configured:true,provider:'chivox',mode:'chivox-mcp',label:'Chivox Mandarin AI',shortLabel:'Chivox'});
     }
     if(typeof GeminiSpeech!=='undefined'&&GeminiSpeech&&GeminiSpeech.isAssessEnabled&&GeminiSpeech.isAssessEnabled()){
       const gm=GeminiSpeech.getConfig();
-      return {configured:true,provider:'gemini',mode:'gemini-rest',model:gm.model,label:'Google Gemini ('+gm.model+')'};
+      list.push({configured:true,provider:'gemini',mode:'gemini-rest',model:gm.model,label:'Google Gemini ('+gm.model+')',shortLabel:'Gemini'});
     }
     const cfg=(typeof window!=='undefined'&&window.HANYU_ASSESS_CONFIG)||null;
     if(cfg&&typeof cfg.endpoint==='string'&&cfg.endpoint.trim()){
-      return {configured:true,endpoint:cfg.endpoint.trim(),provider:cfg.provider||'custom',mode:'custom-http',label:cfg.provider||'custom'};
+      const p=cfg.provider||'custom';
+      list.push({configured:true,endpoint:cfg.endpoint.trim(),provider:p,mode:'custom-http',label:p,shortLabel:p});
     }
-    return {configured:false,endpoint:null,provider:null,mode:null,label:''};
+    return list;
+  },
+  getConfig(preferredProvider){
+    const list=this.getEnabledProviders();
+    if(!list.length)return {configured:false,endpoint:null,provider:null,mode:null,label:''};
+    if(preferredProvider){
+      const hit=list.find(x=>x.provider===preferredProvider);
+      if(hit)return hit;
+    }
+    return list[0];
   },
   normalize(raw,meta){
     if(!raw||typeof raw!=='object')return null;
@@ -651,8 +686,8 @@ const PronunciationAssessor={
       status:'assessed'
     };
   },
-  async assess(blob,item){
-    const cfg=this.getConfig();
+  async assess(blob,item,preferredProvider){
+    const cfg=this.getConfig(preferredProvider);
     if(!cfg.configured)throw new Error('NOT_CONFIGURED');
     if(cfg.mode==='toneperfect-rest'&&typeof TonePerfectSpeech!=='undefined'){
       const data=await TonePerfectSpeech.assessPronunciation(blob,item.zh,item.py);
@@ -777,7 +812,7 @@ const speakCtrl=(function(){
   let viewTab='practice',guideTab='tone',weakToneFilter=0;
   let idx=0,mediaRec=null,stream=null,audioCtx=null,analyser=null,rafId=null,timerId=null;
   let chunks=[],recBlob=null,recUrl=null,recDuration=0,recStart=0,isRecording=false;
-  let liveRec=null,lastLiveTranscript='';
+  let liveRec=null,lastLiveTranscript='',lastLiveAlternatives=[];
   let assessInFlight=false,apiCallsInSession=0;
   const MAX_API_CALLS_SESSION=600;
 
@@ -958,7 +993,7 @@ const speakCtrl=(function(){
   }
   function clearRecBlob(){
     if(recUrl){try{URL.revokeObjectURL(recUrl);}catch(_){}recUrl=null;}
-    recBlob=null;recDuration=0;lastLiveTranscript='';
+    recBlob=null;recDuration=0;lastLiveTranscript='';lastLiveAlternatives=[];
     const au=$('#sp-audio');if(au){au.pause();au.removeAttribute('src');au.load();}
     $('#sp-player').classList.add('hide');
     $('#sp-rec-meta').textContent='';
@@ -1071,14 +1106,56 @@ const speakCtrl=(function(){
     if(rtB)rtB.classList.toggle('on',rec.selfStatus==='retry');
   }
 
+  function getSelectedSpeakEngine(){
+    const apis=(typeof PronunciationAssessor!=='undefined'&&PronunciationAssessor.getEnabledProviders)?PronunciationAssessor.getEnabledProviders():[];
+    if(!apis.length)return 'web';
+    const cur=(store&&store.speaking&&typeof store.speaking.engine==='string')?store.speaking.engine:'';
+    if(cur==='web')return 'web';
+    if(apis.some(a=>a.provider===cur))return cur;
+    return apis[0].provider;
+  }
+
+  function renderSpeakEngineBar(){
+    const bar=$('#sp-engine-bar');
+    if(!bar)return 'web';
+    const apis=(typeof PronunciationAssessor!=='undefined'&&PronunciationAssessor.getEnabledProviders)?PronunciationAssessor.getEnabledProviders():[];
+    if(!apis.length){
+      bar.innerHTML='';
+      bar.classList.add('hide');
+      return 'web';
+    }
+    const sel=getSelectedSpeakEngine();
+    const _esc=s=>(typeof escHtml==='function')?escHtml(s):String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    const chips=[
+      ...apis.map(a=>`<button type="button" class="sp-eng-chip${sel===a.provider?' on':''}" data-sp-eng="${_esc(a.provider)}">${_esc(a.shortLabel||a.label||a.provider)}</button>`),
+      `<button type="button" class="sp-eng-chip${sel==='web'?' on':''}" data-sp-eng="web">⚡ Web (nhanh)</button>`
+    ].join('');
+    bar.innerHTML=`<span class="sp-eng-lbl">Chấm bằng:</span><div class="sp-eng-chips">${chips}</div>`;
+    bar.classList.remove('hide');
+    bar.querySelectorAll('[data-sp-eng]').forEach(btn=>{
+      btn.onclick=()=>{
+        const eng=btn.getAttribute('data-sp-eng')||'web';
+        if(!store.speaking)store.speaking={};
+        store.speaking.engine=eng;
+        saveStore(store);
+        const curItem=getList()[idx];
+        if(curItem)renderAssessmentArea(curItem);
+        else renderSpeakEngineBar();
+      };
+    });
+    return sel;
+  }
+
   function renderAssessmentArea(item){
-    const cfg=PronunciationAssessor.getConfig();
+    const selectedEng=renderSpeakEngineBar();
+    const useApi=selectedEng!=='web';
+    const cfg=useApi?PronunciationAssessor.getConfig(selectedEng):{configured:false};
     const banner=$('#sp-api-banner'),resWrap=$('#sp-result-wrap');
     const saved=getItemRec(item.id).lastResult;
     const _esc=s=>(typeof escHtml==='function')?escHtml(s):String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
     const canLiveRec=(typeof LocalSpeechAnalyzer!=='undefined'&&LocalSpeechAnalyzer.isSpeechRecSupported&&LocalSpeechAnalyzer.isSpeechRecSupported()&&!LocalSpeechAnalyzer.isIOS());
     const cfgBtn='<button type="button" class="chip" data-open-azure-cfg="1">⚙ Cài đặt AI</button>';
-    if(!cfg.configured){
+    if(!useApi||!cfg.configured){
       banner.innerHTML=`<div class="sp-api-top"><div><b>Chấm phát âm trực tiếp trên trình duyệt:</b> Miễn phí · Phân tích đường cong thanh điệu giọng thật${canLiveRec?' + Nhận diện zh-CN':''}. Bấm ghi âm rồi nhấn <b>Kiểm tra phát âm</b>.</div>${cfgBtn}</div>`;
     }else{
       banner.innerHTML=`<div class="sp-api-top"><div><b>Chấm phát âm:</b> ${_esc(cfg.label||cfg.provider)}${cfg.region?' · '+_esc(cfg.region):''} • Lượt trong phiên: ${apiCallsInSession}/${MAX_API_CALLS_SESSION}</div>${cfgBtn}</div>`;
@@ -1305,13 +1382,14 @@ const speakCtrl=(function(){
     try{mediaRec=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);}
     catch(_){mediaRec=new MediaRecorder(stream);}
 
-    chunks=[];recStart=Date.now();isRecording=true;lastLiveTranscript='';
+    chunks=[];recStart=Date.now();isRecording=true;lastLiveTranscript='';lastLiveAlternatives=[];
     $('#sp-mic').classList.add('rec');
     $('#sp-rec-state').textContent='Đang ghi âm… Nhấn lại để dừng';
 
     if(typeof LocalSpeechAnalyzer!=='undefined'&&LocalSpeechAnalyzer.isSpeechRecSupported&&LocalSpeechAnalyzer.isSpeechRecSupported()&&!LocalSpeechAnalyzer.isIOS()){
-      liveRec=LocalSpeechAnalyzer.createLiveRecognizer(txt=>{
+      liveRec=LocalSpeechAnalyzer.createLiveRecognizer((txt,alts)=>{
         lastLiveTranscript=txt;
+        lastLiveAlternatives=Array.isArray(alts)?alts:(txt?[txt]:[]);
         if(isRecording&&txt){
           const st=$('#sp-rec-state');
           if(st)st.textContent='Đang nghe: '+txt;
@@ -1323,6 +1401,7 @@ const speakCtrl=(function(){
       const AC=window.AudioContext||window.webkitAudioContext;
       if(AC){
         audioCtx=new AC();
+        if(audioCtx.state==='suspended')audioCtx.resume().catch(()=>{});
         const srcNode=audioCtx.createMediaStreamSource(stream);
         analyser=audioCtx.createAnalyser();analyser.fftSize=64;
         srcNode.connect(analyser);
@@ -1439,32 +1518,33 @@ const speakCtrl=(function(){
     if(idx+1<L.length){idx++;renderItem();}
     else openSpeakSummary();
   };
-  $('#sp-hear').onclick=()=>{const it=getList()[idx];if(it)playItemAudio(it,.9);};
-  $('#sp-slow').onclick=()=>{const it=getList()[idx];if(it)playItemAudio(it,.55);};
+  $('#sp-hear').onclick=()=>{const it=getList()[idx];if(it)playItemAudio(it,.65);};
+  $('#sp-slow').onclick=()=>{const it=getList()[idx];if(it)playItemAudio(it,.45);};
   $('#sp-mic').onclick=startRec;
   $('#sp-play-rec').onclick=()=>{const au=$('#sp-audio');if(au&&recUrl){stopListeningAudio();au.currentTime=0;au.play().catch(()=>{});}};
   $('#sp-del-rec').onclick=()=>{clearRecBlob();$('#sp-rec-state').textContent='Đã xóa bản ghi, sẵn sàng thu lại';};
   $('#sp-compare').onclick=()=>{
     const it=getList()[idx],au=$('#sp-audio');
     if(!it||!recUrl)return;
-    playItemAudio(it,.9,()=>{if(recUrl&&au){au.currentTime=0;au.play().catch(()=>{});}});
+    playItemAudio(it,.65,()=>{if(recUrl&&au){au.currentTime=0;au.play().catch(()=>{});}});
   };
   $('#sp-assess').onclick=async()=>{
     if(assessInFlight)return;
     const it=getList()[idx];if(!it||!recBlob)return;
-    const blob=recBlob,transcript=lastLiveTranscript,lessonId=store.activeLessonId;
-    const cfg=PronunciationAssessor.getConfig();
+    const blob=recBlob,transcript=lastLiveTranscript,alternatives=lastLiveAlternatives.slice(),lessonId=store.activeLessonId;
+    const selectedEng=getSelectedSpeakEngine();
+    const cfg=(selectedEng!=='web')?PronunciationAssessor.getConfig(selectedEng):{configured:false};
     const trimForStore=res=>{
       if(!res||typeof res!=='object')return res;
       const copy=Object.assign({},res);
-      if(copy.pitchData&&copy.pitchData.points){
+      if(copy.pitchData){
         copy.pitchData={hasVoice:copy.pitchData.hasVoice,voicedCount:copy.pitchData.voicedCount,durationSec:copy.pitchData.durationSec,minHz:copy.pitchData.minHz,maxHz:copy.pitchData.maxHz};
       }
       return copy;
     };
     const runLocal=async ()=>{
       if(typeof LocalSpeechAnalyzer==='undefined'||!LocalSpeechAnalyzer.assessLocal)throw new Error('LOCAL_ANALYZER_MISSING');
-      return await LocalSpeechAnalyzer.assessLocal(blob,it,transcript);
+      return await LocalSpeechAnalyzer.assessLocal(blob,it,{text:transcript,alternatives});
     };
 
     assessInFlight=true;
@@ -1479,7 +1559,7 @@ const speakCtrl=(function(){
         apiCallsInSession++;countedApi=true;
         try{
           const assessWithCap = Promise.race([
-            PronunciationAssessor.assess(blob,it),
+            PronunciationAssessor.assess(blob,it,selectedEng),
             new Promise((_,reject)=>{
               setTimeout(()=>{
                 const te=new Error('Chivox chưa phản hồi sau 10 giây');
@@ -2136,7 +2216,7 @@ function showWriteComparison(sourceMode){
   const stdBox=$('#wc-std-box');
   if(stdBox){
     stdBox.innerHTML=`<div class="w-std-ch">${c.ch}</div><button type="button" class="w-cmp-std-say" aria-label="Nghe ${c.ch}"><svg class="ic"><use href="#i-vol"/></svg></button>`;
-    const sb=$('.w-cmp-std-say',stdBox);if(sb)sb.onclick=()=>speak(c.ch,.7);
+    const sb=$('.w-cmp-std-say',stdBox);if(sb)sb.onclick=()=>speak(c.ch,.65);
   }
   const uWrap=$('#wc-user-wrap');
   if(uWrap){
@@ -2384,7 +2464,7 @@ $('#wprev').onclick=()=>{if(!CHARS.length||ci<=0)return;ci--;showChar();};
 const nextChar=()=>{if(!CHARS.length)return;if(ci+1<CHARS.length){ci++;showChar();}else{openWritingSummary();}};
 $('#wnext').onclick=nextChar;
 $('#wr-next').onclick=nextChar;
-$('#wsay').onclick=()=>{if(CHARS[ci])speak(CHARS[ci].ch,.7);};
+$('#wsay').onclick=()=>{if(CHARS[ci])speak(CHARS[ci].ch,.65);};
 
 $('#wmode').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;

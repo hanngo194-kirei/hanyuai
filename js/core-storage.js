@@ -38,6 +38,9 @@ const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelect
 let toastT;
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),2400)}
 let zhWarned=false;
+const HANYU_TTS_RATE = 0.65, HANYU_TTS_SLOW = 0.45;
+window.HANYU_TTS_RATE = HANYU_TTS_RATE;
+window.HANYU_TTS_SLOW = HANYU_TTS_SLOW;
 function speak(text,rate,onEnd){
   if(!text){if(typeof onEnd==='function')onEnd();return;}
   if(typeof AzureSpeech!=='undefined'&&AzureSpeech&&AzureSpeech.speak){
@@ -48,7 +51,7 @@ function speak(text,rate,onEnd){
     toast('Thiết bị chưa hỗ trợ đọc mẫu');if(typeof onEnd==='function')onEnd();return;
   }
   try{
-    const u=new SpeechSynthesisUtterance(text);u.lang='zh-CN';u.volume=1.0;u.rate=+rate||.9;
+    const u=new SpeechSynthesisUtterance(text);u.lang='zh-CN';u.volume=1.0;u.rate=Math.max(0.4,+rate||HANYU_TTS_RATE);
     const voices=speechSynthesis.getVoices()||[];
     const v=voices.find(x=>x.lang&&x.lang.toLowerCase().startsWith('zh'));
     if(v)u.voice=v;
@@ -183,7 +186,7 @@ document.addEventListener('click',e=>{
   if(!t)return;
   if(t.dataset.toast)toast(t.dataset.toast);
   else if(t.dataset.say)speak(t.dataset.say);
-  else if(t.dataset.saySlow)speak(t.dataset.saySlow,0.55);
+  else if(t.dataset.saySlow)speak(t.dataset.saySlow,0.45);
   else if(t.hasAttribute('data-task'))t.parentElement.classList.toggle('done');
   else if(t.dataset.sw){const on=t.getAttribute('aria-checked')==='true';t.setAttribute('aria-checked',String(!on));t.closest('.view').classList.toggle(t.dataset.sw,on)}
   else if(t.hasAttribute('data-gosk')){e.preventDefault();$('#mtabs [data-m="sk"]').click()}
@@ -191,6 +194,7 @@ document.addEventListener('click',e=>{
     const box=t.closest('[data-quiz]'),fb=box.parentElement.querySelector('.fb');
     $$('.opt',box).forEach(o=>o.classList.remove('ok','no'));
     const ok=t.hasAttribute('data-ok');t.classList.add(ok?'ok':'no');
+    if(typeof playSfx==='function')playSfx(ok?'ok':'no');
     fb.className='fb '+(ok?'ok':'no');fb.textContent=ok?'Chính xác! Làm tốt lắm.':'Chưa đúng, thử lại nhé.';
   }
 });
@@ -214,7 +218,7 @@ function defaultStore(){
     grammarQuiz:{attempts:0,bestPct:0,sessions:[]},
     listening:{speed:1,showZh:true,showPy:true,showVi:false,attempts:0,bestPct:0,sessions:[],wrongIds:[],toneMistakes:{1:0,2:0,3:0,4:0}},
     writing:{mode:'trace',chars:{}},
-    speaking:{mode:'sentence',maxSec:15,items:{},weakChars:[],weakTones:{1:{weak:0,ok:0},2:{weak:0,ok:0},3:{weak:0,ok:0},4:{weak:0,ok:0},5:{weak:0,ok:0}}},
+    speaking:{mode:'sentence',maxSec:15,engine:'',items:{},weakChars:[],weakTones:{1:{weak:0,ok:0},2:{weak:0,ok:0},3:{weak:0,ok:0},4:{weak:0,ok:0},5:{weak:0,ok:0}}},
     goals:{minutes:20,newWords:5,reviews:10,listen:1,speak:3,write:2},
     daily:{},
     events:[],
@@ -328,6 +332,7 @@ function migrateStore(raw){
   if(raw.speaking&&typeof raw.speaking==='object'){
     if(['word','sentence','dialog','weak'].includes(raw.speaking.mode))base.speaking.mode=raw.speaking.mode;
     if([15,30].includes(Number(raw.speaking.maxSec)))base.speaking.maxSec=Number(raw.speaking.maxSec);
+    if(typeof raw.speaking.engine==='string')base.speaking.engine=raw.speaking.engine;
     if(raw.speaking.items&&typeof raw.speaking.items==='object'){
       for(const [k,v] of Object.entries(raw.speaking.items)){
         if(!v||typeof v!=='object')continue;
@@ -523,6 +528,34 @@ function formatSrsBadge(id){
   if(s.intervalDays===0)return 'Ôn lại sớm';
   return `Sau ${s.intervalDays} ngày`;
 }
+function previewWordNextInterval(id,rating){
+  if(rating===0)return '<10p';
+  const prev=getWordState(id);
+  const nextReps=(prev.reps||0)+1;
+  if(rating===1){
+    const d=nextReps<=1?1:Math.max(1,Math.round((prev.intervalDays||1)*1.2));
+    return `${d} ngày`;
+  }
+  const nextEase=Math.min(2.8,+((prev.ease||2.5)+0.1).toFixed(2));
+  const d=nextReps<=1?3:Math.max((prev.intervalDays||0)+1,Math.round((prev.intervalDays||1)*nextEase));
+  return `${d} ngày`;
+}
+window.previewWordNextInterval=previewWordNextInterval;
+
+if(typeof document!=='undefined'&&!window._hanyuMobileKbScrollBound){
+  window._hanyuMobileKbScrollBound=true;
+  document.addEventListener('focusin',e=>{
+    try{
+      if(window.innerWidth>900)return;
+      const t=e.target;
+      if(!t||!t.matches)return;
+      if(!t.matches('input[type="text"],input[type="search"],input[type="email"],input[type="password"],input:not([type]),textarea'))return;
+      setTimeout(()=>{
+        try{if(document.activeElement===t)t.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}
+      },260);
+    }catch(_){}
+  },{passive:true});
+}
 
 const PY_MAP={'ā':'a','á':'a','ǎ':'a','à':'a','ē':'e','é':'e','ě':'e','è':'e','ī':'i','í':'i','ǐ':'i','ì':'i','ō':'o','ó':'o','ǒ':'o','ò':'o','ū':'u','ú':'u','ǔ':'u','ù':'u','ǖ':'u','ǘ':'u','ǚ':'u','ǜ':'u','ü':'u'};
 function normText(s){
@@ -564,7 +597,7 @@ function applySettingsUI(){
     $$('[data-f="fmode"] button',v).forEach(b=>b.classList.toggle('on',b.dataset.fm===flashMode));
     const tpy=$('[data-f="tog-py"]',v);if(tpy){tpy.classList.toggle('on',!showPinyin);tpy.querySelector('span').textContent=showPinyin?'Ẩn pinyin':'Hiện pinyin';}
     const tvi=$('[data-f="tog-vi"]',v);if(tvi){tvi.classList.toggle('on',!showVi);tvi.querySelector('span').textContent=showVi?'Ẩn nghĩa':'Hiện nghĩa';}
-    const tsl=$('[data-f="tog-slow"]',v);if(tsl){tsl.classList.toggle('on',slowAudio);tsl.querySelector('span').textContent=slowAudio?'Đọc 0.6x':'Nghe chậm';}
+    const tsl=$('[data-f="tog-slow"]',v);if(tsl){tsl.classList.toggle('on',slowAudio);tsl.querySelector('span').textContent=slowAudio?'Đọc 0.45x':'Nghe chậm';}
   });
 }
 
@@ -603,18 +636,102 @@ function updateGlobalCounts(){
 /* ---------- Âm thanh phản hồi Ting (đúng) / Tè (sai) / Hoàn thành & Khuếch đại loa ---------- */
 (function(){
   let _sfxCtx=null;
-  function ensureAudioCtx(){
+  let _sfxAudio=null;
+  let _audioUnlocked=false;
+  const SR=22050;
+  function buildWavDataUri(notes,totalSec){
+    const len=Math.max(1,Math.round(SR*totalSec));
+    const buf=new ArrayBuffer(44+len*2);
+    const v=new DataView(buf);
+    const ws=(off,s)=>{for(let i=0;i<s.length;i++)v.setUint8(off+i,s.charCodeAt(i));};
+    ws(0,'RIFF');v.setUint32(4,36+len*2,true);ws(8,'WAVE');
+    ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+    v.setUint32(24,SR,true);v.setUint32(28,SR*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);
+    ws(36,'data');v.setUint32(40,len*2,true);
+    for(let i=0;i<len;i++){
+      const t=i/SR;
+      let mix=0;
+      for(let j=0;j<notes.length;j++){
+        const n=notes[j];
+        if(t<n.t||t>n.t+n.d)continue;
+        const lt=t-n.t;
+        const atk=Math.min(1,lt/0.012);
+        const dec=Math.pow(Math.max(0,1-lt/n.d),1.8);
+        const ph=(lt*n.f)%1;
+        let w=n.tri?(4*Math.abs(ph-0.5)-1):Math.sin(2*Math.PI*lt*n.f);
+        if(n.bell){
+          w+=0.28*Math.sin(4*Math.PI*lt*n.f)*Math.exp(-lt*9)+0.10*Math.sin(6*Math.PI*lt*n.f)*Math.exp(-lt*14);
+        }
+        mix+=w*n.v*atk*dec;
+      }
+      const s=Math.max(-0.98,Math.min(0.98,mix));
+      v.setInt16(44+i*2,s<0?Math.round(s*0x8000):Math.round(s*0x7FFF),true);
+    }
+    const bytes=new Uint8Array(buf);
+    let bin='';
+    for(let i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);
+    return 'data:audio/wav;base64,'+btoa(bin);
+  }
+  let _sfxUrls=null;
+  function getSfxUrls(){
+    if(_sfxUrls)return _sfxUrls;
+    _sfxUrls={
+      silent:buildWavDataUri([],0.012),
+      ok:buildWavDataUri([{f:1046.5,t:0,d:0.13,v:0.42},{f:1318.5,t:0.075,d:0.22,v:0.46},{f:1568,t:0.15,d:0.19,v:0.35}],0.36),
+      no:buildWavDataUri([{f:220,t:0,d:0.14,v:0.38,tri:1},{f:164.8,t:0.09,d:0.22,v:0.38,tri:1}],0.33),
+      done:buildWavDataUri([
+        {f:523.25,t:0.00,d:0.15,v:0.30,bell:1},
+        {f:659.25,t:0.09,d:0.15,v:0.32,bell:1},
+        {f:783.99,t:0.18,d:0.16,v:0.34,bell:1},
+        {f:1046.5,t:0.27,d:0.22,v:0.38,bell:1},
+        {f:783.99,t:0.40,d:0.14,v:0.30,bell:1},
+        {f:523.25,t:0.50,d:0.62,v:0.22,bell:1},
+        {f:659.25,t:0.50,d:0.62,v:0.22,bell:1},
+        {f:783.99,t:0.50,d:0.62,v:0.24,bell:1},
+        {f:1046.5,t:0.50,d:0.65,v:0.30,bell:1},
+        {f:1318.5,t:0.51,d:0.64,v:0.28,bell:1}
+      ],1.15)
+    };
+    return _sfxUrls;
+  }
+  function getSfxAudioEl(){
+    if(!_sfxAudio&&typeof Audio!=='undefined'){
+      _sfxAudio=new Audio();
+      _sfxAudio.playsInline=true;
+      _sfxAudio.preload='auto';
+    }
+    return _sfxAudio;
+  }
+  function ensureAudioCtx(touchUnlock){
     const AC=window.AudioContext||window.webkitAudioContext;
     if(!AC)return null;
     if(!_sfxCtx)_sfxCtx=new AC();
-    if(_sfxCtx.state==='suspended'){
+    if(_sfxCtx.state!=='running'){
       try{_sfxCtx.resume().catch(()=>{});}catch(_){}
+    }
+    if(touchUnlock&&_sfxCtx.state==='running'){
+      try{
+        const b=_sfxCtx.createBuffer(1,1,22050),s=_sfxCtx.createBufferSource();
+        s.buffer=b;s.connect(_sfxCtx.destination);s.start(0);
+      }catch(_){}
     }
     return _sfxCtx;
   }
   if(typeof document!=='undefined'){
-    const unlock=()=>{ensureAudioCtx();};
-    ['pointerdown','touchstart','click','keydown'].forEach(ev=>document.addEventListener(ev,unlock,{passive:true,capture:true}));
+    const unlock=()=>{
+      ensureAudioCtx(true);
+      if(!_audioUnlocked){
+        _audioUnlocked=true;
+        try{
+          const a=getSfxAudioEl();
+          if(a&&a.paused){
+            a.muted=false;a.volume=0.9;a.src=getSfxUrls().silent;
+            const p=a.play();if(p&&p.catch)p.catch(()=>{_audioUnlocked=false;});
+          }
+        }catch(_){_audioUnlocked=false;}
+      }
+    };
+    ['pointerdown','touchstart','touchend','click','keydown'].forEach(ev=>document.addEventListener(ev,unlock,{passive:true,capture:true}));
   }
   window.boostAudioEl=function(audio,gainVal){
     if(!audio)return;
@@ -658,21 +775,49 @@ function updateGlobalCounts(){
       tone(ctx,220,t,0.14,'triangle',0.34);
       tone(ctx,164.8,t+0.09,0.22,'triangle',0.34);
     }else if(kind==='done'){
-      tone(ctx,523.25,t,0.11,'sine',0.30);
-      tone(ctx,659.25,t+0.08,0.11,'sine',0.32);
-      tone(ctx,783.99,t+0.16,0.13,'sine',0.34);
-      tone(ctx,1046.5,t+0.25,0.28,'sine',0.36);
+      tone(ctx,523.25,t,0.15,'sine',0.30);
+      tone(ctx,659.25,t+0.09,0.15,'sine',0.32);
+      tone(ctx,783.99,t+0.18,0.16,'sine',0.34);
+      tone(ctx,1046.5,t+0.27,0.22,'sine',0.38);
+      tone(ctx,783.99,t+0.40,0.14,'sine',0.30);
+      tone(ctx,523.25,t+0.50,0.62,'sine',0.20);
+      tone(ctx,659.25,t+0.50,0.62,'sine',0.20);
+      tone(ctx,783.99,t+0.50,0.62,'sine',0.22);
+      tone(ctx,1046.5,t+0.50,0.65,'sine',0.28);
+      tone(ctx,1318.5,t+0.51,0.64,'sine',0.26);
     }
   }
-  window.playSfx=function(kind){
+  function fallbackWebAudioSfx(kind){
     try{
-      if(typeof store!=='undefined'&&store.settings&&store.settings.sfx===false)return;
       const ctx=ensureAudioCtx();if(!ctx)return;
-      if(ctx.state==='suspended'){
+      if(ctx.state!=='running'){
         ctx.resume().then(()=>playTones(ctx,kind)).catch(()=>{});
       }else{
         playTones(ctx,kind);
       }
+    }catch(_){}
+  }
+  window.playSfx=function(kind){
+    try{
+      if(typeof store!=='undefined'&&store.settings&&store.settings.sfx===false)return;
+      const urls=getSfxUrls();
+      const url=urls[kind];
+      const a=getSfxAudioEl();
+      if(url&&a){
+        try{
+          a.pause();
+          a.muted=false;
+          a.volume=kind==='done'?1.0:0.9;
+          a.src=url;
+          a.currentTime=0;
+          const p=a.play();
+          if(p&&typeof p.catch==='function'){
+            p.catch(()=>fallbackWebAudioSfx(kind));
+          }
+          return;
+        }catch(_){}
+      }
+      fallbackWebAudioSfx(kind);
     }catch(_){}
   };
 })();

@@ -71,7 +71,7 @@
       return;
     }
     if(typeof speak === 'function'){
-      speak(text, rate || 0.85);
+      speak(text, rate || 0.65);
     }else if(typeof toast === 'function'){
       toast('Chưa có giọng đọc tiếng Trung trên trình duyệt này');
     }

@@ -1,10 +1,69 @@
 /* ---------- Modal Tạo / Sửa Giáo trình & Sao lưu JSON ---------- */
+let _activeDlgFinish=null;
 function openModal(html){
+  if(_activeDlgFinish){const fn=_activeDlgFinish;_activeDlgFinish=null;fn(null,true);}
   $('#hanyu-modal-box').innerHTML=html;
   $('#hanyu-modal').classList.remove('hide');
 }
-function closeModal(){$('#hanyu-modal').classList.add('hide');}
+function closeModal(){
+  $('#hanyu-modal').classList.add('hide');
+  if(_activeDlgFinish){const fn=_activeDlgFinish;_activeDlgFinish=null;fn(null,true);}
+}
 if($('#hanyu-modal'))$('#hanyu-modal').addEventListener('click',e=>{if(e.target===$('#hanyu-modal'))closeModal();});
+
+function appConfirm(message,opts={}){
+  return new Promise(resolve=>{
+    let settled=false;
+    const finish=(val,fromClose)=>{
+      if(settled)return;
+      settled=true;
+      _activeDlgFinish=null;
+      if(!fromClose)closeModal();
+      resolve(Boolean(val));
+    };
+    openModal(`
+      <h3 style="margin:0 0 8px">${escHtml(opts.title||'Xác nhận')}</h3>
+      <p class="small" style="margin:0 0 14px;line-height:1.5;color:var(--ink)">${escHtml(message)}</p>
+      <div class="hanyu-dlg-actions">
+        <button type="button" class="btn ghost sm" id="hdlg-cancel">${escHtml(opts.cancelText||'Hủy')}</button>
+        <button type="button" class="btn sm" id="hdlg-ok">${escHtml(opts.okText||'Đồng ý')}</button>
+      </div>
+    `);
+    _activeDlgFinish=(_,fromClose)=>finish(false,fromClose);
+    const okBtn=$('#hdlg-ok'),cBtn=$('#hdlg-cancel');
+    if(cBtn)cBtn.onclick=()=>finish(false,false);
+    if(okBtn){okBtn.onclick=()=>finish(true,false);setTimeout(()=>{try{okBtn.focus();}catch(_){}},20);}
+  });
+}
+function appPrompt(message,opts={}){
+  return new Promise(resolve=>{
+    let settled=false;
+    const finish=(val,fromClose)=>{
+      if(settled)return;
+      settled=true;
+      _activeDlgFinish=null;
+      if(!fromClose)closeModal();
+      resolve(val);
+    };
+    openModal(`
+      <h3 style="margin:0 0 8px">${escHtml(opts.title||'Nhập nội dung')}</h3>
+      <p class="small" style="margin:0 0 10px;line-height:1.5;color:var(--muted)">${escHtml(message)}</p>
+      <textarea id="hdlg-ta" class="hanyu-dlg-ta" rows="5" placeholder="${escHtml(opts.placeholder||'')}"></textarea>
+      <div class="hanyu-dlg-actions">
+        <button type="button" class="btn ghost sm" id="hdlg-cancel">${escHtml(opts.cancelText||'Hủy')}</button>
+        <button type="button" class="btn sm" id="hdlg-ok">${escHtml(opts.okText||'Thêm')}</button>
+      </div>
+    `);
+    _activeDlgFinish=(_,fromClose)=>finish(null,fromClose);
+    const ta=$('#hdlg-ta'),okBtn=$('#hdlg-ok'),cBtn=$('#hdlg-cancel');
+    if(ta&&opts.defaultValue)ta.value=String(opts.defaultValue);
+    if(cBtn)cBtn.onclick=()=>finish(null,false);
+    if(okBtn)okBtn.onclick=()=>finish(ta?ta.value:'',false);
+    setTimeout(()=>{try{if(ta)ta.focus();}catch(_){}},30);
+  });
+}
+window.appConfirm=appConfirm;
+window.appPrompt=appPrompt;
 
 function openCourseFormModal(courseObj){
   const isEdit=Boolean(courseObj);
@@ -102,7 +161,7 @@ function openBackupModal(){
         $('#bk-msg').innerHTML='<div class="err-box">Tệp JSON không đúng cấu trúc sao lưu của Hanyu AI.</div>';
         return;
       }
-      const ok=confirm(`Tìm thấy ${data.courses.length} giáo trình và ${data.lessons.length} bài học. Bấm OK để gộp vào dữ liệu hiện tại (không xóa tiến độ SRS cũ).`);
+      const ok=await appConfirm(`Tìm thấy ${data.courses.length} giáo trình và ${data.lessons.length} bài học. Bấm Đồng ý để gộp vào dữ liệu hiện tại (không xóa tiến độ SRS cũ).`,{title:'Khôi phục sao lưu',okText:'Gộp dữ liệu'});
       if(!ok)return;
       if(data.vocabBank&&typeof data.vocabBank==='object'){
         Object.values(data.vocabBank).forEach(w=>registerVocabWord(w));
@@ -588,7 +647,7 @@ document.addEventListener('click',async e=>{
   if(delL){
     const lid=delL.dataset.delLesson;
     const l=LESSONS.find(x=>x.id===lid);if(!l)return;
-    if(!confirm(`Xóa "${l.code}: ${l.titleVi}"? Lịch sử ôn tập từ vựng (SRS) vẫn được bảo toàn.`))return;
+    if(!(await appConfirm(`Xóa "${l.code}: ${l.titleVi}"? Lịch sử ôn tập từ vựng (SRS) vẫn được bảo toàn.`,{title:'Xóa bài học',okText:'Xóa bài'})))return;
     await HanyuIDB.del('lessons',lid);
     LESSONS=LESSONS.filter(x=>x.id!==lid);
     const c=COURSES.find(x=>x.id===l.courseId);
@@ -638,7 +697,7 @@ document.addEventListener('click',async e=>{
   // Delete course
   if(e.target.id==='cd-del-course'){
     const c=COURSES.find(x=>x.id===curDetailCourseId);if(!c)return;
-    if(!confirm(`Xóa giáo trình "${c.title}" cùng các bài học bên trong? Tiến độ SRS của các từ bạn đã học vẫn được giữ lại.`))return;
+    if(!(await appConfirm(`Xóa giáo trình "${c.title}" cùng các bài học bên trong? Tiến độ SRS của các từ bạn đã học vẫn được giữ lại.`,{title:'Xóa giáo trình',okText:'Xóa giáo trình'})))return;
     const ls=LESSONS.filter(x=>x.courseId===c.id);
     for(const l of ls)await HanyuIDB.del('lessons',l.id);
     LESSONS=LESSONS.filter(x=>x.courseId!==c.id);
@@ -877,8 +936,8 @@ $('#filters').addEventListener('click',()=>setTimeout(renderLibrary,0));
 $('#le-add-word').onclick=()=>{draftLesson._editWords.push({zh:'',py:'',vi:''});renderEditorWords();editorDirty=true;};
 $('#le-add-dlg').onclick=()=>{draftLesson.dialog.push({speaker:'A',name:'Người A',zh:'',py:'',vi:''});renderEditorDialog();editorDirty=true;};
 $('#le-add-gram').onclick=()=>{draftLesson._editGrams.push({title:'',explain:'',exZh:''});renderEditorGrams();editorDirty=true;};
-$('#le-split-paste').onclick=()=>{
-  const raw=prompt('Dán nhanh danh sách từ (mỗi dòng: Chữ Hán | Pinyin | Nghĩa):');
+$('#le-split-paste').onclick=async()=>{
+  const raw=await appPrompt('Dán nhanh danh sách từ (mỗi dòng: Chữ Hán | Pinyin | Nghĩa):',{title:'Dán nhanh từ vựng',placeholder:'你好 | nǐ hǎo | Xin chào'});
   if(!raw)return;
   raw.split(/\r?\n/).forEach(line=>{
     const p=line.split(/[|\t]/).map(x=>x.trim());

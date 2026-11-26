@@ -59,12 +59,19 @@ window.resolveWordExample=resolveWordExample;
 
 /* ---------- Flashcard dùng chung ---------- */
 function makeDeck(root,opts){
-  let queue=[],i=0,revealed=false,rateLock=false,session={reviewed:0,r0:0,r1:0,r2:0,done:false,studiedSet:new Set(),wrongSet:new Set(),summaryShown:false};
+  let queue=[],i=0,revealed=false,rateLock=false,lastUndo=null,session={reviewed:0,r0:0,r1:0,r2:0,done:false,studiedSet:new Set(),wrongSet:new Set(),summaryShown:false};
   const f=k=>$(`[data-f="${k}"]`,root);
-  const audioRate=()=>store.settings.slowAudio?.6:.9;
+  const audioRate=()=>store.settings.slowAudio?.45:.65;
 
+  function syncUndoUI(){
+    if(root&&root.id==='r-session'){
+      const ur=$('#r-undo-row');
+      if(ur)ur.classList.toggle('hide',!lastUndo);
+    }
+  }
   function buildQueue(){
-    queue=opts.listFn().slice();i=0;revealed=false;session={reviewed:0,r0:0,r1:0,r2:0,done:false,studiedSet:new Set(),wrongSet:new Set(),summaryShown:false};
+    queue=opts.listFn().slice();i=0;revealed=false;lastUndo=null;session={reviewed:0,r0:0,r1:0,r2:0,done:false,studiedSet:new Set(),wrongSet:new Set(),summaryShown:false};
+    syncUndoUI();
   }
   function openVocabSummary(manual){
     if(typeof showSectionSummary!=='function')return;
@@ -145,6 +152,14 @@ function makeDeck(root,opts){
     const srsEl=f('srs');if(srsEl)srsEl.textContent=formatSrsBadge(w.id);
     const st=f('star');if(st){const on=isFavorite(w.id);st.classList.toggle('on',on);st.setAttribute('aria-pressed',String(on));}
     const hb=f('hard');if(hb){const on=isDifficult(w.id);hb.classList.toggle('on',on);hb.setAttribute('aria-pressed',String(on));}
+    if(typeof previewWordNextInterval==='function'){
+      $$('[data-rate]',root).forEach(b=>{
+        let iv=b.querySelector('.rv-rate-int');
+        if(!iv){iv=document.createElement('small');iv.className='rv-rate-int';b.appendChild(iv);}
+        iv.textContent=previewWordNextInterval(w.id,+b.dataset.rate);
+      });
+    }
+    syncUndoUI();
     applyMask();updateGlobalCounts();
     if(opts.onRender)opts.onRender(w);
   }
@@ -153,9 +168,10 @@ function makeDeck(root,opts){
   const on=(k,fn)=>{const el=f(k);if(el)el.addEventListener('click',e=>{e.stopPropagation();fn(e);});};
   on('next',()=>go(1));on('prev',()=>go(-1));
   on('spk',()=>cur()&&speak(cur().zh,audioRate()));
-  on('spk-slow',()=>cur()&&speak(cur().zh,0.55));
+  on('spk-slow',()=>cur()&&speak(cur().zh,0.45));
   on('spkBig',()=>cur()&&speak(cur().zh,audioRate()));
   on('exSpk',()=>{const w=cur();if(!w)return;const exData=resolveExample(w);if(exData.ex)speak(exData.ex,audioRate());});
+  on('exSpkSlow',()=>{const w=cur();if(!w)return;const exData=resolveExample(w);if(exData.ex)speak(exData.ex,0.45);});
   on('vc-repeat',()=>{const w=cur();if(!w)return;speak(w.zh,audioRate());toast(`Đọc theo: ${w.zh}${w.py?' ('+w.py+')':''}`);});
   on('tog-py',()=>{store.settings.showPinyin=!store.settings.showPinyin;saveStore(store);applySettingsUI();applyMask();});
   on('tog-vi',()=>{store.settings.showVi=!store.settings.showVi;saveStore(store);applySettingsUI();applyMask();});
@@ -177,7 +193,19 @@ function makeDeck(root,opts){
   $$('[data-rate]',root).forEach(b=>b.addEventListener('click',()=>{
     if(rateLock)return;const w=cur();if(!w)return;
     rateLock=true;setTimeout(()=>{rateLock=false;},220);
-    const v=+b.dataset.rate;recordWord(w.id,v,opts.fixedMode||store.settings.flashMode);
+    const v=+b.dataset.rate;
+    if(opts.sessionQueue){
+      lastUndo={
+        wordId:w.id,
+        prevWordRec:store.words[w.id]?JSON.parse(JSON.stringify(store.words[w.id])):null,
+        prevQueue:queue.slice(),
+        prevIndex:i,
+        prevSession:{reviewed:session.reviewed,r0:session.r0,r1:session.r1,r2:session.r2,done:session.done},
+        prevStudied:new Set(session.studiedSet),
+        prevWrong:new Set(session.wrongSet)
+      };
+    }
+    recordWord(w.id,v,opts.fixedMode||store.settings.flashMode);
     if(typeof playSfx==='function'){if(v===2)playSfx('ok');else if(v===0)playSfx('no');}
     session.reviewed+=1;session['r'+v]+=1;
     session.studiedSet.add(w.id);
@@ -198,6 +226,28 @@ function makeDeck(root,opts){
       }else go(1);
     }
   }));
+  function undo(){
+    if(!lastUndo)return false;
+    const snap=lastUndo;
+    if(snap.prevWordRec)store.words[snap.wordId]=snap.prevWordRec;
+    else delete store.words[snap.wordId];
+    saveStore(store);
+    queue=snap.prevQueue.slice();
+    i=snap.prevIndex;
+    session.reviewed=snap.prevSession.reviewed;
+    session.r0=snap.prevSession.r0;
+    session.r1=snap.prevSession.r1;
+    session.r2=snap.prevSession.r2;
+    session.done=snap.prevSession.done;
+    session.studiedSet=new Set(snap.prevStudied);
+    session.wrongSet=new Set(snap.prevWrong);
+    revealed=false;
+    lastUndo=null;
+    render();
+    if(opts.onMutate)opts.onMutate();
+    toast('Đã hoàn tác thẻ vừa chấm');
+    return true;
+  }
   buildQueue();
   return {
     render,
@@ -206,7 +256,11 @@ function makeDeck(root,opts){
     openSummary(manual){openVocabSummary(manual);},
     getQueueIds(){return queue.map(w=>w.id).join(',');},
     isSessionDone(){return session.done;},
-    openWord(id){buildQueue();const idx=queue.findIndex(w=>w.id===id);if(idx>=0)i=idx;revealed=false;render();}
+    openWord(id){buildQueue();const idx=queue.findIndex(w=>w.id===id);if(idx>=0)i=idx;revealed=false;render();},
+    toggleReveal(){if(!cur()||session.done)return;revealed=!revealed;applyMask();},
+    step(d){go(d);},
+    rate(v){const btn=$(`[data-rate="${v}"]`,root);if(btn&&!btn.disabled)btn.click();},
+    undo
   };
 }
 
@@ -425,7 +479,7 @@ if($('#vc-ext-panel'))$('#vc-ext-panel').addEventListener('click',e=>{
 function makeVocabQuiz(root,opts){
   let queue=[],i=0,session={studiedSet:new Set(),wrongMap:new Map(),answers:{},choices:{},done:false,summaryShown:false};
   const f=k=>$(`[data-f="${k}"]`,root);
-  const audioRate=()=>store.settings.slowAudio?.6:.9;
+  const audioRate=()=>store.settings.slowAudio?.45:.65;
   const ABC=['A','B','C','D'];
 
   function buildQueue(customList){
@@ -561,7 +615,7 @@ function makeVocabQuiz(root,opts){
           if(oi>=0){const ob=$$('.opt',optsEl)[oi];if(ob){ob.classList.add('ok');const ost=$('.st-ic',ob);if(ost)ost.textContent='✓';}}
         }
         if(typeof playSfx==='function')playSfx(isOk?'ok':'no');
-        if(typeof speak==='function')setTimeout(()=>speak(w.zh,0.95),240);
+        if(typeof speak==='function')setTimeout(()=>speak(w.zh,0.65),240);
         recordWord(w.id,isOk?2:0,'zh');
         updateGlobalCounts();
         applyRevealState(w);
@@ -574,9 +628,10 @@ function makeVocabQuiz(root,opts){
 
   const cur=()=>queue[i]||null;
   const on=(k,fn)=>{const el=f(k);if(el)el.addEventListener('click',e=>{e.stopPropagation();fn(e);});};
-  on('spk',()=>cur()&&speak(cur().zh,0.95));
-  on('spk-slow',()=>cur()&&speak(cur().zh,0.55));
+  on('spk',()=>cur()&&speak(cur().zh,0.65));
+  on('spk-slow',()=>cur()&&speak(cur().zh,0.45));
   on('exSpk',()=>{const w=cur();if(!w)return;const exData=resolveWordExample(w);if(exData.ex)speak(exData.ex,audioRate());});
+  on('exSpkSlow',()=>{const w=cur();if(!w)return;const exData=resolveWordExample(w);if(exData.ex)speak(exData.ex,0.45);});
   on('tog-py',()=>{store.settings.showPinyin=!store.settings.showPinyin;saveStore(store);applySettingsUI();});
   on('tog-slow',()=>{store.settings.slowAudio=!store.settings.slowAudio;saveStore(store);applySettingsUI();if(cur())speak(cur().zh,audioRate());});
   on('star',()=>{
@@ -607,7 +662,9 @@ function makeVocabQuiz(root,opts){
     openSummary(manual){openVocabSummary(manual);},
     getQueueIds(){return queue.map(w=>w.id).join(',');},
     isSessionDone(){return session.done;},
-    openWord(id){buildQueue();const idx=queue.findIndex(w=>w.id===id);if(idx>=0)i=idx;render();}
+    openWord(id){buildQueue();const idx=queue.findIndex(w=>w.id===id);if(idx>=0)i=idx;render();},
+    toggleReveal(){const w=cur();if(w&&typeof speak==='function')speak(w.zh,audioRate());},
+    step(d){if(!queue.length)return;i=(i+d+queue.length)%queue.length;render();}
   };
 }
 
@@ -786,6 +843,49 @@ $('#rmode').addEventListener('click',e=>{
 });
 $('#r-start-btn').onclick=()=>openReviewSession(rmode);
 $('#r-back-dash').onclick=closeReviewSession;
+const _rUndoBtn=$('#r-undo');if(_rUndoBtn)_rUndoBtn.onclick=()=>rev.undo();
+
+if(typeof document!=='undefined'&&!window._hanyuHotkeysBound){
+  window._hanyuHotkeysBound=true;
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){
+      const hm=$('#hanyu-modal');
+      if(hm&&!hm.classList.contains('hide')&&typeof closeModal==='function'){
+        e.preventDefault();closeModal();
+      }
+      return;
+    }
+    const t=e.target;
+    if(t&&((t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT')||t.isContentEditable))return;
+    const hm=$('#hanyu-modal');
+    if(hm&&!hm.classList.contains('hide'))return;
+    const rvView=$('#review');
+    if(rvView&&rvView.classList.contains('on')){
+      if(e.code==='Space'||e.key===' '){
+        e.preventDefault();
+        if(!t||typeof t.closest!=='function'||!t.closest('.flash'))rev.toggleReveal();
+        return;
+      }
+      if(e.key==='1'||e.key==='2'||e.key==='3'){
+        e.preventDefault();rev.rate(Number(e.key)-1);return;
+      }
+      if(e.key==='z'||e.key==='Z'){
+        if(rev.undo())e.preventDefault();
+        return;
+      }
+    }
+    const vcView=$('#vocab');
+    if(vcView&&vcView.classList.contains('on')){
+      if(e.code==='Space'||e.key===' '){
+        e.preventDefault();
+        if(typeof vocab.toggleReveal==='function')vocab.toggleReveal();
+        return;
+      }
+      if(e.key==='ArrowLeft'&&typeof vocab.step==='function'){e.preventDefault();vocab.step(-1);return;}
+      if(e.key==='ArrowRight'&&typeof vocab.step==='function'){e.preventDefault();vocab.step(1);return;}
+    }
+  });
+}
 
 /* ---------- Màn 3: Sổ từ khó & yêu thích ---------- */
 let wbTab='hard',wbSub='marked',wbQuery='';
@@ -841,7 +941,7 @@ $('#wb-list').addEventListener('click',e=>{
   if(act){
     e.stopPropagation();
     const a=act.dataset.wa;
-    if(a==='say')speak(w.zh,store.settings.slowAudio?.6:.9);
+    if(a==='say')speak(w.zh,store.settings.slowAudio?.45:.65);
     else if(a==='fav'){toggleFavorite(id);renderWordbook();vocab.render();}
     else if(a==='hard'){toggleDifficult(id);renderWordbook();vocab.render();renderReviewDash();}
     return;
@@ -1286,7 +1386,7 @@ const exCtrl=(function(){
           <div class="order-zone" id="ord-ans">${placed.length?placed.map((ti,pos)=>`<button type="button" class="tok placed" data-op="${pos}">${renderTokInner(q.tokens[ti],ti)}</button>`).join(''):'<span class="muted small">Chạm các mảnh từ bên dưới để xếp câu...</span>'}</div>
           <div class="bank-zone" style="margin-top:10px">${q.tokens.map((t,ti)=>`<button type="button" class="tok ${placed.includes(ti)?'used':''}" data-ot="${ti}">${renderTokInner(t,ti)}</button>`).join('')}</div>
           <div class="btnrow" style="margin-top:10px"><button type="button" class="btn ghost sm" id="ord-clr">Xếp lại</button><button type="button" class="btn sm" id="ord-chk">Kiểm tra</button></div>`;
-        $$('[data-ot]',stage).forEach(b=>b.onclick=()=>{if(answered)return;placed.push(+b.dataset.ot);drawOrder();});
+        $$('[data-ot]',stage).forEach(b=>b.onclick=()=>{if(answered)return;const ti=+b.dataset.ot;const sp=String(q.tokens[ti]||'').replace(/[，。！？、；：“”‘’（）《》….,!?;:\s]+/g,'');if(sp&&typeof speak==='function')speak(sp);placed.push(ti);drawOrder();});
         $$('[data-op]',stage).forEach(b=>b.onclick=()=>{if(answered)return;placed.splice(+b.dataset.op,1);drawOrder();});
         $('#ord-clr',stage).onclick=()=>{if(answered)return;placed=[];drawOrder();};
         $('#ord-chk',stage).onclick=()=>{
@@ -1648,7 +1748,7 @@ const gramCtrl=(function(){
           <div class="order-zone" id="gq-ord-ans">${placed.length?placed.map((ti,pos)=>`<button type="button" class="tok placed" data-gop="${pos}">${renderTokInner(tokens[ti],ti)}</button>`).join(''):'<span class="muted small">Chạm các mảnh từ bên dưới để xếp câu...</span>'}</div>
           <div class="bank-zone" style="margin-top:8px">${tokens.map((t,ti)=>`<button type="button" class="tok ${placed.includes(ti)?'used':''}" data-got="${ti}">${renderTokInner(t,ti)}</button>`).join('')}</div>
           <div class="btnrow" style="margin-top:8px"><button type="button" class="btn ghost sm" id="gq-ord-clr">Xếp lại</button><button type="button" class="btn sm" id="gq-ord-chk">Kiểm tra</button></div>`;
-        $$('[data-got]',$('#gq-opts')).forEach(b=>b.onclick=()=>{if(answered)return;placed.push(+b.dataset.got);drawOrder();});
+        $$('[data-got]',$('#gq-opts')).forEach(b=>b.onclick=()=>{if(answered)return;const ti=+b.dataset.got;const sp=String(tokens[ti]||'').replace(/[，。！？、；：“”‘’（）《》….,!?;:\s]+/g,'');if(sp&&typeof speak==='function')speak(sp);placed.push(ti);drawOrder();});
         $$('[data-gop]',$('#gq-opts')).forEach(b=>b.onclick=()=>{if(answered)return;placed.splice(+b.dataset.gop,1);drawOrder();});
         $('#gq-ord-clr').onclick=()=>{if(answered)return;placed=[];drawOrder();};
         $('#gq-ord-chk').onclick=()=>{

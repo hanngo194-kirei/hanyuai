@@ -338,7 +338,10 @@
 <div class="py" data-f="exPy">Nǐ hǎo!</div>
 <span class="vi" data-f="exVi">Xin chào!</span>
 </div>
+<div class="vc-ex-btns">
 <button aria-label="Nghe câu ví dụ" class="playbtn" data-f="exSpk" style="width:36px;height:36px" type="button"><svg class="ic"><use href="#i-vol"></use></svg></button>
+<button aria-label="Nghe chậm câu ví dụ" class="playbtn slow" data-f="exSpkSlow" title="Nghe chậm câu ví dụ" style="width:36px;height:36px" type="button"><svg class="ic"><use href="#i-slow"></use></svg></button>
+</div>
 </div>
 </div>
 <div class="btnrow hide" id="vc-actions">
@@ -421,6 +424,8 @@
 <input aria-label="Tiến độ bài khóa" class="bk-seek" id="bk-seek" max="100" min="0" type="range" value="0"/>
 </div>
 <button class="bk-spd-btn" id="bk-speed-btn" type="button">1.0×</button>
+<button aria-label="Lặp lại câu đang phát" aria-pressed="false" class="bk-spd-btn bk-loop-btn" id="bk-loop-btn" title="Lặp câu hiện tại" type="button">↺</button>
+<button aria-label="Tua lùi 5 giây hoặc câu trước" class="bk-spd-btn bk-rw-btn" id="bk-rw-btn" title="Lùi 5s / Câu trước" type="button">-5s</button>
 </div>
 <div class="bk-card" id="bk-card">
 <div id="bk-pane-content">
@@ -584,6 +589,8 @@
 <button class="spd-btn" data-spd="0.75" type="button">0.75x</button>
 <button class="spd-btn on" data-spd="1" type="button">1.0x</button>
 <button class="spd-btn" data-spd="1.25" type="button">1.25x</button>
+<button aria-label="Lặp câu đang phát" aria-pressed="false" class="spd-btn ln-loop-btn" id="ln-dlg-loop" title="Lặp câu hiện tại" type="button">↺</button>
+<button aria-label="Tua lùi câu trước" class="spd-btn" id="ln-dlg-rw" title="Câu trước / Lặp lại" type="button">-5s</button>
 </div>
 </div>
 <div class="switches s3" id="ln-toggles">
@@ -763,13 +770,17 @@
 <div class="py" data-f="exPy"></div>
 <span class="vi" data-f="exVi"></span>
 </div>
+<div class="rv-ex-btns">
 <button aria-label="Nghe câu ví dụ" class="rv-ex-spk" data-f="exSpk" type="button"><svg class="ic"><use href="#i-vol"></use></svg></button>
+<button aria-label="Nghe chậm câu ví dụ" class="rv-ex-spk slow" data-f="exSpkSlow" title="Nghe chậm câu ví dụ" type="button"><svg class="ic"><use href="#i-slow"></use></svg></button>
+</div>
 </div>
 <div class="rate3 rv-rate3" data-f="rates">
 <button class="r0" data-rate="0" type="button"><svg class="ic"><use href="#i-x"></use></svg>Chưa nhớ</button>
 <button class="r1" data-rate="1" type="button"><svg class="ic"><use href="#i-wave"></use></svg>Hơi nhớ</button>
 <button class="r2" data-rate="2" type="button"><svg class="ic"><use href="#i-check"></use></svg>Đã thuộc</button>
 </div>
+<div class="rv-undo-row hide" id="r-undo-row"><button class="rv-undo-btn" id="r-undo" type="button"><svg class="ic"><use href="#i-refresh"></use></svg>Hoàn tác thẻ vừa chấm <kbd>Z</kbd></button></div>
 <div class="card hide" id="r-empty" style="text-align:center"></div>
 <div class="card hide" data-f="summary"></div>
 </div>
@@ -851,6 +862,7 @@
 <button aria-label="Xóa bản ghi để thu lại" class="iconb" id="sp-del-rec" style="width:32px;height:32px;border-radius:50%;background:var(--surface);border:1px solid var(--line);display:grid;place-items:center;color:var(--muted)" type="button"><svg class="ic" style="width:1em;height:1em"><use href="#i-trash"></use></svg></button>
 </div>
 <p class="small muted" id="sp-rec-meta"></p>
+<div class="sp-engine-bar hide" id="sp-engine-bar" aria-label="Chọn cách chấm phát âm"></div>
 <div class="btnrow" style="margin-top:10px">
 <button class="btn ghost sm" disabled="" id="sp-compare" type="button"><svg class="ic"><use href="#i-head"></use></svg>Mẫu ↔ Giọng mình</button>
 <button class="btn sm" disabled="" id="sp-assess" type="button"><svg class="ic"><use href="#i-award"></use></svg>Kiểm tra phát âm</button>

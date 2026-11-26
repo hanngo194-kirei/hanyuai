@@ -62,6 +62,11 @@
   padding:5px 10px;border-radius:999px;border:1px solid #E5CFC2;background:#FFF7F2;
   color:#7B2219;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;
 }
+.bk-loop-btn.on{background:var(--accent,#C7463B);color:#fff;border-color:var(--accent,#C7463B)}
+@media (max-width:440px){
+  .bk-player{flex-wrap:wrap}
+  .bk-spd-btn{padding:4px 8px}
+}
 /* --- Dialog lines + Clickable words + Popover --- */
 .bk-card{
   background:rgba(255,253,251,.97);border:1px solid #EAD3C4;border-radius:20px;
@@ -433,7 +438,7 @@
   color:#6B2A20;font-size:11.5px;font-weight:700;cursor:pointer;
 }
 .d2-np-tools button.on{background:#FCE5D8;border-color:#C7463B;color:#8B2E2E}
-.d2-np-foot{font-size:11px;color:var(--muted);margin-top:7px;text-align:center}
+.d2-np-foot{font-size:12px;color:var(--muted);margin-top:7px;text-align:center}
 
 @media (min-width: 760px){
   .d2-head{padding:12px 0 16px;gap:12px}
