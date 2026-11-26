@@ -850,3 +850,97 @@
 .py-syl-cell span{font-family:var(--han);font-size:17px;color:var(--ink)}
 .py-syl-cell small{font-size:11px;color:var(--muted)}
 .ls-illus-img{width:100%;height:100%;object-fit:cover;object-position:center 22%;display:block;border-radius:inherit}
+
+/* Gọn màn kết quả Luyện nói & Chữ phát âm yếu */
+.sp-self-box.compact{padding:8px 10px;gap:6px}
+.sp-self-box.compact .sp-self-top span{font-size:12px}
+.sp-self-box.compact .sp-self-btns button{padding:7px 8px;font-size:12px}
+
+.sp-weak-box{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px;margin-bottom:10px;display:grid;gap:8px}
+.sp-weak-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;color:var(--ink)}
+.sp-weak-chips{display:flex;flex-wrap:wrap;gap:6px}
+.sp-weak-chip{display:inline-flex;align-items:center;border-radius:999px;background:var(--surface2);border:1px solid var(--line);overflow:hidden}
+.sp-wc-play{display:inline-flex;align-items:center;gap:4px;padding:5px 9px;font-size:12.5px;color:var(--ink)}
+.sp-wc-play b{font-family:var(--han);font-size:14px;color:var(--accent)}
+.sp-wc-play small{color:var(--muted);font-size:11px}
+.sp-wc-play em{font-style:normal;font-weight:700;color:#B93F34;font-size:11px}
+.sp-wc-del{padding:4px 8px 4px 2px;font-size:14px;line-height:1;color:var(--muted)}
+.sp-wc-del:hover{color:var(--accent)}
+
+/* Kết quả tìm kiếm từ vựng xuyên toàn bộ giáo trình & Modal tra từ */
+.learn-top-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:4px}
+.learn-top-head > div{flex:1 1 auto;min-width:0}
+.learn-top-head .btn,.gvs-hd .btn,.lvh-acts .btn,.sp-weak-hd .btn,.sp-weak-cta{width:auto;flex:0 0 auto;white-space:nowrap}
+.lib-vocab-list{display:grid;gap:8px;margin-top:8px}
+.lib-vocab-hit{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:14px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);min-width:0}
+.lvh-main{flex:1;min-width:0}
+.lvh-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.lvh-zh{font-family:var(--han);font-size:18px;color:var(--ink)}
+.lvh-py{font-size:12.5px;color:var(--accent);font-weight:600}
+.lvh-badge{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;line-height:1.4}
+.lvh-badge.ok{background:#E3F3E6;color:#1D6530}
+.lvh-badge.dl{background:var(--surface2);color:var(--muted);border:1px solid var(--line)}
+.lvh-badge.multi{background:rgba(199,70,59,.1);color:var(--accent)}
+.lvh-vi{font-size:13px;color:var(--ink);margin-top:2px;word-break:break-word}
+.lvh-src{font-size:11px;color:var(--muted);margin-top:2px}
+.lvh-srcs{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.lvh-src-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;border:1px solid var(--line);background:var(--surface2);color:var(--muted);font-size:11px;font-weight:600;line-height:1.3;cursor:pointer;max-width:100%}
+.lvh-src-chip.ok{border-color:rgba(29,101,48,.28);background:#E3F3E6;color:#1D6530}
+.lvh-src-chip:hover{border-color:var(--accent);color:var(--accent)}
+.lvh-src-dl{opacity:.8}
+.lvh-acts{display:flex;align-items:center;gap:6px;flex-shrink:0}
+
+.gvs-modal{display:grid;gap:10px;max-width:100%;min-width:0}
+.gvs-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-width:0}
+.gvs-hd h3{margin:0;font-size:17px;color:var(--ink);line-height:1.25}
+.gvs-hd p{margin:2px 0 0}
+.gvs-search-box{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:14px;border:1.5px solid var(--line);background:var(--surface2);min-width:0}
+.gvs-search-box:focus-within{border-color:var(--accent);background:var(--surface)}
+.gvs-search-box .ic{width:17px;height:17px;color:var(--muted);flex-shrink:0}
+.gvs-search-box input{flex:1;min-width:0;border:0;background:transparent;outline:none;color:var(--ink);font-size:16px}
+.gvs-search-box button{color:var(--muted);font-size:14px;padding:2px 6px;flex-shrink:0}
+.gvs-scopes{margin:0!important}
+.gvs-results{max-height:54vh;overflow-y:auto;overflow-x:hidden;padding-right:2px}
+.gvs-sug-wrap{display:flex;flex-wrap:wrap;gap:7px;padding:4px 0 8px}
+
+/* Nút Ôn yếu 4 cột & Thống kê thanh điệu phát âm yếu */
+#speak #sp-modes{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+#speak #sp-modes button{padding:9px 4px;font-size:12px;gap:4px}
+.sp-weak-cnt{display:inline-grid;place-items:center;min-width:17px;height:17px;padding:0 4px;border-radius:999px;font-size:10.5px;font-weight:800;background:var(--accent);color:#fff;line-height:1}
+#speak #sp-modes button.on .sp-weak-cnt{background:#fff;color:var(--accent)}
+.sp-tone-weak-grid{display:flex;flex-wrap:wrap;gap:6px}
+.sp-tw-pill{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:11px;border:1px solid var(--line);background:var(--surface2);font-size:11.5px;color:var(--ink);cursor:pointer}
+.sp-tw-pill b{font-weight:700;color:var(--accent)}
+.sp-tw-pill span{color:var(--muted)}
+.sp-tw-pill.hot{border-color:rgba(199,70,59,.55);background:rgba(199,70,59,.1)}
+.sp-weak-cta{flex-shrink:0;white-space:nowrap}
+.sp-wc-go{padding:4px 7px;font-size:11px;font-weight:700;color:var(--accent);border-left:1px solid var(--line);background:transparent}
+.sp-wc-go:hover{background:rgba(199,70,59,.1)}
+.sp-inline-lnk,.rv-weak-link{display:inline;padding:0;border:0;background:none;color:var(--accent);font:inherit;font-weight:700;text-decoration:underline;cursor:pointer}
+
+/* Dark Mode cho ảnh bìa giáo trình & bài học */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .ls-illus-img,
+  :root:not([data-theme="light"]) .cover.cover-img img{filter:brightness(.92) contrast(1.02);box-shadow:0 0 0 1px rgba(255,255,255,.1)}
+  :root:not([data-theme="light"]) .lvh-badge.ok,
+  :root:not([data-theme="light"]) .lvh-src-chip.ok{background:rgba(46,125,50,.26);color:#8CE09A}
+  :root:not([data-theme="light"]) .lvh-badge.multi{background:rgba(229,115,104,.18);color:#ff9b91}
+}
+:root[data-theme="dark"] .ls-illus-img,
+:root[data-theme="dark"] .cover.cover-img img{filter:brightness(.92) contrast(1.02);box-shadow:0 0 0 1px rgba(255,255,255,.1)}
+:root[data-theme="dark"] .lvh-badge.ok,
+:root[data-theme="dark"] .lvh-src-chip.ok{background:rgba(46,125,50,.26);color:#8CE09A}
+:root[data-theme="dark"] .lvh-badge.multi{background:rgba(229,115,104,.18);color:#ff9b91}
+
+/* Thanh chia nhóm từ vựng cho bài dài (>25 từ, vd Hack não 100 chữ/chương) */
+.vc-batch-bar{display:flex;align-items:center;gap:6px;overflow-x:auto;padding:2px 2px 6px;margin:-4px 0 8px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.vc-batch-bar::-webkit-scrollbar{display:none}
+.vc-batch-chip{flex:0 0 auto;border:1px solid var(--line);background:var(--surface);color:var(--ink2);font:600 11.5px/1.2 var(--font);padding:6px 11px;border-radius:999px;cursor:pointer;white-space:nowrap;transition:all .15s ease}
+.vc-batch-chip:hover{border-color:var(--accent);color:var(--accent)}
+.vc-batch-chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .vc-batch-chip{background:var(--surface2);color:var(--ink)}
+  :root:not([data-theme="light"]) .vc-batch-chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+}
+:root[data-theme="dark"] .vc-batch-chip{background:var(--surface2);color:var(--ink)}
+:root[data-theme="dark"] .vc-batch-chip.on{background:var(--accent);border-color:var(--accent);color:#fff}

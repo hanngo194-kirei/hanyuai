@@ -9,7 +9,10 @@ const LESSON_PACK_MANIFEST = {
   6: { packId: 'hn6', src: 'data/hn6-full.js', varName: 'HN6_FULL_DATA', lessons: [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26], keepWordDetails: true },
   'hsk30_1': { packId: 'hsk30_1', src: 'data/hsk30-1-full.js', varName: 'HSK30_1_FULL_DATA', lessons: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 'mock'] },
   'hsk30_2': { packId: 'hsk30_2', src: 'data/hsk30-2-full.js', varName: 'HSK30_2_FULL_DATA', lessons: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 'mock'] },
-  'hsk30_3': { packId: 'hsk30_3', src: 'data/hsk30-3-full.js', varName: 'HSK30_3_FULL_DATA', lessons: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] }
+  'hsk30_3': { packId: 'hsk30_3', src: 'data/hsk30-3-full.js', varName: 'HSK30_3_FULL_DATA', lessons: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] },
+  'mindmap_3300': { packId: 'mindmap_3300', src: 'data/hanzi-mindmap-full.js', varName: 'HANZI_MINDMAP_FULL_DATA', lessons: [1, 2, 3, 4], keepWordDetails: true },
+  'hacknao_1': { packId: 'hacknao_1', src: 'data/hanzi-hacknao1-full.js', varName: 'HANZI_HACKNAO1_FULL_DATA', lessons: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], keepWordDetails: true },
+  'hacknao_2': { packId: 'hacknao_2', src: 'data/hanzi-hacknao2-full.js', varName: 'HANZI_HACKNAO2_FULL_DATA', lessons: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], keepWordDetails: true }
 };
 
 const HN_STARTER_DATA = {

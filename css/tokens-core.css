@@ -20,7 +20,8 @@
   --hill:#5A3A33; --bloom:#E2705A; --guide:#59403A; --shadow:0 6px 18px rgba(0,0,0,.35); --veil:.9; color-scheme:dark}
 
 *{box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font:400 15px/1.45 var(--ui);
+html{width:100%;max-width:100%;overflow-x:hidden;overflow-x:clip;overscroll-behavior-x:none;-webkit-text-size-adjust:100%}
+body{margin:0;width:100%;max-width:100%;overflow-x:hidden;overflow-x:clip;overscroll-behavior-x:none;touch-action:pan-y;background:var(--bg);color:var(--ink);font:400 15px/1.45 var(--ui);
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
   padding-block:0 112px}
 a{color:inherit;text-decoration:none}
@@ -31,8 +32,11 @@ h1,h2,h3,p{margin:0}
 body.sub .bg{background-image:var(--bg-sub);background-position:center center;background-size:cover}
 .bg::after{content:"";position:absolute;inset:0;background:var(--bg);opacity:var(--veil);pointer-events:none}
 .sidebar{display:none}
-.app{z-index:1;position:relative;max-width:480px;margin:0 auto;overflow-x:clip}
+.app{z-index:1;position:relative;width:100%;max-width:480px;margin:0 auto;overflow-x:hidden;overflow-x:clip}
 .app>*:not(.scenery){position:relative}
+.view,.view>*,.card,.top,.title-row,.h2,.btnrow{max-width:100%;min-width:0}
+.btnrow>*{min-width:0}
+.road,.chips,.hsk,.stroke-strip,#copy .cp-card,#writing .w-pad-scroll,.pdf-stage{max-width:100%;touch-action:pan-x pan-y;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
 .ic{width:1.3em;height:1.3em;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .ic.f{fill:currentColor;stroke-width:1}
 
@@ -394,9 +398,9 @@ body.sub .bg{background-image:var(--bg-sub);background-position:center center;ba
 .warn-box{background:#FFF4E5;border:1px solid #FAD6A5;color:#8A4B08;border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.45;margin:8px 0}
 .ok-box{background:#EBF7EE;border:1px solid #BDE2C6;color:#1E6B34;border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.45;margin:8px 0}
 .err-box{background:#FDECEC;border:1px solid #F5C2C2;color:#9B1C1C;border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.45;margin:8px 0}
-.modal-bg{position:fixed;inset:0;background:rgba(36,16,12,.45);display:grid;place-items:center;padding:16px;z-index:999}
+.modal-bg{position:fixed;inset:0;background:rgba(36,16,12,.45);display:grid;place-items:center;padding:max(12px,env(safe-area-inset-top,12px)) max(12px,env(safe-area-inset-right,12px)) max(12px,env(safe-area-inset-bottom,12px)) max(12px,env(safe-area-inset-left,12px));z-index:999;overflow-x:hidden;overscroll-behavior:contain}
 .modal-bg.hide{display:none}
-.modal-box{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px;width:100%;max-width:440px;max-height:88vh;overflow:auto;box-shadow:0 16px 40px rgba(0,0,0,.22)}
+.modal-box{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px;width:100%;max-width:min(440px,100%);max-height:88vh;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;box-shadow:0 16px 40px rgba(0,0,0,.22)}
 .road-hd-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .free-pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);background:var(--surface);cursor:pointer}
 .free-pill.on{background:var(--accent-soft, #F9E5E0);border-color:var(--accent);color:var(--accent);font-weight:600}
@@ -496,7 +500,10 @@ body.view-roadmap .app>.top,body.view-vocab .app>.top,body.view-lesson .app>.top
 
 /* === Tối ưu màn hình điện thoại: gọn vừa 1 khung nhìn, hạn chế cuộn dọc === */
 @media (max-width: 759px){
-  body{padding-bottom:calc(74px + env(safe-area-inset-bottom,0px))}
+  body{padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));padding-bottom:calc(74px + env(safe-area-inset-bottom,0px))}
+  .road{margin-inline:0}
+  .modal-box{padding:14px;border-radius:16px}
+  input[type="text"],input[type="email"],input[type="password"],input[type="search"],textarea,select,.au-inp{font-size:16px}
   body.view-grammar .app>.top,
   body.view-exercise .app>.top,
   body.view-speak .app>.top,

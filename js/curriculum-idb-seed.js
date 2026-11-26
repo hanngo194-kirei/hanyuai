@@ -168,6 +168,10 @@ function parseLessonPackRef(lessonId){
   if(hskB)return {system:'hsk30',packKey:`hsk30_${hskB[1]}`,lvl:Number(hskB[1]),num:Number(hskB[2]),dataKey:String(hskB[2])};
   const hskM=/^lesson_hsk30_(\d+)_mock$/.exec(s);
   if(hskM)return {system:'hsk30',packKey:`hsk30_${hskM[1]}`,lvl:Number(hskM[1]),num:'mock',dataKey:'mock'};
+  const mm=/^lesson_mindmap_3300_c(\d+)$/.exec(s);
+  if(mm)return {system:'mindmap',packKey:'mindmap_3300',num:Number(mm[1]),dataKey:String(mm[1])};
+  const hno=/^lesson_hacknao_t(\d+)_c(\d+)$/.exec(s);
+  if(hno)return {system:'hacknao',packKey:`hacknao_${hno[1]}`,book:Number(hno[1]),num:Number(hno[2]),dataKey:String(hno[2])};
   return null;
 }
 function getPackManifestForVol(vol){
@@ -252,10 +256,128 @@ function getExtMapForVol(volNum){
   };
   return map[volNum]||null;
 }
-function populateLessonFromPackData(l,full,volNum,bNum){
+function mergeMindmapEntries(entries){
+  if(!entries||typeof entries!=='object')return;
+  if(typeof HANZI_MINDMAP_DB!=='undefined'&&HANZI_MINDMAP_DB){
+    Object.assign(HANZI_MINDMAP_DB,entries);
+  }
+}
+function mergeHackNaoEntries(entries){
+  if(!entries||typeof entries!=='object')return;
+  if(typeof HANZI_HACKNAO_DB!=='undefined'&&HANZI_HACKNAO_DB){
+    Object.assign(HANZI_HACKNAO_DB,entries);
+  }
+}
+function populateLessonFromPackData(l,full,volNum,bNum,volData){
   const ref=(volNum&&typeof volNum==='object')
     ?volNum
     :{system:'hanngu',packKey:String(volNum||''),vol:Number(volNum),num:bNum,dataKey:String(bNum||'')};
+  const srcRoot=(volData&&typeof volData==='object')?volData:readGlobalPackVar(getPackManifestForVol(ref.packKey)?.varName);
+  if(ref.system==='mindmap'){
+    const entries=(srcRoot&&srcRoot.entries)||{};
+    mergeMindmapEntries(entries);
+    const rootChars=Array.isArray(full&&full.chars)?full.chars:[];
+    const mmWords=[],mmDialog=[],mmGrammar={},mmNotes=[];
+    rootChars.forEach((ch,i)=>{
+      const e=entries[ch];
+      if(!e)return;
+      const hvTag=e.hv?`[${String(e.hv).toUpperCase()}] `:'';
+      const exObj=e.example&&e.example.zh?e.example:null;
+      const firstGroup=(Array.isArray(e.groups)&&e.groups[0]&&Array.isArray(e.groups[0].items))?e.groups[0].items:[];
+      const fallbackEx=firstGroup[0]||null;
+      mmWords.push({
+        zh:ch,py:e.py||'',vi:hvTag+(e.meaning||''),pos:'chữ gốc',
+        ex:exObj?exObj.zh:(fallbackEx?fallbackEx.zh:''),
+        exPy:exObj?(exObj.py||''):(fallbackEx?(fallbackEx.py||''):''),
+        exVi:exObj?(exObj.vi||''):(fallbackEx?(fallbackEx.vi||''):'')
+      });
+      if(exObj&&exObj.zh){
+        mmDialog.push({section:`Ví dụ chữ ${ch}`,speaker:ch,name:`${ch} (${e.py||''})`,zh:exObj.zh,py:exObj.py||'',vi:exObj.vi||''});
+      }
+      const partsTxt=(Array.isArray(e.parts)&&e.parts.length)?e.parts.map(p=>`${p.rad||p.ch||''}${p.hv?' ('+p.hv+')':''}${p.meaning?' = '+p.meaning:''}`).join(' + '):'';
+      const branchCnt=(e.groups||[]).reduce((s,g)=>s+((g&&g.items)?g.items.length:0),0);
+      const branchSample=(e.groups||[]).flatMap(g=>g.items||[]).slice(0,5).map(it=>({zh:it.zh,py:it.py||'',vi:it.vi||''}));
+      mmGrammar[`mm_${i+1}`]={
+        han:ch,py:e.py||'',
+        title:`${i+1}. ${ch}${e.trad&&e.trad!==ch?' ('+e.trad+')':''} · ${e.py||''}${e.hv?' ['+e.hv+']':''}`,
+        struct:partsTxt||`Nghĩa gốc: ${e.meaning||''}`,
+        explain:e.story||`Chữ gốc "${ch}" nghĩa là "${e.meaning||''}", mở rộng ${branchCnt} từ ghép trên sơ đồ tư duy.`,
+        examples:branchSample,
+        note:branchCnt?`Sơ đồ tư duy có ${branchCnt} từ liên kết (trang in ${e.page||'—'}).`:''
+      };
+      if(e.story)mmNotes.push(`${ch} (${e.py||''}): ${e.story}`);
+    });
+    const wordDetails={};
+    l.wordIds=registerLessonWords(mmWords,wordDetails);
+    l.wordDetails=wordDetails;
+    l.dialog=mmDialog;
+    l.sentences=mmDialog.map(d=>({zh:d.zh,py:d.py||'',vi:d.vi||''}));
+    l.dialogQuestions=[];
+    l.grammarPoints=mmGrammar;
+    l.grammarQuiz=[];
+    l.orderBank=[];
+    l.chars=rootChars.map(ch=>({id:'c_'+ch.charCodeAt(0),ch,py:(entries[ch]&&entries[ch].py)||'',vi:(entries[ch]&&entries[ch].meaning)||'',rad:'',strokes:0}));
+    l.optionalExtensions={hackNaoIds:[],mindMapRootChars:rootChars};
+    l.sourceRef={fileName:'Sơ đồ tư duy 3300 chữ Hán.pdf',fileHash:'',pageRange:(full&&full.pages)||'—'};
+    l.goals=['Học chữ gốc qua câu chuyện ghi nhớ & bộ thủ','Mở rộng mạng lưới từ ghép trên sơ đồ tư duy tương tác'];
+    l.supplementalContent=mmNotes.join('\n');
+    if(full&&full.title)l.titleVi=full.title;
+    l.status='published';
+    l.downloaded=true;
+    l.updatedAt=Date.now();
+    return l;
+  }
+  if(ref.system==='hacknao'){
+    const entries=(srcRoot&&srcRoot.entries)||{};
+    mergeHackNaoEntries(entries);
+    const chList=Array.isArray(full&&full.chars)?full.chars:[];
+    const hnWords=[],hnDialog=[],hnGrammar={},hnNotes=[];
+    chList.forEach((ch,i)=>{
+      const e=entries[ch];
+      if(!e)return;
+      const hvTag=e.hv?`[${String(e.hv).toUpperCase()}] `:'';
+      const cmp=(Array.isArray(e.compounds)&&e.compounds.length)?e.compounds:[];
+      const exCmp=cmp.find(c=>c&&c.zh&&c.zh!==ch)||cmp[0]||null;
+      hnWords.push({
+        zh:ch,py:e.py||'',vi:hvTag+(e.meaning||''),pos:'chữ Hán',
+        ex:exCmp?exCmp.zh:'',
+        exPy:exCmp?(exCmp.py||''):'',
+        exVi:exCmp?(exCmp.vi||''):''
+      });
+      if(exCmp&&exCmp.zh){
+        hnDialog.push({section:`Từ ghép chữ ${ch}`,speaker:ch,name:`#${e.code||i+1} ${ch}`,zh:exCmp.zh,py:exCmp.py||'',vi:exCmp.vi||''});
+      }
+      const partsTxt=(Array.isArray(e.parts)&&e.parts.length)?e.parts.map(p=>`${p.ch||''}${p.code?' (#'+p.code+')':''}`).join(' + '):'';
+      hnGrammar[`hn_${i+1}`]={
+        han:ch,py:e.py||'',
+        title:`#${e.code||i+1} ${ch}${e.trad&&e.trad!==ch?' ('+e.trad+')':''} · ${e.py||''}${e.hv?' ['+e.hv+']':''}`,
+        struct:partsTxt||`Nghĩa gốc: ${e.meaning||''}`,
+        explain:e.mnemonic||`Chữ "${ch}" (${e.hsk||'Tập '+ref.book}) nghĩa là "${e.meaning||''}".`,
+        examples:cmp.slice(0,4).map(c=>({zh:c.zh,py:c.py||'',vi:`${c.hv?'['+c.hv+'] ':''}${c.vi||''}`})),
+        note:e.hsk?`Cấp độ: ${e.hsk} · Hack não ${e.book||'Tập 1'}`:''
+      };
+      if(e.mnemonic)hnNotes.push(`#${e.code||i+1} ${ch} (${e.py||''}): ${e.mnemonic}`);
+    });
+    const wordDetails={};
+    l.wordIds=registerLessonWords(hnWords,wordDetails);
+    l.wordDetails=wordDetails;
+    l.dialog=hnDialog;
+    l.sentences=hnDialog.map(d=>({zh:d.zh,py:d.py||'',vi:d.vi||''}));
+    l.dialogQuestions=[];
+    l.grammarPoints=hnGrammar;
+    l.grammarQuiz=[];
+    l.orderBank=[];
+    l.chars=chList.map(ch=>({id:'c_'+ch.charCodeAt(0),ch,py:(entries[ch]&&entries[ch].py)||'',vi:(entries[ch]&&entries[ch].meaning)||'',rad:'',strokes:0}));
+    l.optionalExtensions={hackNaoIds:chList,mindMapRootChars:[]};
+    l.sourceRef={fileName:`Hack não 3000 chữ Hán tập ${ref.book||1}.pdf`,fileHash:'',pageRange:(full&&full.pages)||'—'};
+    l.goals=['Học chữ Hán qua câu chuyện & bộ phận cấu tạo','Mở rộng từ ghép Hán-Việt theo bộ Hack não 3000'];
+    l.supplementalContent=hnNotes.join('\n');
+    if(full&&full.title)l.titleVi=full.title;
+    l.status='published';
+    l.downloaded=true;
+    l.updatedAt=Date.now();
+    return l;
+  }
   const wordDetails=getPackManifestForVol(ref.packKey)?.keepWordDetails?{}:null;
   const wordIds=registerLessonWords(full?.words,wordDetails);
   const dlg=(full&&Array.isArray(full.dialog))?full.dialog:[];
@@ -281,12 +403,11 @@ function populateLessonFromPackData(l,full,volNum,bNum){
   l.status='published';
   l.downloaded=true;
   if(ref.system==='hsk30'){
-    const trCnt=Array.isArray(l.audioTracks)?l.audioTracks.length:0;
     l.sourceRef={fileName:ref.num==='mock'?`SBT HSK${ref.lvl} - Tiếng Việt (3.0).pdf`:`HSK${ref.lvl} - Tiếng Việt (3.0).pdf`,fileHash:'',pageRange:(full&&full.pages)||'—'};
     if(full&&Array.isArray(full.goals)&&full.goals.length){
       l.goals=full.goals.slice();
     }else{
-      l.goals=[trCnt?`Đã gắn ${trCnt} file MP3 chuẩn HSK ${ref.lvl} (3.0)`:`Giáo trình NEW HSK ${ref.lvl} (3.0)`,'Đã tải từ vựng, bài khóa, ngữ pháp, bài tập & SBT'];
+      l.goals=[`Giáo trình NEW HSK ${ref.lvl} (3.0) · Giọng đọc tích hợp`,'Đã tải từ vựng, bài khóa, ngữ pháp, bài tập & SBT'];
     }
     const suppParts=[];
     if(full&&full.rhyme&&full.rhyme.zh){
@@ -299,7 +420,7 @@ function populateLessonFromPackData(l,full,volNum,bNum){
     if(full&&full.rhyme)l.rhyme=full.rhyme;
   }else{
     l.sourceRef={fileName:`GT Hán Ngữ ${ref.vol}.pdf`,fileHash:'',pageRange:(full&&full.pages)||'—'};
-    l.goals=[`Đối chiếu audio: Quyển ${ref.vol} Bài ${ref.num}.mp3`,'Đã tải từ vựng, bài khóa, ngữ pháp & tập viết'];
+    l.goals=[`Giọng đọc tiếng Trung chuẩn theo từng câu & từ vựng`,'Đã tải từ vựng, bài khóa, ngữ pháp & tập viết'];
     if(full&&Array.isArray(full.notes)&&full.notes.length)l.supplementalContent=full.notes.join('\n');
     const extMap=getExtMapForVol(ref.vol);
     const ext=extMap&&(extMap[ref.num]||extMap[String(ref.num)]);
@@ -326,12 +447,13 @@ async function downloadLessonById(lessonId){
     toast('Không thể tải dữ liệu bài học. Hãy kiểm tra thư mục data/.');
     return false;
   }
-  const full=volData&&(volData[ref.dataKey]||volData[ref.num]||volData[String(ref.num)]);
+  const chapSrc=((ref.system==='mindmap'||ref.system==='hacknao')&&volData&&volData.chapters)?volData.chapters:volData;
+  const full=chapSrc&&(chapSrc[ref.dataKey]||chapSrc[ref.num]||chapSrc[String(ref.num)]);
   if(!full){
     toast('Không thể tải dữ liệu bài học. Hãy kiểm tra thư mục data/.');
     return false;
   }
-  populateLessonFromPackData(l,full,ref);
+  populateLessonFromPackData(l,full,ref,null,volData);
   if(!Array.isArray(store.downloadedLessonIds))store.downloadedLessonIds=[];
   if(!store.downloadedLessonIds.includes(lessonId))store.downloadedLessonIds.push(lessonId);
   saveStore(store);
@@ -354,12 +476,12 @@ function buildStandardCatalogSeed(){
   const now=SEED_TS;
   const courses=[],lessons=[];
   const hnMeta={
-    1:{lvl:'Sơ cấp',range:'15 bài',desc:'Giáo trình Hán ngữ Quyển 1 (15 bài · 15 MP3). Đã nạp sẵn Bài 1–2; các bài khác bấm Tải khi cần học.'},
-    2:{lvl:'Sơ cấp',range:'Bài 16–30',desc:'Giáo trình Hán ngữ Quyển 2 (Bài 16–30 · 15 MP3). Có sẵn gói tải đủ 15 bài trong app.'},
-    3:{lvl:'Sơ trung cấp',range:'10 bài',desc:'Giáo trình Hán ngữ Quyển 3 (10 bài · 10 MP3). Đã nạp sẵn danh mục 10 bài từ sách gốc.'},
-    4:{lvl:'Trung cấp',range:'Bài 11–20',desc:'Giáo trình Hán ngữ Quyển 4 (Bài 11–20 · 10 MP3). Đã nạp sẵn danh mục 10 bài từ sách gốc.'},
-    5:{lvl:'Trung cao cấp',range:'13 bài',desc:'Giáo trình Hán ngữ Quyển 5 (13 bài · 13 MP3). Đã nạp sẵn danh mục 13 bài từ sách gốc.'},
-    6:{lvl:'Cao cấp',range:'Bài 14–26',desc:'Giáo trình Hán ngữ Quyển 6 (Bài 14–26 · 13 MP3). Đã nạp sẵn danh mục 13 bài từ sách gốc.'}
+    1:{lvl:'Sơ cấp',range:'15 bài',desc:'Giáo trình Hán ngữ Quyển 1 (15 bài). Đã nạp sẵn Bài 1–2; các bài khác bấm Tải khi cần học.'},
+    2:{lvl:'Sơ cấp',range:'Bài 16–30',desc:'Giáo trình Hán ngữ Quyển 2 (Bài 16–30). Có sẵn gói tải đủ 15 bài trong app.'},
+    3:{lvl:'Sơ trung cấp',range:'10 bài',desc:'Giáo trình Hán ngữ Quyển 3 (10 bài). Đã nạp sẵn danh mục 10 bài từ sách gốc.'},
+    4:{lvl:'Trung cấp',range:'Bài 11–20',desc:'Giáo trình Hán ngữ Quyển 4 (Bài 11–20). Đã nạp sẵn danh mục 10 bài từ sách gốc.'},
+    5:{lvl:'Trung cao cấp',range:'13 bài',desc:'Giáo trình Hán ngữ Quyển 5 (13 bài). Đã nạp sẵn danh mục 13 bài từ sách gốc.'},
+    6:{lvl:'Cao cấp',range:'Bài 14–26',desc:'Giáo trình Hán ngữ Quyển 6 (Bài 14–26). Đã nạp sẵn danh mục 13 bài từ sách gốc.'}
   };
   const hnFullByVol={
     1:(typeof HN1_FULL_DATA!=='undefined'?HN1_FULL_DATA:null),
@@ -394,7 +516,7 @@ function buildStandardCatalogSeed(){
       const hasPack=hasPackForLesson(lId);
       lessons.push({
         id:lId,courseId:cId,code:`Bài ${b}`,titleVi:viTitle,titleZh:zhTitle,py:pyTitle,
-        goals:[`Đối chiếu audio: ${mp3}`,full?'Đã tải từ vựng, bài khóa, ngữ pháp & tập viết':(hasPack?'Bấm “Tải bài” để tải từ vựng, bài khóa, ngữ pháp & tập viết':'Nhập thêm từ vựng/bài khóa từ PDF GT Hán Ngữ '+num)],
+        goals:[`Giọng đọc tiếng Trung chuẩn trong app`,full?'Đã tải từ vựng, bài khóa, ngữ pháp & tập viết':(hasPack?'Bấm “Tải bài” để tải từ vựng, bài khóa, ngữ pháp & tập viết':'Nhập thêm từ vựng/bài khóa từ PDF GT Hán Ngữ '+num)],
         status:full?'published':'draft',
         downloaded:Boolean(full),
         sourceRef:{fileName:`GT Hán Ngữ ${num}.pdf`,fileHash:'',pageRange:full?full.pages:'—'},
@@ -411,25 +533,25 @@ function buildStandardCatalogSeed(){
       });
     });
     const desc=packMeta
-      ?`Giáo trình Hán ngữ Quyển ${num} (${hnMeta[num].range} · ${list.length} MP3). Có sẵn gói tải đủ ${list.length} bài trong app (chỉ tải sẵn khi cần để giảm nhẹ bộ nhớ).`
+      ?`Giáo trình Hán ngữ Quyển ${num} (${hnMeta[num].range}). Có sẵn gói tải đủ ${list.length} bài trong app (chỉ tải sẵn khi cần để giảm nhẹ bộ nhớ).`
       :((loadedCnt>0&&loadedCnt===list.length)
-        ?`Giáo trình Hán ngữ Quyển ${num} (${hnMeta[num].range} · ${list.length} MP3). Đã nạp đầy đủ nội dung chi tiết cả ${list.length} bài (Từ mới, Bài khóa, Ngữ pháp, Chữ Hán).`
+        ?`Giáo trình Hán ngữ Quyển ${num} (${hnMeta[num].range}). Đã nạp đầy đủ nội dung chi tiết cả ${list.length} bài (Từ mới, Bài khóa, Ngữ pháp, Chữ Hán).`
         :(loadedCnt>0
-          ?`Giáo trình Hán ngữ Quyển ${num} (${hnMeta[num].range} · ${list.length} MP3). Đã nạp nội dung chi tiết ${loadedCnt}/${list.length} bài.`
+          ?`Giáo trình Hán ngữ Quyển ${num} (${hnMeta[num].range}). Đã nạp nội dung chi tiết ${loadedCnt}/${list.length} bài.`
           :hnMeta[num].desc));
     courses.push({
       id:cId,title:`Giáo trình Hán ngữ ${num}`,group:'hanngu',systemTrack:'hanngu',
-      versionLabel:`Quyển ${num} (${order.length} bài · ${order.length} MP3)`,
-      source:`GT Hán Ngữ ${num}.pdf + MP3 Q${num}`,level:hnMeta[num].lvl,desc,
+      versionLabel:`Quyển ${num} (${order.length} bài)`,
+      source:`GT Hán Ngữ ${num}.pdf`,level:hnMeta[num].lvl,desc,
       status:'published',lessonOrder:order,createdAt:now,updatedAt:now
     });
   });
 
-  // Nhóm C: NEW HSK 3.0 Cấp 1–3 (độc lập, đã ánh xạ đủ 407 track MP3 từ 5 gói ZIP)
+  // Nhóm C: NEW HSK 3.0 Cấp 1–3
   const hskDefs=[
-    {lvl:1,cnt:15,title:'NEW HSK 3.0 · Cấp 1',ver:'HSK 3.0 · 93 MP3 giáo trình + 34 MP3 SBT 1',src:'HSK1 - Tiếng Việt (3.0).pdf + HSK 1 Audio.zip + HSK SBT 1 Audio.zip',hasSbt:true},
-    {lvl:2,cnt:15,title:'NEW HSK 3.0 · Cấp 2',ver:'HSK 3.0 · 120 MP3 giáo trình + 16 MP3 SBT 2',src:'HSK2 - Tiếng Việt (3.0).pdf + HSK 2 Audio.zip + HSK SBT 2 Audio.zip',hasSbt:true},
-    {lvl:3,cnt:18,title:'NEW HSK 3.0 · Cấp 3',ver:'HSK 3.0 · 144 MP3 giáo trình',src:'HSK3 - Tiếng Việt (3.0).pdf + HSK 3 Audio.zip',hasSbt:false}
+    {lvl:1,cnt:15,title:'NEW HSK 3.0 · Cấp 1',ver:'HSK 3.0 · 15 bài + Đề thi thử & SBT 1',src:'HSK1 - Tiếng Việt (3.0).pdf + SBT HSK1',hasSbt:true},
+    {lvl:2,cnt:15,title:'NEW HSK 3.0 · Cấp 2',ver:'HSK 3.0 · 15 bài + Đề thi thử & SBT 2',src:'HSK2 - Tiếng Việt (3.0).pdf + SBT HSK2',hasSbt:true},
+    {lvl:3,cnt:18,title:'NEW HSK 3.0 · Cấp 3',ver:'HSK 3.0 · 18 bài chuẩn',src:'HSK3 - Tiếng Việt (3.0).pdf',hasSbt:false}
   ];
   hskDefs.forEach(h=>{
     const cId=`course_hsk30_lv${h.lvl}`,order=[];
@@ -464,7 +586,7 @@ function buildStandardCatalogSeed(){
       const full=shouldPreload?((starterLv&&(starterLv[b]||starterLv[String(b)]))||(packLv&&(packLv[b]||packLv[String(b)]))||null):null;
       const lObj={
         id:lId,courseId:cId,code:`Bài ${b}`,titleVi,titleZh,py,
-        goals:[`Đã gắn ${tracks.length} file MP3 (${mainFiles.length} giáo trình${sbtFiles.length?` + ${sbtFiles.length} SBT`:''})`,hasPack?'Bấm “Tải bài” để tải từ vựng, bài khóa, ngữ pháp, bài tập & đáp án SBT':(h.hasSbt?`Kèm SBT HSK ${h.lvl} & Đáp án`:'Nhập nội dung chi tiết từ PDF HSK 3.0')],
+        goals:[`Giọng đọc tích hợp (${h.hasSbt?'kèm SBT & Đáp án':'Giáo trình HSK '+h.lvl})`,hasPack?'Bấm “Tải bài” để tải từ vựng, bài khóa, ngữ pháp, bài tập & đáp án SBT':(h.hasSbt?`Kèm SBT HSK ${h.lvl} & Đáp án`:'Nhập nội dung chi tiết từ PDF HSK 3.0')],
         status:'draft',
         downloaded:false,
         sourceRef:{fileName:`HSK${h.lvl} - Tiếng Việt (3.0).pdf`,fileHash:'',pageRange:'—'},
@@ -487,7 +609,7 @@ function buildStandardCatalogSeed(){
       const mockFull=(preloadedSet.has(mockId)||!packMeta)?((starterLv&&starterLv.mock)||(packLv&&packLv.mock)||null):null;
       const mockObj={
         id:mockId,courseId:cId,code:'Thi thử',titleVi:`Đề thi thử HSK ${h.lvl} (SBT ${h.lvl})`,titleZh:'模拟测试',py:'Mónǐ cèshì',
-        goals:[`Audio đề thi thử chính thức từ HSK SBT ${h.lvl} (HSK3.0) Audio.zip`,hasMockPack?'Bấm “Tải bài” để tải Đề thi thử Đọc hiểu & Đáp án 40 câu':`Đáp án SBT HSK ${h.lvl}.pdf`],
+        goals:[`Đề thi thử HSK ${h.lvl} · Giọng đọc tích hợp`,hasMockPack?'Bấm “Tải bài” để tải Đề thi thử Đọc hiểu & Đáp án 40 câu':`Đáp án SBT HSK ${h.lvl}.pdf`],
         status:'draft',
         downloaded:false,
         sourceRef:{fileName:`SBT HSK${h.lvl} - Tiếng Việt (3.0).pdf`,fileHash:'',pageRange:'Cuối sách'},
@@ -512,7 +634,7 @@ function buildStandardCatalogSeed(){
         :(packRegularCnt>=h.cnt
           ?`Hệ thống NEW HSK 3.0 Cấp ${h.lvl} độc lập (${h.cnt} bài${sbtDesc}). Có sẵn gói tải đầy đủ trong app; bấm Tải ở từng bài khi cần học.`
           :`Hệ thống NEW HSK 3.0 Cấp ${h.lvl} độc lập (${h.cnt} bài${sbtDesc}). Đã có gói tải ${packRegularCnt}/${h.cnt} bài (Bài 1–${packRegularCnt}); bấm Tải ở từng bài khi cần học.`))
-      :`Hệ thống NEW HSK 3.0 Cấp ${h.lvl} độc lập. Đã ánh xạ đủ toàn bộ track MP3 giáo trình & SBT; hỗ trợ nạp thẳng file .zip/.mp3 từ máy.`;
+      :`Hệ thống NEW HSK 3.0 Cấp ${h.lvl} độc lập · Giọng đọc tiếng Trung tích hợp.`;
     courses.push({
       id:cId,title:h.title,group:'hsk',systemTrack:'hsk30',versionLabel:h.ver,source:h.src,level:`HSK ${h.lvl} (3.0)`,
       desc:courseDesc,
@@ -551,45 +673,131 @@ function buildStandardCatalogSeed(){
   });
 
   // Nhóm D: Bổ trợ Chữ Hán (Hack não 3000 & Sơ đồ tư duy 3300 — độc lập)
+  const hn1Pack=getPackManifestForVol('hacknao_1');
+  const hn1Chapters=[
+    {n:1,title:'Tập 1 · Phần 1: 100 chữ cơ bản (一 – 印)',pages:'2–26',zh:'第一册 · 1–100字',py:'96 chữ cơ bản đầu tiên (Tập 1)',cnt:96},
+    {n:2,title:'Tập 1 · Phần 2: Chữ 101–192 (什 – 馆)',pages:'27–51',zh:'第一册 · 101–192字',py:'92 chữ ghép bộ thủ đầu tiên (Tập 1)',cnt:92},
+    {n:3,title:'Tập 1 · Phần 3: Chữ 193–300 (棺 – 娘)',pages:'52–80',zh:'第一册 · 193–300字',py:'108 chữ ghép bộ thủ (Tập 1)',cnt:108},
+    {n:4,title:'Tập 1 · Phần 4: Chữ 301–400 (狼 – 寄)',pages:'80–105',zh:'第一册 · 301–400字',py:'99 chữ ghép bộ thủ (Tập 1)',cnt:99},
+    {n:5,title:'Tập 1 · Phần 5: Chữ 401–500 (骑 – 肥)',pages:'106–131',zh:'第一册 · 401–500字',py:'96 chữ ghép bộ thủ (thiếu trang in 121: 476–479)',cnt:96},
+    {n:6,title:'Tập 1 · Phần 6: Chữ 501–600 (芭 – 掠)',pages:'132–158',zh:'第一册 · 501–600字',py:'100 chữ ghép bộ thủ (Tập 1)',cnt:100},
+    {n:7,title:'Tập 1 · Phần 7: Chữ 601–700 (就 – 规)',pages:'159–185',zh:'第一册 · 601–700字',py:'99 chữ ghép bộ thủ (Tập 1)',cnt:99},
+    {n:8,title:'Tập 1 · Phần 8: Chữ 701–800 (窥 – 辞)',pages:'186–212',zh:'第一册 · 701–800字',py:'100 chữ ghép bộ thủ (Tập 1)',cnt:100},
+    {n:9,title:'Tập 1 · Phần 9: Chữ 801–900 (敌 – 熏)',pages:'213–240',zh:'第一册 · 801–900字',py:'99 chữ ghép bộ thủ (Tập 1)',cnt:99},
+    {n:10,title:'Tập 1 · Phần 10: Chữ 901–1000 (墨 – 毒)',pages:'241–275',zh:'第一册 · 901–1000字',py:'100 chữ ghép bộ thủ (Tập 1)',cnt:100}
+  ];
+  const hnOrder=[];
+  hn1Chapters.forEach(hc=>{
+    const cLid=`lesson_hacknao_t1_c${hc.n}`;
+    hnOrder.push(cLid);
+    const hasHnPack=Boolean(hn1Pack&&Array.isArray(hn1Pack.lessons)&&hn1Pack.lessons.includes(hc.n));
+    lessons.push({
+      id:cLid,courseId:'course_hacknao_3000',code:`T1·P${hc.n}`,titleVi:hc.title,titleZh:hc.zh,py:hc.py,
+      goals:[
+        'Học qua Câu chuyện chữ Hán & Chữ Hán giống nhau',
+        hasHnPack?`Bấm “Tải bài” để tải ${hc.cnt} chữ Hán + câu chuyện & từ ghép Hán-Việt`:'Chờ trích xuất các phần tiếp theo từ Hack não 3000 chữ Hán'
+      ],
+      status:'draft',
+      downloaded:false,
+      sourceRef:{fileName:'Hack não 3000 chữ Hán tập 1.pdf',fileHash:'',pageRange:hc.pages},
+      audioTracks:[],workbook:null,optionalExtensions:{hackNaoIds:[],mindMapRootChars:[]},
+      originalContent:'Hack não 3000 chữ Hán — Tập 1 (Tiếng Trung 21 Ngày).',
+      supplementalContent:'',
+      wordIds:[],sentences:[],dialog:[],dialogQuestions:[],grammarPoints:{},grammarQuiz:[],orderBank:[],chars:[],updatedAt:now
+    });
+  });
+  const hn2Pack=getPackManifestForVol('hacknao_2');
+  const hn2Chapters=[
+    {n:1,title:'Tập 2 · Phần 1: Chữ 1001–1100 (各 – 孙)',pages:'1–26',zh:'第二册 · 1001–1100字',py:'100 chữ ghép bộ thủ (Tập 2)',cnt:100},
+    {n:2,title:'Tập 2 · Phần 2: Chữ 1101–1200 (逊 – 晕)',pages:'27–50',zh:'第二册 · 1101–1200字',py:'100 chữ ghép bộ thủ (Tập 2)',cnt:100},
+    {n:3,title:'Tập 2 · Phần 3: Chữ 1201–1300 (阵 – 御)',pages:'51–75',zh:'第二册 · 1201–1300字',py:'100 chữ ghép bộ thủ (Tập 2)',cnt:100},
+    {n:4,title:'Tập 2 · Phần 4: Chữ 1301–1400 (此 – 亭)',pages:'76–100',zh:'第二册 · 1301–1400字',py:'100 chữ ghép bộ thủ (Tập 2)',cnt:100},
+    {n:5,title:'Tập 2 · Phần 5: Chữ 1401–1500 (停 – 暄)',pages:'101–125',zh:'第二册 · 1401–1500字',py:'100 chữ ghép bộ thủ (Tập 2)',cnt:100},
+    {n:6,title:'Tập 2 · Phần 6: Chữ 1501–1600 (喧 – 疚)',pages:'126–150',zh:'第二册 · 1501–1600字',py:'100 chữ ghép bộ thủ (Tập 2)',cnt:100},
+    {n:7,title:'Tập 2 · Phần 7: Chữ 1601–1700 (欠 – 炭)',pages:'151–176',zh:'第二册 · 1601–1700字',py:'100 chữ ghép bộ thủ (Tập 2)',cnt:100},
+    {n:8,title:'Tập 2 · Phần 8: Chữ 1701–1800 (碳 – 橘)',pages:'177–201',zh:'第二册 · 1701–1800字',py:'100 chữ ghép bộ thủ (Tập 2)',cnt:100},
+    {n:9,title:'Tập 2 · Phần 9: Chữ 1801–1900 (隶 – 宫)',pages:'202–227',zh:'第二册 · 1801–1900字',py:'100 chữ ghép bộ thủ (Tập 2)',cnt:100},
+    {n:10,title:'Tập 2 · Phần 10: Chữ 1901–2002 (营 – 捂)',pages:'228–252',zh:'第二册 · 1901–2002字',py:'102 chữ ghép bộ thủ (Tập 2)',cnt:102}
+  ];
+  hn2Chapters.forEach(hc=>{
+    const cLid=`lesson_hacknao_t2_c${hc.n}`;
+    hnOrder.push(cLid);
+    const hasHnPack=Boolean(hn2Pack&&Array.isArray(hn2Pack.lessons)&&hn2Pack.lessons.includes(hc.n));
+    lessons.push({
+      id:cLid,courseId:'course_hacknao_3000',code:`T2·P${hc.n}`,titleVi:hc.title,titleZh:hc.zh,py:hc.py,
+      goals:[
+        'Học qua Câu chuyện chữ Hán & Chữ Hán giống nhau',
+        hasHnPack?`Bấm “Tải bài” để tải ${hc.cnt} chữ Hán + câu chuyện & từ ghép Hán-Việt`:'Chờ trích xuất các phần tiếp theo từ Hack não 3000 chữ Hán'
+      ],
+      status:'draft',
+      downloaded:false,
+      sourceRef:{fileName:'Hack não 3000 chữ hán tập 2.pdf',fileHash:'',pageRange:hc.pages},
+      audioTracks:[],workbook:null,optionalExtensions:{hackNaoIds:[],mindMapRootChars:[]},
+      originalContent:'Hack não 3000 chữ Hán — Tập 2 (Tiếng Trung 21 Ngày).',
+      supplementalContent:'',
+      wordIds:[],sentences:[],dialog:[],dialogQuestions:[],grammarPoints:{},grammarQuiz:[],orderBank:[],chars:[],updatedAt:now
+    });
+  });
   const hnBooks=[
-    {id:'lesson_hacknao_t1',code:'Tập 1',titleVi:'Hack não 3000 chữ Hán · Tập 1 (Chữ 1–1000)',titleZh:'汉字记忆 · 第一册',py:'100 chữ cơ bản + Chữ 101–1000',file:'Hack não 3000 chữ Hán tập 1.pdf',pages:'275 trang',note:'100 chữ Hán cơ bản nhất & chữ 101–1000 qua 2 phương pháp: Câu chuyện chữ Hán và Chữ Hán giống nhau (Lưu ý: tệp PDF tải lên bị cắt ở mốc 64 MiB nên đã khôi phục cấu trúc 275 trang).'},
-    {id:'lesson_hacknao_t2',code:'Tập 2',titleVi:'Hack não 3000 chữ Hán · Tập 2 (Chữ 1001–2002)',titleZh:'汉字记忆 · 第二册',py:'Chữ 1001–2002 + Bảng tra Pinyin/Hán-Việt',file:'Hack não 3000 chữ hán tập 2.pdf',pages:'294 trang',note:'Chữ 1001–2002 kèm câu chuyện liên tưởng bộ thủ, chữ Hán giống nhau và bảng tra cứu Hán-Việt / Pinyin cuối sách.'},
     {id:'lesson_hacknao_t3',code:'Tập 3',titleVi:'Hack não 3000 chữ Hán · Tập 3 (Chữ 2003–3123)',titleZh:'汉字记忆 · 第三册',py:'Chữ 2003–3123 + Bảng tra Bộ thủ',file:'Hack_nao_3000_chu_Han_tap_3_nen.pdf',pages:'339 trang',note:'Chữ 2003–3123 hoàn thiện bộ 3000 chữ Hán thông dụng cùng bảng tra bộ thủ & Pinyin/Hán-Việt.'}
   ];
   hnBooks.forEach(hb=>{
+    hnOrder.push(hb.id);
     lessons.push({
       id:hb.id,courseId:'course_hacknao_3000',code:hb.code,titleVi:hb.titleVi,titleZh:hb.titleZh,py:hb.py,
       goals:['Học qua Câu chuyện chữ Hán & Chữ Hán giống nhau','Tra cứu nhanh khi gặp chữ khó trong bài học chính (không ép SRS)'],
       status:'published',
       sourceRef:{fileName:hb.file,fileHash:'',pageRange:hb.pages},
       audioTracks:[],workbook:null,optionalExtensions:{hackNaoIds:[hb.py],mindMapRootChars:[]},
-      originalContent:hb.note,supplementalContent:'Mở mục Nhập PDF để nạp trực tiếp tệp PDF từ máy vào IndexedDB và đọc ngay trong app.',
+      originalContent:hb.note,supplementalContent:'Chờ nạp chi tiết sau khi hoàn thành Tập 2.',
       wordIds:[],sentences:[],dialog:[],dialogQuestions:[],grammarPoints:{},grammarQuiz:[],orderBank:[],chars:[],updatedAt:now
     });
   });
   courses.push({
     id:'course_hacknao_3000',title:'Hack não 3000 chữ Hán (Tập 1–3)',group:'hanzi',systemTrack:'hanzi',
-    versionLabel:'3 Tập · 3.123 chữ Hán',source:'Hack não 3000 chữ Hán Tập 1, 2, 3 (.pdf)',level:'Bổ trợ chữ Hán',
-    desc:'Bộ sách ghi nhớ chữ Hán qua Câu chuyện & Chữ giống nhau (Tiếng Trung 21 Ngày). Đã liên kết gợi ý vào 15 bài Hán ngữ Quyển 1.',
-    status:'published',lessonOrder:hnBooks.map(x=>x.id),createdAt:now,updatedAt:now
+    versionLabel:'Đủ Tập 1–2 (1.991 chữ) + Tập 3',source:'Hack não 3000 chữ Hán Tập 1, 2, 3 (.pdf)',level:'Bổ trợ chữ Hán',
+    desc:'Bộ sách ghi nhớ chữ Hán qua Câu chuyện & Chữ giống nhau (Tiếng Trung 21 Ngày). Đã có gói tải đầy đủ Tập 1–2 (1.991 chữ Hán từ mã 1–2002); Tập 3 nạp tiếp theo đợt.',
+    status:'published',lessonOrder:hnOrder,createdAt:now,updatedAt:now
   });
 
-  const mmId='lesson_mindmap_3300_all';
-  lessons.push({
-    id:mmId,courseId:'course_mindmap_3300',code:'1+2',titleVi:'Sơ đồ tư duy 3300 chữ Hán (Tập 1+2)',titleZh:'3300汉字思维导图',py:'214 bộ thủ & chữ gốc mở rộng',
-    goals:['Phát triển mạng lưới chữ Hán từ 214 chữ gốc / bộ thủ','Đối chiếu chữ gốc ngay trong 15 bài Hán ngữ Quyển 1'],
-    status:'published',
-    sourceRef:{fileName:'So_do_tu_duy_3300_chu_Han_nen.pdf',fileHash:'',pageRange:'217 trang'},
-    audioTracks:[],workbook:null,optionalExtensions:{hackNaoIds:[],mindMapRootChars:['一','人','口','木','水','火','土','心','言','手','日','月','女','金','辵']},
-    originalContent:'Sơ đồ tư duy 3300 chữ Hán (Tập 1+2) — Phạm Dương Châu & Dương Hương Giang (NXB Thanh Niên): 214 bộ thủ/chữ gốc phát triển thành 3.300 chữ Hán kèm bảng tra cứu cuối sách.',
-    supplementalContent:'Mở mục Nhập PDF để nạp tệp So_do_tu_duy_3300_chu_Han_nen.pdf từ máy và đọc trực tiếp.',
-    wordIds:[],sentences:[],dialog:[],dialogQuestions:[],grammarPoints:{},grammarQuiz:[],orderBank:[],chars:[],updatedAt:now
+  const mmPack=getPackManifestForVol('mindmap_3300');
+  const mmChapters=[
+    {n:1,title:'Chương 1 · Chữ gốc 1–25 (你 – 越)',pages:'5–29',zh:'第一部分 · 1–25字',py:'25 chữ gốc đầu tiên (Hán ngữ 1)'},
+    {n:2,title:'Chương 2 · Chữ gốc 26–50 (中 – 有)',pages:'30–54',zh:'第二部分 · 26–50字',py:'25 chữ gốc tiếp theo (Hán ngữ 1)'},
+    {n:3,title:'Chương 3 · Chữ gốc 51–75 (做 – 帮)',pages:'55–79',zh:'第三部分 · 51–75字',py:'25 chữ gốc Đợt 2 (Hán ngữ 1)'},
+    {n:4,title:'Chương 4 · Chữ gốc 76–99 (等 – 流)',pages:'80–104',zh:'第四部分 · 76–99字',py:'24 chữ gốc Đợt 2 (Hán ngữ 1)'},
+    {n:5,title:'Chương 5 · Chữ gốc 100–124',pages:'105–129',zh:'第五部分 · 100–124字',py:'Chờ nạp Đợt 3'},
+    {n:6,title:'Chương 6 · Chữ gốc 125–149',pages:'130–154',zh:'第六部分 · 125–149字',py:'Chờ nạp Đợt 3'},
+    {n:7,title:'Chương 7 · Chữ gốc 150–174',pages:'155–179',zh:'第七部分 · 150–174字',py:'Chờ nạp Đợt 4'},
+    {n:8,title:'Chương 8 · Chữ gốc 175–199',pages:'180–204',zh:'第八部分 · 175–199字',py:'Chờ nạp Đợt 4'},
+    {n:9,title:'Chương 9 · Chữ gốc 200–214',pages:'205–219',zh:'第九部分 · 200–214字',py:'Chờ nạp Đợt 4'}
+  ];
+  const mmOrder=[];
+  mmChapters.forEach(mc=>{
+    const cLid=`lesson_mindmap_3300_c${mc.n}`;
+    mmOrder.push(cLid);
+    const hasMmPack=Boolean(mmPack&&Array.isArray(mmPack.lessons)&&mmPack.lessons.includes(mc.n));
+    const chWordCnt=(mc.n===4)?24:25;
+    lessons.push({
+      id:cLid,courseId:'course_mindmap_3300',code:`Phần ${mc.n}`,titleVi:mc.title,titleZh:mc.zh,py:mc.py,
+      goals:[
+        'Phát triển mạng lưới chữ Hán từ chữ gốc & câu chuyện liên tưởng',
+        hasMmPack?`Bấm “Tải bài” để tải ${chWordCnt} chữ gốc + sơ đồ tư duy & ví dụ chi tiết`:'Chờ trích xuất Đợt 3–4 từ Sơ đồ tư duy 3300 chữ Hán'
+      ],
+      status:'draft',
+      downloaded:false,
+      sourceRef:{fileName:'Sơ đồ tư duy 3300 chữ Hán.pdf',fileHash:'',pageRange:mc.pages},
+      audioTracks:[],workbook:null,optionalExtensions:{hackNaoIds:[],mindMapRootChars:[]},
+      originalContent:'Sơ đồ tư duy 3300 chữ Hán (Tập 1+2) — Phạm Dương Châu & Dương Hương Giang (NXB Thanh Niên).',
+      supplementalContent:'',
+      wordIds:[],sentences:[],dialog:[],dialogQuestions:[],grammarPoints:{},grammarQuiz:[],orderBank:[],chars:[],updatedAt:now
+    });
   });
   courses.push({
     id:'course_mindmap_3300',title:'Sơ đồ tư duy 3300 chữ Hán (1+2)',group:'hanzi',systemTrack:'hanzi',
-    versionLabel:'214 chữ gốc · 217 trang',source:'So_do_tu_duy_3300_chu_Han_nen.pdf',level:'Bổ trợ chữ Hán',
-    desc:'Hệ thống phát triển từ vựng chữ Hán theo sơ đồ tư duy từ 214 chữ gốc. Đã liên kết chữ gốc vào 15 bài Hán ngữ Quyển 1.',
-    status:'published',lessonOrder:[mmId],createdAt:now,updatedAt:now
+    versionLabel:'9 phần · Đã có Phần 1–4 (99 chữ gốc)',source:'Sơ đồ tư duy 3300 chữ Hán.pdf',level:'Bổ trợ chữ Hán',
+    desc:'Hệ thống phát triển từ vựng theo sơ đồ tư duy từ 214 chữ gốc. Đợt 1+2 đã có gói tải Phần 1–4 (99 chữ gốc đầu tiên + đầy đủ nhánh từ ghép); các phần còn lại nạp tiếp ở Đợt 3–4.',
+    status:'published',lessonOrder:mmOrder,createdAt:now,updatedAt:now
   });
 
   return {courses,lessons};
@@ -608,6 +816,34 @@ async function seedStandardCatalog(interactive=true){
       if(Array.isArray(c.lessonOrder)&&c.lessonOrder.length>(ex.lessonOrder||[]).length){ex.lessonOrder=c.lessonOrder.slice();chg=true;}
       if(chg)await HanyuIDB.put('courses',ex);
     }
+  }
+  // Nâng cấp khung Sơ đồ tư duy cũ (1 bài tổng -> 9 phần tải theo yêu cầu) nếu tồn tại trong IDB
+  const oldMmIdx=LESSONS.findIndex(x=>x.id==='lesson_mindmap_3300_all');
+  if(oldMmIdx>=0){
+    LESSONS.splice(oldMmIdx,1);
+    await HanyuIDB.del('lessons','lesson_mindmap_3300_all');
+  }
+  const hasDownloadedMm=Array.isArray(store.downloadedLessonIds)&&store.downloadedLessonIds.some(id=>/^lesson_mindmap_3300_c\d+$/.test(id));
+  if(hasDownloadedMm){
+    loadVolumePack('mindmap_3300').then(vd=>{if(vd&&vd.entries)mergeMindmapEntries(vd.entries);}).catch(()=>{});
+  }
+  const oldHnIdx=LESSONS.findIndex(x=>x.id==='lesson_hacknao_t1');
+  if(oldHnIdx>=0){
+    LESSONS.splice(oldHnIdx,1);
+    await HanyuIDB.del('lessons','lesson_hacknao_t1');
+  }
+  const hasDownloadedHn1=Array.isArray(store.downloadedLessonIds)&&store.downloadedLessonIds.some(id=>/^lesson_hacknao_t1_c\d+$/.test(id));
+  if(hasDownloadedHn1){
+    loadVolumePack('hacknao_1').then(vd=>{if(vd&&vd.entries)mergeHackNaoEntries(vd.entries);}).catch(()=>{});
+  }
+  const oldHn2Idx=LESSONS.findIndex(x=>x.id==='lesson_hacknao_t2');
+  if(oldHn2Idx>=0){
+    LESSONS.splice(oldHn2Idx,1);
+    await HanyuIDB.del('lessons','lesson_hacknao_t2');
+  }
+  const hasDownloadedHn2=Array.isArray(store.downloadedLessonIds)&&store.downloadedLessonIds.some(id=>/^lesson_hacknao_t2_c\d+$/.test(id));
+  if(hasDownloadedHn2){
+    loadVolumePack('hacknao_2').then(vd=>{if(vd&&vd.entries)mergeHackNaoEntries(vd.entries);}).catch(()=>{});
   }
   for(const l of lessons){
     const idx=LESSONS.findIndex(x=>x.id===l.id);

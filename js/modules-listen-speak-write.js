@@ -774,7 +774,7 @@ function getFinalTip(init,fin){
 
 const speakCtrl=(function(){
   let mode=(store.speaking&&store.speaking.mode)||'sentence';
-  let viewTab='practice',guideTab='tone';
+  let viewTab='practice',guideTab='tone',weakToneFilter=0;
   let idx=0,mediaRec=null,stream=null,audioCtx=null,analyser=null,rafId=null,timerId=null;
   let chunks=[],recBlob=null,recUrl=null,recDuration=0,recStart=0,isRecording=false;
   let liveRec=null,lastLiveTranscript='';
@@ -785,8 +785,121 @@ const speakCtrl=(function(){
   const meterEl=$('#sp-meter');
   if(meterEl)meterEl.innerHTML=Array.from({length:16},()=>'<i style="height:4px"></i>').join('');
 
+  function ensureWeakStore(){
+    if(!store.speaking)store.speaking={mode:'sentence',maxSec:15,items:{}};
+    if(!Array.isArray(store.speaking.weakChars))store.speaking.weakChars=[];
+    if(!store.speaking.weakTones||typeof store.speaking.weakTones!=='object')store.speaking.weakTones={};
+    [1,2,3,4,5].forEach(t=>{
+      if(!store.speaking.weakTones[t]||typeof store.speaking.weakTones[t]!=='object'){
+        store.speaking.weakTones[t]={weak:0,ok:0};
+      }
+    });
+    return store.speaking;
+  }
+  function updateWeakBadge(){
+    const sp=ensureWeakStore();
+    const n=sp.weakChars.length;
+    const el=$('#sp-weak-cnt');
+    if(el){
+      el.textContent=String(n);
+      el.classList.toggle('hide',n===0);
+    }
+    if(typeof updateReviewFooter==='function')updateReviewFooter();
+  }
+  function lookupWeakWordMeta(ch){
+    const k=String(ch||'').trim();
+    if(!k)return {py:'',vi:''};
+    const w=(typeof WORDS!=='undefined'&&Array.isArray(WORDS))?WORDS.find(x=>x&&x.zh===k):null;
+    if(w)return {py:w.py||'',vi:w.vi||''};
+    if(store&&store.vocabBank){
+      const vb=Object.values(store.vocabBank).find(x=>x&&x.zh===k);
+      if(vb)return {py:vb.py||'',vi:vb.vi||''};
+    }
+    const idxObj=(typeof window!=='undefined'&&window.HANYU_VOCAB_INDEX)||null;
+    if(idxObj&&Array.isArray(idxObj.items)){
+      const row=idxObj.items.find(r=>r&&r[0]===k);
+      if(row)return {py:row[1]||'',vi:row[2]||''};
+    }
+    return {py:'',vi:''};
+  }
+  function upsertWeakChar(entry){
+    const sp=ensureWeakStore();
+    const ch=String(entry&&entry.ch||'').trim();
+    if(!ch)return;
+    const prev=sp.weakChars.find(x=>x.ch===ch);
+    const meta=(!entry.py||!entry.vi)?lookupWeakWordMeta(ch):{py:'',vi:''};
+    const py=entry.py||meta.py||(prev&&prev.py)||'';
+    const vi=entry.vi||meta.vi||(prev&&prev.vi)||'';
+    let tone=Number(entry.tone);
+    if(![1,2,3,4,5].includes(tone))tone=py?detectBaseTone(py.toLowerCase()):((prev&&prev.tone)||5);
+    const fails=(prev?(prev.fails||1):0)+1;
+    sp.weakChars=sp.weakChars.filter(x=>x.ch!==ch);
+    sp.weakChars.unshift({
+      ch,py,vi,tone,
+      score:(entry.score!==null&&entry.score!==undefined&&Number.isFinite(Number(entry.score)))?Math.round(Number(entry.score)):(prev?prev.score:null),
+      fails,
+      lessonId:entry.lessonId||(prev&&prev.lessonId)||store.activeLessonId||'',
+      sourceZh:entry.sourceZh||(prev&&prev.sourceZh)||'',
+      at:Date.now()
+    });
+    if(sp.weakChars.length>40)sp.weakChars.length=40;
+  }
+  function recordWeakFromAssessment(item,res,lessonId){
+    const sp=ensureWeakStore();
+    const expectedMap=new Map();
+    analyzeExpectedTones(item.zh,item.py).forEach(s=>{
+      if(s&&s.ch&&!expectedMap.has(s.ch))expectedMap.set(s.ch,s);
+    });
+    const cleared=[];
+    const wordList=Array.isArray(res&&res.wordResults)&&res.wordResults.length
+      ?res.wordResults
+      :(Array.isArray(res&&res.syllableResults)?res.syllableResults.map((sy,k)=>({
+          word:[...String(item.zh||'').replace(/[^\u4e00-\u9fff]/g,'')][k]||sy.syllable||'',
+          accuracyScore:sy.score,
+          errorType:(sy.score!==null&&sy.score!==undefined&&sy.score<70)?'Mispronunciation':'None',
+          syllables:[sy]
+        })):[]);
+    wordList.forEach(w=>{
+      const ch=String((w&&w.word)||'').trim();
+      if(!ch||!/[\u4e00-\u9fff]/.test(ch))return;
+      const sc=(w&&w.accuracyScore!==null&&w.accuracyScore!==undefined)?Number(w.accuracyScore):null;
+      const expChar=expectedMap.get(ch);
+      const sy0=(Array.isArray(w.syllables)&&w.syllables[0])||{};
+      const py=sy0.syllable||(expChar&&expChar.py)||'';
+      let tone=Number(sy0.expectedTone)||(expChar&&expChar.tone)||detectBaseTone(py.toLowerCase());
+      if(![1,2,3,4,5].includes(tone))tone=5;
+      const isWeak=(w&&(w.errorType==='Mispronunciation'||w.errorType==='Omission'))||(sc!==null&&Number.isFinite(sc)&&sc<70);
+      const isStrong=(!w||w.errorType==='None'||!w.errorType)&&sc!==null&&Number.isFinite(sc)&&sc>=85;
+      if(isWeak){
+        sp.weakTones[tone].weak=(sp.weakTones[tone].weak||0)+1;
+        upsertWeakChar({ch,py,vi:item.zh===ch?(item.vi||''):'',tone,score:sc,lessonId,sourceZh:item.zh});
+      }else if(isStrong){
+        sp.weakTones[tone].ok=(sp.weakTones[tone].ok||0)+1;
+        if(sp.weakChars.some(x=>x.ch===ch)){
+          sp.weakChars=sp.weakChars.filter(x=>x.ch!==ch);
+          cleared.push(ch);
+        }
+      }
+    });
+    return cleared;
+  }
+
   function getList(m){
     const useMode=m||mode;
+    if(useMode==='weak'){
+      const sp=ensureWeakStore();
+      let arr=sp.weakChars.slice();
+      if(weakToneFilter&&[1,2,3,4,5].includes(weakToneFilter)){
+        arr=arr.filter(wc=>Number(wc.tone)===weakToneFilter);
+      }
+      arr.sort((a,b)=>((b.fails||1)-(a.fails||1))||((a.score??999)-(b.score??999))||((b.at||0)-(a.at||0)));
+      return arr.map(wc=>{
+        const toneLbl=TONE_NAMES[wc.tone]||'Thanh điệu';
+        const scorePart=(wc.score!==null&&wc.score!==undefined)?` · ${wc.score}đ`:' · Cần luyện';
+        const viPart=wc.vi?`${wc.vi} (${toneLbl}${scorePart})`:`${toneLbl}${scorePart}`;
+        return {id:'sp_weak_'+wc.ch,zh:wc.ch,py:wc.py||'',vi:viPart,_isWeak:true,_weakTone:wc.tone,_fails:wc.fails||1};
+      });
+    }
     if(useMode==='word')return WORDS.map(w=>({id:'sp_w_'+w.id,zh:w.zh,py:w.py,vi:w.vi}));
     if(useMode==='dialog')return LISTEN_DIALOG.map((d,k)=>({id:'sp_d_'+k,zh:d.zh,py:d.py,vi:d.vi}));
     if(SENT&&SENT.length)return SENT.map((s,k)=>({id:'sp_s_'+k,zh:s.zh,py:s.py,vi:s.vi}));
@@ -937,10 +1050,22 @@ const speakCtrl=(function(){
 
   function renderSelfBox(item){
     const rec=getItemRec(item.id);
-    const badge=$('#sp-self-badge'),okB=$('#sp-mark-ok'),rtB=$('#sp-mark-retry');
+    const box=$('#sp-self-row'),badge=$('#sp-self-badge'),okB=$('#sp-mark-ok'),rtB=$('#sp-mark-retry');
+    const saved=rec.lastResult;
+    const hasScore=Boolean(saved&&saved.status==='assessed'&&saved.overallScore!==null&&saved.overallScore!==undefined);
+    if(box)box.classList.toggle('compact',hasScore);
     if(badge){
-      badge.className='sp-self-badge'+(rec.selfStatus==='ok'?' ok':rec.selfStatus==='retry'?' retry':'');
-      badge.textContent=rec.selfStatus==='ok'?'Đạt yêu cầu':rec.selfStatus==='retry'?'Cần luyện lại':'Chưa đánh dấu';
+      if(rec.selfStatus==='ok'||rec.selfStatus==='retry'){
+        badge.className='sp-self-badge'+(rec.selfStatus==='ok'?' ok':' retry');
+        badge.textContent=rec.selfStatus==='ok'?'Đạt yêu cầu':'Cần luyện lại';
+      }else if(hasScore){
+        const sc=Number(saved.overallScore);
+        badge.className='sp-self-badge '+(sc>=75?'ok':'retry');
+        badge.textContent=sc>=75?'AI: Đạt':'AI: Cần luyện lại';
+      }else{
+        badge.className='sp-self-badge';
+        badge.textContent='Chưa đánh dấu';
+      }
     }
     if(okB)okB.classList.toggle('on',rec.selfStatus==='ok');
     if(rtB)rtB.classList.toggle('on',rec.selfStatus==='retry');
@@ -1052,11 +1177,22 @@ const speakCtrl=(function(){
     if($('#sp-st-recs'))$('#sp-st-recs').textContent=totalRecs;
     if($('#sp-st-ok'))$('#sp-st-ok').textContent=okCnt;
     if($('#sp-st-retry'))$('#sp-st-retry').textContent=retryCnt;
+    const _esc=s=>(typeof escHtml==='function')?escHtml(s):String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    const spStore=ensureWeakStore();
+    const weakArr=spStore.weakChars;
+    const toneStats=[1,2,3,4,5].map(t=>{
+      const st=spStore.weakTones[t]||{weak:0,ok:0};
+      const cnt=weakArr.filter(x=>Number(x.tone)===t).length;
+      return {t,weak:st.weak||0,ok:st.ok||0,cnt};
+    }).filter(x=>x.weak>0||x.cnt>0);
+    const maxToneWeak=toneStats.reduce((m,x)=>Math.max(m,x.weak),0);
+    const toneGridHtml=toneStats.length?`<div class="sp-tone-weak-grid">${toneStats.map(x=>`<button type="button" class="sp-tw-pill ${x.weak>0&&x.weak===maxToneWeak?'hot':''}" data-practice-weak-tone="${x.t}" title="Luyện các từ yếu ${TONE_NAMES[x.t]}"><b>${TONE_NAMES[x.t]}</b><span>${x.cnt?`${x.cnt} từ · `:''}${x.weak} lỗi</span></button>`).join('')}</div>`:'';
+    const weakHtml=(weakArr.length||toneStats.length)?`<div class="sp-weak-box"><div class="sp-weak-hd"><div><b>Từ & Thanh điệu phát âm yếu</b><div class="small muted">${weakArr.length?`${weakArr.length} từ cần luyện lại (< 70đ)`:'Theo dõi thanh điệu cần chú ý'}</div></div>${weakArr.length?`<button type="button" class="btn sm sp-weak-cta" data-practice-weak="all">Ôn ${weakArr.length} từ yếu</button>`:''}</div>${toneGridHtml}${weakArr.length?`<div class="sp-weak-chips">${weakArr.map(wc=>`<span class="sp-weak-chip"><button type="button" class="sp-wc-play" data-say="${_esc(wc.ch)}" title="Nghe mẫu ${wc.score!==null&&wc.score!==undefined?wc.score+'đ':''}"><b>${_esc(wc.ch)}</b>${wc.py?` <small>${_esc(wc.py)}</small>`:''}${wc.score!==null&&wc.score!==undefined?` <em>${wc.score}đ</em>`:''}</button><button type="button" class="sp-wc-go" data-practice-weak-ch="${_esc(wc.ch)}" title="Luyện lại từ này">Luyện</button><button type="button" class="sp-wc-del" data-del-weak="${_esc(wc.ch)}" aria-label="Xóa ${wc.ch}">×</button></span>`).join('')}</div>`:''}</div>`:'';
     if(!rows.length){
-      listEl.innerHTML='<div class="card" style="text-align:center"><p class="muted small" style="margin:0">Chưa có lịch sử luyện nói nào. Hãy ghi âm hoặc tự đánh dấu ở tab <b>Luyện tập</b>.</p></div>';
+      listEl.innerHTML=weakHtml+'<div class="card" style="text-align:center"><p class="muted small" style="margin:0">Chưa có lịch sử luyện nói nào. Hãy ghi âm hoặc tự đánh dấu ở tab <b>Luyện tập</b>.</p></div>';
       return;
     }
-    listEl.innerHTML=rows.slice(0,25).map(({id,rec,meta})=>{
+    listEl.innerHTML=weakHtml+rows.slice(0,25).map(({id,rec,meta})=>{
       const d=rec.lastPracticedAt?new Date(rec.lastPracticedAt):null;
       const ts=d?`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')} · ${d.getDate()}/${d.getMonth()+1}`:'Gần đây';
       const stCls=rec.selfStatus==='ok'?'ok':rec.selfStatus==='retry'?'retry':'';
@@ -1081,8 +1217,16 @@ const speakCtrl=(function(){
     if(spSub)spSub.textContent=`${l?(l.code||'Bài học'):'Bài học'} • Ghi âm thật & hướng dẫn sửa lỗi`;
     const list=getList();
     if(!list.length){
-      $('#sp-zh').textContent='Chưa có dữ liệu luyện tập';
-      $('#sp-py').textContent='';$('#sp-vi').textContent='';
+      if(mode==='weak'){
+        $('#sp-zh').textContent=weakToneFilter?`Không có từ yếu ${TONE_NAMES[weakToneFilter]}`:'Chưa có từ phát âm yếu';
+        $('#sp-py').textContent='';
+        $('#sp-vi').textContent=weakToneFilter?'Thử chuyển sang xem tất cả thanh điệu yếu.':'Ghi âm & bấm "Kiểm tra phát âm" ở mục Từng từ hoặc Câu — các chữ dưới 70đ sẽ tự động được gom vào đây!';
+        $('#sp-tones').innerHTML=weakToneFilter?'<button type="button" class="chip on" id="sp-clear-weak-filter">Xem tất cả từ yếu</button>':'';
+        const cf=$('#sp-clear-weak-filter');if(cf)cf.onclick=()=>{weakToneFilter=0;idx=0;renderItem();};
+      }else{
+        $('#sp-zh').textContent='Chưa có dữ liệu luyện tập';
+        $('#sp-py').textContent='';$('#sp-vi').textContent='';
+      }
       $('#sp-idx').textContent='0 / 0';
       renderGuide(null);
       return;
@@ -1100,6 +1244,10 @@ const speakCtrl=(function(){
     $('#sp-timer').textContent=`00:00 / ${fmtSec(maxSec)}`;
     renderSelfBox(item);
     renderTones(item);
+    if(mode==='weak'&&weakToneFilter){
+      $('#sp-sandhi-note').innerHTML=`Đang lọc: <b>${TONE_NAMES[weakToneFilter]}</b> · <button type="button" class="sp-inline-lnk" id="sp-clear-weak-filter">Xem tất cả thanh</button>`;
+      const cf=$('#sp-clear-weak-filter');if(cf)cf.onclick=()=>{weakToneFilter=0;idx=0;renderItem();};
+    }
     renderGuide(item);
     renderAssessmentArea(item);
   }
@@ -1114,12 +1262,21 @@ const speakCtrl=(function(){
 
   function markSelf(status){
     const it=getList()[idx];if(!it)return;
+    const hanLen=[...String(it.zh||'')].filter(ch=>/[\u4e00-\u9fff]/.test(ch)).length;
+    if(status==='retry'&&(mode==='word'||(hanLen>=1&&hanLen<=4))){
+      const syls=analyzeExpectedTones(it.zh,it.py);
+      upsertWeakChar({ch:it.zh,py:it.py,vi:it.vi,tone:(syls[0]&&syls[0].tone)||5,score:null,lessonId:store.activeLessonId,sourceZh:it.zh});
+    }else if(status==='ok'&&mode==='weak'){
+      const sp=ensureWeakStore();
+      sp.weakChars=sp.weakChars.filter(x=>x.ch!==it.zh);
+    }
     saveItemRec(it.id,{selfStatus:status,needsPractice:status==='retry'});
+    updateWeakBadge();
     recordLearningEvent({type:'assess',skill:'speak',title:`Luyện nói: ${it.zh}`,targetId:it.id,view:'speak',result:status==='ok'?'Tự đánh giá: Đạt':'Cần luyện lại'});
     if(typeof playSfx==='function')playSfx(status==='ok'?'ok':'no');
     if(typeof markLessonSectionDone==='function')markLessonSectionDone(store.activeLessonId,'speak',true);
     renderSelfBox(it);
-    toast(status==='ok'?`Đã đánh dấu “${it.zh}” đạt yêu cầu`:`Đã đánh dấu “${it.zh}” cần luyện thêm`);
+    toast(status==='ok'?`Đã đánh dấu “${it.zh}” đạt yêu cầu`:`Đã gom “${it.zh}” vào danh sách Ôn yếu`);
   }
 
   async function startRec(){
@@ -1198,7 +1355,7 @@ const speakCtrl=(function(){
       const au=$('#sp-audio');au.src=recUrl;
       $('#sp-player').classList.remove('hide');
       $('#sp-rec-state').textContent='Đã ghi âm xong';
-      $('#sp-rec-meta').textContent=`Thời lượng: ${dur.toFixed(1)}s • Định dạng: ${finalMime} • ${(recBlob.size/1024).toFixed(1)} KB`;
+      $('#sp-rec-meta').textContent=`Đã ghi âm: ${dur.toFixed(1)}s`;
       $('#sp-compare').disabled=false;
       $('#sp-assess').disabled=false;
 
@@ -1218,13 +1375,44 @@ const speakCtrl=(function(){
     },250);
   }
 
+  function openWeakPractice(toneFilter=0,targetCh=''){
+    weakToneFilter=Number(toneFilter)||0;
+    mode='weak';store.speaking.mode='weak';saveStore(store);
+    $$('#sp-modes button').forEach(x=>x.classList.toggle('on',x.dataset.sm==='weak'));
+    const list=getList('weak');
+    if(targetCh){
+      const pos=list.findIndex(x=>x.zh===targetCh);
+      idx=pos>=0?pos:0;
+    }else idx=0;
+    setViewTab('practice');
+    renderItem();
+  }
+
   $('#sp-view-tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(b)setViewTab(b.dataset.spv);});
   $('#sp-guide-tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;guideTab=b.dataset.spg;renderGuide(getList()[idx]);});
   $('#sp-mark-ok').onclick=()=>markSelf('ok');
   $('#sp-mark-retry').onclick=()=>markSelf('retry');
   $('#sp-hist-list').addEventListener('click',e=>{
+    const db=e.target.closest('[data-del-weak]');
+    if(db){
+      const ch=db.dataset.delWeak;
+      if(Array.isArray(store.speaking.weakChars)){
+        store.speaking.weakChars=store.speaking.weakChars.filter(x=>x.ch!==ch);
+        saveStore(store);
+        updateWeakBadge();
+        renderHistory();
+      }
+      return;
+    }
+    const pwAll=e.target.closest('[data-practice-weak]');
+    if(pwAll){openWeakPractice(0,'');return;}
+    const pwTone=e.target.closest('[data-practice-weak-tone]');
+    if(pwTone){openWeakPractice(Number(pwTone.dataset.practiceWeakTone)||0,'');return;}
+    const pwCh=e.target.closest('[data-practice-weak-ch]');
+    if(pwCh){openWeakPractice(0,pwCh.dataset.practiceWeakCh||'');return;}
     const jb=e.target.closest('[data-sp-jump]');if(!jb)return;
     const jm=jb.dataset.spJm||'sentence',jid=jb.dataset.spJump;
+    weakToneFilter=0;
     mode=jm;store.speaking.mode=mode;saveStore(store);
     $$('#sp-modes button').forEach(x=>x.classList.toggle('on',x.dataset.sm===mode));
     const list=getList(mode),found=list.findIndex(x=>x.id===jid);
@@ -1235,6 +1423,7 @@ const speakCtrl=(function(){
 
   $('#sp-modes').addEventListener('click',e=>{
     const b=e.target.closest('button');if(!b)return;
+    weakToneFilter=0;
     mode=b.dataset.sm;idx=0;
     store.speaking.mode=mode;saveStore(store);
     $$('#sp-modes button').forEach(x=>x.classList.toggle('on',x===b));
@@ -1355,16 +1544,21 @@ const speakCtrl=(function(){
       }
 
       const toStore=trimForStore(result);
+      const clearedWeak=recordWeakFromAssessment(it,toStore,lessonId);
       saveItemRec(it.id,{assessRequests:(prev.assessRequests||0)+1,lastResult:toStore,needsPractice:(toStore.overallScore!==null&&toStore.overallScore<80)});
+      updateWeakBadge();
       if(typeof recordLearningEvent==='function'){
         recordLearningEvent({type:'assess',skill:'speak',title:`Chấm phát âm: ${it.zh}`,targetId:it.id,view:'speak',result:toStore.overallScore!==null?`${toStore.overallScore}/100`:'Đã phân tích'});
       }
       if(typeof markLessonSectionDone==='function'&&lessonId){
         markLessonSectionDone(lessonId,'speak',true);
       }
-      if(lessonId===store.activeLessonId&&getList()[idx]?.id===it.id)renderAssessmentArea(it);
+      if(lessonId===store.activeLessonId&&getList()[idx]?.id===it.id){renderAssessmentArea(it);renderSelfBox(it);}
+      else if(mode==='weak'&&clearedWeak.length){renderAssessmentArea(it);renderSelfBox(it);}
       if(fallbackNotice){
         toast(fallbackNotice);
+      }else if(clearedWeak.length&&mode==='weak'){
+        toast(`Tuyệt! Đã vượt qua từ yếu “${clearedWeak.join(', ')}” (${toStore.overallScore}/100)`);
       }else if(toStore.overallScore!==null){
         toast(`Điểm phát âm: ${toStore.overallScore}/100`);
       }else{
@@ -1445,6 +1639,7 @@ const speakCtrl=(function(){
     init(){
       $$('#sp-modes button').forEach(x=>x.classList.toggle('on',x.dataset.sm===mode));
       $('#sp-maxsec').value=String(store.speaking.maxSec||15);
+      updateWeakBadge();
       syncHeader();
       setViewTab('practice');
       renderItem();
@@ -1452,16 +1647,23 @@ const speakCtrl=(function(){
     refresh(){
       idx=0;
       $$('#sp-modes button').forEach(x=>x.classList.toggle('on',x.dataset.sm===mode));
+      updateWeakBadge();
       syncHeader();
       if(viewTab==='history')renderHistory();
       else renderItem();
     },
+    openWeakPractice,
+    updateWeakBadge,
     syncHeader,
-    render(){syncHeader();if(viewTab==='history')renderHistory();else renderItem();},
+    render(){updateWeakBadge();syncHeader();if(viewTab==='history')renderHistory();else renderItem();},
     stop:stopAll
   };
 })();
-try{window._stopSpeak=speakCtrl.stop;speakCtrl.init();}catch(e){console.error(e);}
+try{
+  window._stopSpeak=speakCtrl.stop;
+  window.openWeakPronunciation=(tone,ch)=>{goView('speak');speakCtrl.openWeakPractice(tone,ch);};
+  speakCtrl.init();
+}catch(e){console.error(e);}
 
 /* ---------- Luyện nghe: sóng âm trang trí ---------- */
 (function(){const w=$('#wave');const h=[8,14,22,12,18,26,16,10,20,24,14,8,18,22,12,16,24,10,14,20,12,8,16,22,10,14];w.innerHTML=h.map(x=>`<i style="height:${x}px"></i>`).join('')})();
@@ -2268,8 +2470,10 @@ let rz;addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>{if($('
 /* ---------- Thư viện: tìm kiếm và lọc ---------- */
 let flt='all';
 function applyFilter(){
+  const flts=$$('.filterable');
+  if(!flts.length){$('#noresult')?.classList.add('hide');return;}
   const q=$('#q').value.trim().toLowerCase();let any=false;
-  $$('.filterable').forEach(el=>{const ok=(flt==='all'||el.dataset.tags.split(' ').includes(flt))&&(!q||el.textContent.toLowerCase().includes(q));el.classList.toggle('hide',!ok);if(ok)any=true});
+  flts.forEach(el=>{const ok=(flt==='all'||el.dataset.tags.split(' ').includes(flt))&&(!q||el.textContent.toLowerCase().includes(q));el.classList.toggle('hide',!ok);if(ok)any=true});
   $$('[data-sec]').forEach(s=>s.classList.toggle('hide',!$$('.filterable',s).some(x=>!x.classList.contains('hide'))));
   $('#noresult').classList.toggle('hide',any);
 }

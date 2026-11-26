@@ -2,7 +2,8 @@
    Hanyu AI — Tài khoản, Chế độ Học ngay, Hồ sơ/Avatar & Đồng bộ Cloud CSS
    ========================================================================== */
 
-.au-modal{display:grid;gap:12px}
+.au-modal{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;min-width:0;max-width:100%}
+.au-modal>*,.au-pane>*{min-width:0;max-width:100%}
 .au-head h2{margin:0;font-size:20px;font-weight:800;color:var(--accent,#8B2E2E);line-height:1.2}
 .au-head p{margin:4px 0 0;font-size:12.5px;color:var(--muted,#6E5045);line-height:1.4}
 
@@ -11,6 +12,7 @@
   background:var(--surface2,#F8E8DE);border:1px solid var(--line,#EAD3C4);
 }
 .au-tabs button{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;
   padding:8px 6px;border-radius:999px;border:none;background:transparent;
   font-size:12.5px;font-weight:700;color:var(--ink,#4B1E17);cursor:pointer;white-space:nowrap;
 }
@@ -29,7 +31,7 @@
 }
 .au-subseg button.on{background:var(--surface,#FFFDFB);color:var(--accent,#B93F34);box-shadow:0 2px 6px rgba(0,0,0,.06)}
 
-.au-pane{display:grid;gap:8px}
+.au-pane{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;min-width:0;max-width:100%}
 .au-prof-preview{display:flex;align-items:center;gap:12px}
 .au-big-av{
   width:68px;height:68px;border-radius:50%;object-fit:cover;flex-shrink:0;
@@ -51,7 +53,7 @@
   color:var(--accent,#9E3228);font-size:11.5px;font-weight:700;cursor:pointer;
 }
 
-.au-av-strip{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.au-av-strip{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .au-av-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(44px,1fr));gap:8px}
 .au-av-opt,.au-av-more{
   width:44px;height:44px;border-radius:50%;padding:2px;border:2px solid var(--line,#EAD3C4);
@@ -63,6 +65,7 @@
 
 .au-lvl-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .au-lvl-btn{
+  min-width:0;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   padding:8px 4px;border-radius:12px;border:1.5px solid var(--line,#EAD3C4);
   background:var(--surface,#FFFDFB);color:var(--ink,#4B1E17);cursor:pointer;text-align:center;
@@ -73,6 +76,7 @@
 
 .au-mode-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .au-mode-btn{
+  min-width:0;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   padding:8px 6px;border-radius:12px;border:1.5px solid var(--line,#EAD3C4);
   background:var(--surface,#FFFDFB);color:var(--ink,#4B1E17);cursor:pointer;text-align:center;
@@ -81,8 +85,8 @@
 .au-mode-btn span{font-size:10.5px;color:var(--muted,#8C6B63)}
 .au-mode-btn.on{border-color:var(--accent,#C7463B);background:var(--surface2,#FCE8DD)}
 
-.au-form{display:grid;gap:10px}
-.au-fld{display:grid;gap:4px}
+.au-form{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;min-width:0;max-width:100%}
+.au-fld{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;min-width:0;max-width:100%}
 .au-fld label{font-size:12px;font-weight:700;color:var(--ink,#4B1E17)}
 
 .au-notice{
@@ -109,8 +113,8 @@
   padding:8px 10px;border-radius:10px;background:#FDECEC;border:1px solid #F2BFBF;
   color:#9B1C1C;font-size:12px;font-weight:600;line-height:1.35;
 }
-.au-foot{display:flex;gap:10px;margin-top:6px}
-.au-foot>*{flex:1}
+.au-foot{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+.au-foot>*{flex:1 1 0;min-width:0}
 .au-acc-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .au-acc-actions>*{flex:1;min-width:140px}
 
@@ -160,6 +164,19 @@
   color:#fff;border-color:transparent;
 }
 .me-mini-btn.ghost{background:transparent}
+
+@media (max-width: 440px){
+  .au-big-av{width:56px;height:56px}
+  .au-prof-preview{gap:10px}
+  .au-av-strip{gap:5px}
+  .au-av-opt,.au-av-more{width:38px;height:38px}
+  .au-lvl-grid,.au-mode-grid{gap:6px}
+  .au-lvl-btn,.au-mode-btn{padding:7px 3px}
+  .au-tabs button{font-size:12px;padding:8px 4px}
+  .au-foot{gap:8px}
+  .au-foot .btn{padding:11px 10px;font-size:13.5px;line-height:1.25;white-space:normal;text-align:center}
+  .me-acc-info{min-width:0}
+}
 
 /* --- Dark Mode --- */
 @media (prefers-color-scheme: dark){

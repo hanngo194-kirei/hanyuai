@@ -448,11 +448,26 @@ function renderLessonDetail(){
   const coverUrl=(typeof LESSON_COVERS!=='undefined'&&LESSON_COVERS&&l.id)?LESSON_COVERS[l.id]:'';
   if(illusImg){
     if(coverUrl){
+      illusImg.dataset.fallbackUsed='';
+      illusImg.onerror=()=>{
+        if(!illusImg.dataset.fallbackUsed&&typeof window.getLessonCoverFallback==='function'){
+          illusImg.dataset.fallbackUsed='1';
+          const fb=window.getLessonCoverFallback(l.id);
+          if(fb){illusImg.src=fb;return;}
+        }
+        illusImg.classList.add('hide');
+        if(illusSvg)illusSvg.classList.remove('hide');
+      };
+      illusImg.onload=()=>{
+        illusImg.classList.remove('hide');
+        if(illusSvg)illusSvg.classList.add('hide');
+      };
       illusImg.src=coverUrl;
       illusImg.alt=l.titleVi||l.titleZh||'Minh họa bài học';
       illusImg.classList.remove('hide');
       if(illusSvg)illusSvg.classList.add('hide');
     }else{
+      illusImg.onerror=null;
       illusImg.removeAttribute('src');
       illusImg.classList.add('hide');
       if(illusSvg)illusSvg.classList.remove('hide');
@@ -1126,8 +1141,280 @@ function renderLibrary(){
     });
     html+='</div></div>';
   });
-  wrap.innerHTML=html||'<p class="small muted" style="text-align:center;padding:18px">Không có giáo trình phù hợp bộ lọc.</p>';
+  const _stripSearchAccents=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').replace(/ü/g,'u').replace(/Ü/g,'U').toLowerCase().trim();
+
+  let vocabHtml='';
+  if(qVal&&qVal.length>=1){
+    const res=searchAllCurriculumVocab(qVal,'all',30);
+    if(res.hits.length){
+      vocabHtml=`<div style="margin-top:16px"><div class="h2"><h2>Từ vựng xuyên toàn bộ giáo trình</h2><span class="small muted">${res.hits.length}${res.total>res.hits.length?' / '+res.total:''} từ</span></div><div class="lib-vocab-list">`+
+        res.hits.map(h=>renderGlobalVocabHitRow(h)).join('')+`</div></div>`;
+    }
+  }
+  const nr=$('#noresult');if(nr)nr.classList.add('hide');
+  wrap.innerHTML=(html||vocabHtml)?(html+vocabHtml):'<p class="small muted" style="text-align:center;padding:18px">Không có giáo trình hay từ vựng phù hợp.</p>';
+  bindGlobalVocabRowActions(wrap);
 }
+
+function _stripVocabAccents(s){
+  return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').replace(/ü/g,'u').replace(/Ü/g,'U').toLowerCase().trim();
+}
+function _mergeVocabMeanings(curVi,addVi){
+  const a=String(curVi||'').trim(),b=String(addVi||'').trim();
+  if(!a)return b;
+  if(!b)return a;
+  const parts=[];
+  const seen=new Set();
+  const pushParts=txt=>{
+    txt.split(/[;；\n]+/).forEach(seg=>{
+      const s=seg.trim();
+      if(!s)return;
+      const norm=s.toLowerCase().replace(/\s+/g,' ');
+      if(seen.has(norm))return;
+      // Bỏ qua nếu toàn bộ các vế con đã nằm trong nghĩa hiện có
+      const subTokens=s.split(/[,，]+/).map(x=>x.trim().toLowerCase()).filter(Boolean);
+      if(subTokens.length&&subTokens.every(t=>seen.has(t)))return;
+      seen.add(norm);
+      subTokens.forEach(t=>seen.add(t));
+      parts.push(s);
+    });
+  };
+  pushParts(a);
+  pushParts(b);
+  return parts.join('; ');
+}
+function searchAllCurriculumVocab(query,scopeFilter='all',limit=40){
+  const qRaw=String(query||'').trim().toLowerCase();
+  const qClean=_stripVocabAccents(qRaw).replace(/\s+/g,'');
+  const qTextClean=_stripVocabAccents(qRaw);
+  if(!qRaw)return {hits:[],total:0};
+  const seenSource=new Set();
+  const grouped=new Map();
+  const zhFallbackKey=new Map();
+  const lessonLoadedMap=new Map();
+  if(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS)){
+    LESSONS.forEach(l=>{if(l&&l.id)lessonLoadedMap.set(l.id,l);});
+  }
+  const pushHit=(zh,py,vi,cName,cGroup,cId,lCode,lId,isLoaded)=>{
+    if(!zh)return;
+    if(scopeFilter==='hanngu'&&cGroup!=='hanngu')return;
+    if(scopeFilter==='hsk'&&cGroup!=='hsk')return;
+    if(scopeFilter==='hanzi'&&cGroup!=='hanzi')return;
+    if(scopeFilter==='mine'&&cGroup!=='personal'&&cId!=='course_sample_hn1')return;
+    const zhTrim=String(zh).trim();
+    const pyTrim=String(py||'').trim();
+    const pyFirst=pyTrim.split(/[,，/]+/)[0].trim();
+    const pyClean=_stripVocabAccents(pyFirst).replace(/\s+/g,'');
+    const srcKey=(lId||cId||'')+'::'+zhTrim+'::'+pyClean;
+    if(seenSource.has(srcKey))return;
+    const zhLow=zhTrim.toLowerCase();
+    const pyLow=pyTrim.toLowerCase();
+    const pyAllClean=_stripVocabAccents(pyTrim).replace(/\s+/g,'');
+    const viLow=(vi||'').toLowerCase();
+    const viClean=_stripVocabAccents(vi);
+    let score=0;
+    if(zhLow===qRaw||(qClean&&(pyClean===qClean||pyAllClean===qClean)))score=100;
+    else if(zhLow.startsWith(qRaw)||(qClean&&(pyClean.startsWith(qClean)||pyAllClean.startsWith(qClean)))||(qTextClean&&viClean.startsWith(qTextClean)))score=70;
+    else if(zhLow.includes(qRaw)||pyLow.includes(qRaw)||(qClean&&(pyClean.includes(qClean)||pyAllClean.includes(qClean)))||viLow.includes(qRaw)||(qTextClean&&viClean.includes(qTextClean)))score=40;
+    if(!score)return;
+    seenSource.add(srcKey);
+
+    let gKey=pyClean?(zhTrim+'::'+pyClean):(zhFallbackKey.get(zhTrim)||(zhTrim+'::'));
+    if(pyClean&&!grouped.has(gKey)&&grouped.has(zhTrim+'::')){
+      const noPyEntry=grouped.get(zhTrim+'::');
+      grouped.delete(zhTrim+'::');
+      noPyEntry.py=pyTrim;
+      grouped.set(gKey,noPyEntry);
+    }
+    if(pyClean&&!zhFallbackKey.has(zhTrim))zhFallbackKey.set(zhTrim,gKey);
+
+    const cleanCourseName=(cName||'Giáo trình').replace(/^Giáo trình\s+/,'');
+    const srcObj={cName:cleanCourseName,cId:cId||'',lCode:lCode||'',lId:lId||'',isLoaded:Boolean(isLoaded)};
+    const existing=grouped.get(gKey);
+    if(!existing){
+      grouped.set(gKey,{
+        score,
+        zh:zhTrim,
+        py:pyTrim,
+        vi:String(vi||'').trim(),
+        cName:cleanCourseName,
+        cId:cId||'',
+        lCode:lCode||'',
+        lId:lId||'',
+        isLoaded:Boolean(isLoaded),
+        sources:[srcObj]
+      });
+    }else{
+      if(score>existing.score)existing.score=score;
+      if(!existing.py&&pyTrim)existing.py=pyTrim;
+      existing.vi=_mergeVocabMeanings(existing.vi,vi);
+      existing.sources.push(srcObj);
+      if(isLoaded)existing.isLoaded=true;
+    }
+  };
+
+  if(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS)){
+    for(const l of LESSONS){
+      if(!l||!Array.isArray(l.wordIds)||!l.wordIds.length)continue;
+      const c=(typeof COURSES!=='undefined'&&Array.isArray(COURSES))?COURSES.find(x=>x.id===l.courseId):null;
+      const ws=getLessonVocab(l);
+      for(const w of ws){
+        if(!w||!w.zh)continue;
+        pushHit(w.zh,w.py||'',w.vi||'',c?c.title:'Giáo trình',c?c.group:'personal',l.courseId||'',l.code||'',l.id,true);
+      }
+    }
+  }
+  const idxObj=(typeof window!=='undefined'&&window.HANYU_VOCAB_INDEX)||null;
+  if(idxObj&&Array.isArray(idxObj.items)&&Array.isArray(idxObj.courses)){
+    const cs=idxObj.courses;
+    for(const row of idxObj.items){
+      const cMeta=cs[row[3]];
+      if(!cMeta)continue;
+      const lId=row[5];
+      const existingL=lessonLoadedMap.get(lId);
+      const isLoaded=existingL?(typeof isLessonContentLoaded==='function'?isLessonContentLoaded(existingL):Boolean(existingL.wordIds&&existingL.wordIds.length)):false;
+      pushHit(row[0],row[1],row[2],cMeta.name,cMeta.group,cMeta.id,row[4],lId,isLoaded);
+    }
+  }
+  const merged=Array.from(grouped.values()).map(item=>{
+    item.sources.sort((a,b)=>((a.isLoaded===b.isLoaded)?0:(a.isLoaded?-1:1)));
+    const primary=item.sources[0]||{};
+    item.cName=primary.cName||item.cName;
+    item.cId=primary.cId||item.cId;
+    item.lCode=primary.lCode||item.lCode;
+    item.lId=primary.lId||item.lId;
+    return item;
+  });
+  merged.sort((a,b)=>(b.score-a.score)||((a.isLoaded===b.isLoaded)?0:(a.isLoaded?-1:1))||(a.zh.length-b.zh.length));
+  return {hits:merged.slice(0,limit),total:merged.length};
+}
+
+function renderGlobalVocabHitRow(h){
+  const srcs=Array.isArray(h.sources)&&h.sources.length?h.sources:(h.lId||h.cName?[{cName:h.cName,cId:h.cId,lCode:h.lCode,lId:h.lId,isLoaded:h.isLoaded}]:[]);
+  const dlTag=h.lId?(h.isLoaded?'<span class="lvh-badge ok">Đã tải</span>':'<span class="lvh-badge dl">Tải khi mở</span>'):'';
+  const multiTag=srcs.length>1?`<span class="lvh-badge multi">${srcs.length} bài</span>`:'';
+  const srcBlock=srcs.length>1
+    ?`<div class="lvh-srcs">${srcs.map(s=>{
+      const lbl=escHtml(s.cName)+(s.lCode?' · '+escHtml(s.lCode):'');
+      const mark=s.isLoaded?'':' <span class="lvh-src-dl">⬇</span>';
+      return s.lId
+        ?`<button type="button" class="lvh-src-chip ${s.isLoaded?'ok':''}" data-open-lesson-id="${escHtml(s.lId)}" data-open-course-id="${escHtml(s.cId||'')}" title="Mở ${lbl}">${lbl}${mark}</button>`
+        :`<span class="lvh-src-chip">${lbl}</span>`;
+    }).join('')}</div>`
+    :`<div class="lvh-src">${escHtml(h.cName)}${h.lCode?' · '+escHtml(h.lCode):''}</div>`;
+  return `<div class="lib-vocab-hit">
+    <div class="lvh-main">
+      <div class="lvh-top"><b class="lvh-zh">${escHtml(h.zh)}</b><span class="lvh-py">${escHtml(h.py||'')}</span>${dlTag}${multiTag}</div>
+      <div class="lvh-vi">${escHtml(h.vi||'')}</div>
+      ${srcBlock}
+    </div>
+    <div class="lvh-acts">
+      <button type="button" class="ico-btn" data-say="${escHtml(h.zh)}" title="Nghe phát âm">🔊</button>
+      ${srcs.length<=1&&h.lId?`<button type="button" class="chip" data-open-lesson-id="${escHtml(h.lId)}" data-open-course-id="${escHtml(h.cId||'')}" style="padding:5px 10px;font-size:12px">Mở bài</button>`:''}
+    </div>
+  </div>`;
+}
+
+async function openLessonFromSearch(lessonId,courseId,triggerBtn){
+  if(!lessonId)return;
+  if(triggerBtn){triggerBtn.disabled=true;triggerBtn.textContent='Đang tải…';}
+  try{
+    if(typeof getLessonDownloadState==='function'&&typeof downloadLessonById==='function'){
+      const lObj=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===lessonId):null;
+      if(lObj&&getLessonDownloadState(lObj)==='available'){
+        await downloadLessonById(lessonId);
+      }
+    }
+    const ls=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===lessonId):null;
+    store.activeLessonId=lessonId;
+    if(ls&&ls.courseId)store.activeCourseId=ls.courseId;
+    else if(courseId)store.activeCourseId=courseId;
+    saveStore(store);
+    applyActiveLesson();
+    if(typeof renderLessonDetail==='function')renderLessonDetail();
+    if(typeof closeModal==='function')closeModal();
+    goView('lesson');
+  }finally{
+    if(triggerBtn&&document.body.contains(triggerBtn)){triggerBtn.disabled=false;triggerBtn.textContent='Mở bài';}
+  }
+}
+
+function bindGlobalVocabRowActions(container){
+  if(!container)return;
+  container.querySelectorAll('[data-open-lesson-id]').forEach(btn=>{
+    btn.onclick=()=>openLessonFromSearch(btn.getAttribute('data-open-lesson-id'),btn.getAttribute('data-open-course-id'),btn);
+  });
+}
+
+function openGlobalVocabSearchModal(initialQuery=''){
+  if(typeof openModal!=='function')return;
+  const totalIdx=(typeof window!=='undefined'&&window.HANYU_VOCAB_INDEX&&Array.isArray(window.HANYU_VOCAB_INDEX.items))?window.HANYU_VOCAB_INDEX.items.length:0;
+  let scope='all';
+  const suggestions=['你好','学习','工作','tiền','bệnh viện','du lịch'];
+  openModal(`
+    <div class="gvs-modal">
+      <div class="gvs-hd">
+        <div>
+          <h3>Tra từ xuyên toàn bộ giáo trình</h3>
+          <p class="small muted">${totalIdx>0?`${totalIdx.toLocaleString('vi-VN')} từ · Hán ngữ 1–6, HSK 3.0 & Chữ Hán`:'Tìm từ đã nạp trong các giáo trình'}</p>
+        </div>
+        <button type="button" class="ico-btn" id="gvs-close" aria-label="Đóng">✕</button>
+      </div>
+      <div class="gvs-search-box">
+        <svg class="ic"><use href="#i-search"></use></svg>
+        <input id="gvs-input" type="search" autocomplete="off" placeholder="Gõ chữ Hán, pinyin (ko dấu) hoặc nghĩa Việt..." value="${escHtml(initialQuery)}">
+        <button type="button" id="gvs-clr" class="${initialQuery?'':'hide'}" aria-label="Xóa">✕</button>
+      </div>
+      <div class="chips gvs-scopes" id="gvs-scopes">
+        <button type="button" class="chip on" data-gscope="all">Tất cả</button>
+        <button type="button" class="chip" data-gscope="hanngu">Hán ngữ 1–6</button>
+        <button type="button" class="chip" data-gscope="hsk">HSK 3.0</button>
+        <button type="button" class="chip" data-gscope="hanzi">Chữ Hán</button>
+        <button type="button" class="chip" data-gscope="mine">Của tôi</button>
+      </div>
+      <div class="gvs-meta small muted" id="gvs-meta"></div>
+      <div class="gvs-results" id="gvs-results"></div>
+    </div>
+  `);
+  const inp=$('#gvs-input'),clr=$('#gvs-clr'),resEl=$('#gvs-results'),metaEl=$('#gvs-meta');
+  const render=()=>{
+    const q=(inp?inp.value:'').trim();
+    if(clr)clr.classList.toggle('hide',!q);
+    if(!q){
+      if(metaEl)metaEl.textContent='Gợi ý tìm nhanh:';
+      if(resEl){
+        resEl.innerHTML=`<div class="gvs-sug-wrap">${suggestions.map(s=>`<button type="button" class="chip" data-gsug="${escHtml(s)}">${escHtml(s)}</button>`).join('')}</div>`;
+        resEl.querySelectorAll('[data-gsug]').forEach(b=>{b.onclick=()=>{if(inp){inp.value=b.dataset.gsug;render();}};});
+      }
+      return;
+    }
+    const {hits,total}=searchAllCurriculumVocab(q,scope,50);
+    if(metaEl)metaEl.textContent=total?`Tìm thấy ${total} kết quả${total>hits.length?' (hiện 50 kết quả phù hợp nhất)':''}`:'Không tìm thấy từ vựng phù hợp.';
+    if(resEl){
+      resEl.innerHTML=hits.length
+        ?`<div class="lib-vocab-list">${hits.map(h=>renderGlobalVocabHitRow(h)).join('')}</div>`
+        :'<p class="small muted" style="text-align:center;padding:16px 8px">Thử tìm với từ khóa ngắn hơn, pinyin không dấu hoặc chữ Hán khác.</p>';
+      bindGlobalVocabRowActions(resEl);
+    }
+  };
+  if(inp){
+    inp.addEventListener('input',render);
+    setTimeout(()=>{try{inp.focus();}catch(_){}},60);
+  }
+  if(clr)clr.onclick=()=>{if(inp){inp.value='';inp.focus();render();}};
+  const cb=$('#gvs-close');if(cb)cb.onclick=()=>{if(typeof closeModal==='function')closeModal();};
+  const scWrap=$('#gvs-scopes');
+  if(scWrap){
+    scWrap.onclick=e=>{
+      const b=e.target.closest('[data-gscope]');if(!b)return;
+      scope=b.dataset.gscope||'all';
+      scWrap.querySelectorAll('[data-gscope]').forEach(x=>x.classList.toggle('on',x===b));
+      render();
+    };
+  }
+  render();
+}
+window.openGlobalVocabSearchModal=openGlobalVocabSearchModal;
 
 /* ---------- Chi tiết giáo trình (course-detail) ---------- */
 
@@ -1220,7 +1507,6 @@ function renderTextbookReader(){
           ${(l.py||l.titlePy)?`<div class="small muted">${escHtml(l.py||l.titlePy)}</div>`:''}
           <div style="font-weight:600;margin-top:2px">${escHtml(l.titleVi||'')}</div>
           ${l.sourceRef&&l.sourceRef.pageRange?`<div class="small muted" style="margin-top:4px">Nguồn: ${escHtml(l.sourceRef.fileName||'')} · Trang ${escHtml(l.sourceRef.pageRange)}</div>`:''}
-          ${((l.audioTracks&&l.audioTracks[0]&&l.audioTracks[0].fileName)||(l.audio&&l.audio.trackName))?`<div class="small muted" style="margin-top:2px">Audio đối chiếu: <code>${escHtml((l.audioTracks&&l.audioTracks[0]&&l.audioTracks[0].fileName)||l.audio.trackName)}</code>${l.audioTracks&&l.audioTracks.length>1?` (+${l.audioTracks.length-1} track)`:''}</div>`:''}
         </div>
         <button type="button" class="btn sm" data-tb-study="${escHtml(l.id)}">Học bài này →</button>
       </div>
@@ -1358,6 +1644,8 @@ function renderTextbookReader(){
 }
 
 document.addEventListener('click', e=>{
+  const gvsBtn = e.target.closest('#btn-global-vocab-search');
+  if(gvsBtn){ e.preventDefault(); openGlobalVocabSearchModal(''); return; }
   const vcBtn = e.target.closest('[data-tb-course]');
   if(vcBtn){ openTextbookReader(vcBtn.dataset.tbCourse); return; }
   const lBtn = e.target.closest('[data-tb-lesson]');

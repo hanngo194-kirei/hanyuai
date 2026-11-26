@@ -93,9 +93,13 @@ function route(forced,opts){
   const prevView=curView;
   if(opts&&opts.resetStack){
     navStack.length=0;
-  }else if(!(opts&&opts.isBack)&&prevView&&prevView!==id){
+    try{history.replaceState({view:id},'','#'+id);}catch(_){}
+  }else if(!(opts&&(opts.isBack||opts.fromPop))&&prevView&&prevView!==id){
     if(navStack[navStack.length-1]!==prevView)navStack.push(prevView);
     if(navStack.length>30)navStack.shift();
+    try{history.pushState({view:id},'','#'+id);}catch(_){}
+  }else if(opts&&opts.isBack&&!opts.fromPop){
+    try{history.replaceState({view:id},'','#'+id);}catch(_){}
   }
   curView=id;
   if(['vocab','grammar','listen','speak','exercise','dialog','copy','writing','trans','review'].includes(id)){
@@ -139,7 +143,23 @@ function goBack(fallback){
   route(fallback||'home',{isBack:true});
 }
 window.goBack=goBack;
-addEventListener('hashchange',()=>route());
+addEventListener('popstate',e=>{
+  const stView=e.state&&typeof e.state.view==='string'?e.state.view:'';
+  const hashView=(location.hash&&location.hash.length>1)?location.hash.slice(1):'';
+  let target=stView||hashView;
+  if((!target||target===curView)&&navStack.length){
+    target=navStack.pop();
+  }else if(target){
+    while(navStack.length&&navStack[navStack.length-1]!==target)navStack.pop();
+    if(navStack.length&&navStack[navStack.length-1]===target)navStack.pop();
+  }
+  if(!target||!$(`.view[data-view="${target}"]`))target='home';
+  if(target!==curView)route(target,{isBack:true,fromPop:true});
+});
+addEventListener('hashchange',()=>{
+  const hv=(location.hash&&location.hash.length>1)?location.hash.slice(1):'';
+  if(hv&&hv!==curView)route(hv,{isBack:true,fromPop:true});
+});
 route('home',{resetStack:true});
 
 /* ---------- Click chung ---------- */
@@ -194,7 +214,7 @@ function defaultStore(){
     grammarQuiz:{attempts:0,bestPct:0,sessions:[]},
     listening:{speed:1,showZh:true,showPy:true,showVi:false,attempts:0,bestPct:0,sessions:[],wrongIds:[],toneMistakes:{1:0,2:0,3:0,4:0}},
     writing:{mode:'trace',chars:{}},
-    speaking:{mode:'sentence',maxSec:15,items:{}},
+    speaking:{mode:'sentence',maxSec:15,items:{},weakChars:[],weakTones:{1:{weak:0,ok:0},2:{weak:0,ok:0},3:{weak:0,ok:0},4:{weak:0,ok:0},5:{weak:0,ok:0}}},
     goals:{minutes:20,newWords:5,reviews:10,listen:1,speak:3,write:2},
     daily:{},
     events:[],
@@ -306,7 +326,7 @@ function migrateStore(raw){
     }
   }
   if(raw.speaking&&typeof raw.speaking==='object'){
-    if(['word','sentence','dialog'].includes(raw.speaking.mode))base.speaking.mode=raw.speaking.mode;
+    if(['word','sentence','dialog','weak'].includes(raw.speaking.mode))base.speaking.mode=raw.speaking.mode;
     if([15,30].includes(Number(raw.speaking.maxSec)))base.speaking.maxSec=Number(raw.speaking.maxSec);
     if(raw.speaking.items&&typeof raw.speaking.items==='object'){
       for(const [k,v] of Object.entries(raw.speaking.items)){
@@ -322,6 +342,39 @@ function migrateStore(raw){
         };
       }
     }
+    if(Array.isArray(raw.speaking.weakChars)){
+      const seenWc=new Set();
+      base.speaking.weakChars=raw.speaking.weakChars.filter(w=>w&&typeof w.ch==='string'&&w.ch.trim()).map(w=>{
+        const ch=w.ch.trim().slice(0,24);
+        if(seenWc.has(ch))return null;
+        seenWc.add(ch);
+        const tNum=Number(w.tone);
+        const scNum=(w.score!==null&&w.score!==undefined&&Number.isFinite(Number(w.score)))?Math.round(Number(w.score)):null;
+        return {
+          ch,
+          py:typeof w.py==='string'?w.py.slice(0,64):'',
+          vi:typeof w.vi==='string'?w.vi.slice(0,120):'',
+          tone:[1,2,3,4,5].includes(tNum)?tNum:5,
+          score:scNum,
+          fails:Math.max(1,Math.round(Number(w.fails)||1)),
+          lessonId:typeof w.lessonId==='string'?w.lessonId.slice(0,64):'',
+          sourceZh:typeof w.sourceZh==='string'?w.sourceZh.slice(0,80):'',
+          at:Number.isFinite(w.at)?w.at:Date.now()
+        };
+      }).filter(Boolean).slice(0,40);
+    }
+    if(raw.speaking.weakTones&&typeof raw.speaking.weakTones==='object'){
+      [1,2,3,4,5].forEach(t=>{
+        const wt=raw.speaking.weakTones[t]||raw.speaking.weakTones[String(t)];
+        if(wt&&typeof wt==='object'){
+          base.speaking.weakTones[t]={
+            weak:Math.max(0,Math.round(Number(wt.weak)||0)),
+            ok:Math.max(0,Math.round(Number(wt.ok)||0))
+          };
+        }
+      });
+    }
+    if(base.speaking.mode==='weak'&&!base.speaking.weakChars.length)base.speaking.mode='sentence';
   }
   if(raw.goals&&typeof raw.goals==='object'){
     ['minutes','newWords','reviews','listen','speak','write'].forEach(k=>{
@@ -623,4 +676,7 @@ function updateGlobalCounts(){
     }catch(_){}
   };
 })();
+if('serviceWorker'in navigator&&location.protocol&&location.protocol.startsWith('http')){
+  window.addEventListener('load',()=>{navigator.serviceWorker.register('./sw.js').catch(()=>{});});
+}
 

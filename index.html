@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 
 <html lang="vi"><head><meta charset="utf-8"/><meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport"/>
+<meta content="#8B2E2E" name="theme-color"/>
+<meta content="yes" name="apple-mobile-web-app-capable"/>
+<meta content="default" name="apple-mobile-web-app-status-bar-style"/>
+<meta content="Hanyu AI" name="apple-mobile-web-app-title"/>
+<link href="assets/icon-192.png" rel="apple-touch-icon"/>
+<link href="manifest.json" rel="manifest"/>
 <link rel="stylesheet" href="css/modules.css"/>
 <link rel="stylesheet" href="css/dot2.css"/>
 <link rel="stylesheet" href="css/dot3.css"/>
@@ -149,7 +155,8 @@
 <!-- ================= HỌC TẬP: BÀI HỌC & GIÁO TRÌNH ================= -->
 <section class="view" data-view="learn">
 <div class="learn-top-head">
-<div><h1 class="hello" style="font-size:28px">Học tập</h1><p class="sub">Chọn lộ trình bài học theo cấp độ hoặc mở kho sách giáo trình</p></div>
+<div style="min-width:0;flex:1"><h1 class="hello" style="font-size:28px">Học tập</h1><p class="sub">Chọn lộ trình bài học theo cấp độ hoặc mở kho sách giáo trình</p></div>
+<button class="btn ghost sm" id="btn-global-vocab-search" style="flex-shrink:0;white-space:nowrap" type="button"><svg class="ic"><use href="#i-search"></use></svg>Tra từ</button>
 </div>
 <div class="learn-seg" id="learn-mode-tabs">
 <button class="on" data-learntab="lessons" type="button"><svg class="ic"><use href="#i-flag"></use></svg><span>Bài học</span></button>
@@ -175,7 +182,7 @@
 </div>
 </div>
 <div class="hide" id="learn-pane-books">
-<label class="search"><svg class="ic"><use href="#i-search"></use></svg><input autocomplete="off" id="q" placeholder="Tìm giáo trình, khóa học, chủ đề..." type="search"/></label>
+<label class="search"><svg class="ic"><use href="#i-search"></use></svg><input autocomplete="off" id="q" placeholder="Tìm giáo trình hoặc từ vựng toàn bộ sách (Hán, pinyin, nghĩa)..." type="search"/></label>
 <div class="chips" id="filters">
 <button class="chip on" data-filter="all" type="button">Tất cả</button>
 <button class="chip" data-filter="hsk" type="button"><svg class="ic"><use href="#i-layers"></use></svg>HSK</button>
@@ -188,9 +195,9 @@
 <button class="btn sm" id="btn-view-textbook-top" type="button">📖 Xem giáo trình</button>
 <button class="btn ghost sm" id="btn-new-course" type="button">+ Tạo giáo trình</button>
 <button class="btn ghost sm" id="btn-seed-catalog" type="button">Khung Hán ngữ &amp; HSK 3.0</button>
-<button class="btn ghost sm" id="btn-load-audio-top" type="button">🎧 Nạp Audio (.zip/.mp3)</button>
+<button class="btn ghost sm hide" hidden id="btn-load-audio-top" type="button">🎧 Nạp Audio (.zip/.mp3)</button>
 <button class="btn ghost sm" id="btn-backup-json" type="button">Sao lưu JSON</button>
-<input accept="audio/*,.mp3,.zip" class="hide" id="audio-file-input" multiple="" type="file"/>
+<input accept="audio/*,.mp3,.zip" class="hide" hidden id="audio-file-input" multiple="" type="file"/>
 </div>
 <div id="lib-courses-wrap"></div>
 <p class="empty hide" id="noresult">Không tìm thấy nội dung phù hợp.</p>
@@ -212,7 +219,7 @@
 </div>
 <div class="ls-hero-new">
 <div class="ls-illus" id="ls-illus">
-<img alt="" class="ls-illus-img hide" id="ls-illus-img">
+<img alt="" class="ls-illus-img hide" decoding="async" id="ls-illus-img" loading="lazy">
 <svg aria-hidden="true" viewbox="0 0 160 140">
 <defs>
 <linearGradient id="ls-sky" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#FCECE3"></stop><stop offset="100%" stop-color="#F8D8C6"></stop></linearGradient>
@@ -290,6 +297,7 @@
 <span aria-hidden="true" class="vc-head-sp"></span>
 </div>
 <div class="vc-prog-pill"><div class="bar"><i data-f="bar" style="width:10%"></i></div><span class="vc-cnt" data-f="count">1 / 12 từ</span></div>
+<div class="vc-batch-bar hide" id="vc-batch-bar" aria-label="Chia nhóm từ vựng"></div>
 <details class="vc-ext-sec hide" id="vc-ext-sec">
 <summary class="vc-ext-hd"><span aria-hidden="true" class="vc-ext-bar"></span><strong>Mở rộng từ vựng</strong><span>Hack não · Sơ đồ tư duy</span></summary>
 <div class="vc-ext-tabs" id="vc-ext-tabs">
@@ -808,6 +816,7 @@
 <button data-sm="word" type="button">Từng từ</button>
 <button class="on" data-sm="sentence" type="button">Câu</button>
 <button data-sm="dialog" type="button">Hội thoại</button>
+<button data-sm="weak" id="sp-mode-weak" type="button">Ôn yếu <span class="sp-weak-cnt hide" id="sp-weak-cnt">0</span></button>
 </div>
 <div class="card sp-prompt-card">
 <div class="sp-prompt-top">
@@ -1032,7 +1041,7 @@
 <button class="btn sm" id="cd-view-textbook" type="button">📖 Xem giáo trình</button>
 <button class="btn ghost sm" id="cd-add-lesson" type="button">+ Thêm bài học</button>
 <button class="btn ghost sm" id="cd-import-pdf" type="button">Nhập từ PDF</button>
-<button class="btn ghost sm" id="cd-import-audio" type="button">Nạp Audio (MP3)</button>
+<button class="btn ghost sm hide" hidden id="cd-import-audio" type="button">Nạp Audio (MP3)</button>
 </div>
 <div id="cd-lessons-list" style="margin-top:8px"></div>
 </div>
@@ -1093,7 +1102,7 @@
 </div>
 <div class="card" style="margin-top:10px">
 <div class="fld"><label>Chữ Hán luyện viết (liệt kê liền nhau hoặc cách dấu phẩy, VD: 喜,欢,茶)</label><input id="le-chars" placeholder="你,好,吗" type="text"/></div>
-<div class="fld"><label>File Audio đối chiếu (mỗi dòng 1 tên file MP3, VD: Quyển 1 Bài 1.mp3 hoặc 01-1.mp3)</label><textarea id="le-audio-files" placeholder="Quyển 1 Bài 1.mp3" style="min-height:54px"></textarea></div>
+<div class="fld hide" hidden><label>File Audio đối chiếu (mỗi dòng 1 tên file MP3, VD: Quyển 1 Bài 1.mp3 hoặc 01-1.mp3)</label><textarea id="le-audio-files" placeholder="Quyển 1 Bài 1.mp3" style="min-height:54px"></textarea></div>
 <div class="fld"><label>Sách bài tập / Ghi chú bài tập (nếu có)</label><textarea id="le-wb-ex" placeholder="Ghi chú phần bài tập SBT..."></textarea></div>
 <div class="fld"><label>Đáp án &amp; Lời thoại nghe đối chiếu (nếu có)</label><textarea id="le-wb-ans" placeholder="Đáp án hoặc lời thoại phần nghe..."></textarea></div>
 <div class="fld"><label>Mở rộng tùy chọn: Mã chữ Hack não 3000 (cách dấu phẩy, không ép vào SRS)</label><input id="le-ext-hn" placeholder="VD: 1, 15, 24" type="text"/></div>
@@ -1195,6 +1204,7 @@ B: 我去图书馆。 | Wǒ qù túshūguǎn. | Tôi đi thư viện." style="wi
 <script src="data/hanzi-book-references.js"></script>
 <script src="data/course-covers.js"></script>
 <script src="data/lesson-covers.js"></script>
+<script src="data/vocab-index.js"></script>
 <script src="js/core-storage.js"></script>
 <script src="js/supabase-config.js"></script>
 <script src="js/auth-sync.js"></script>

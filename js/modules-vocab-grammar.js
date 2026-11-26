@@ -612,7 +612,52 @@ function makeVocabQuiz(root,opts){
 }
 
 const vocab=makeVocabQuiz($('#vocab'),{listFn:()=>WORDS,onRender(w){vcCurWord=w;vcExtCharIdx=0;vcMmPage=0;renderVocabExtension(w);},onMutate(){renderReviewDash();renderWordbook();}});
-window.renderFlash=()=>{vocab.reset();try{renderReviewDash();renderWordbook();}catch(_){}};
+let vcBatchKey='all';
+function renderVocabBatchBar(resetSelection=false){
+  const bar=$('#vc-batch-bar');
+  if(!bar)return;
+  const list=Array.isArray(WORDS)?WORDS:[];
+  if(list.length<=25){
+    vcBatchKey='all';
+    bar.innerHTML='';
+    bar.classList.add('hide');
+    return;
+  }
+  if(resetSelection)vcBatchKey='all';
+  const CHUNK=20;
+  const unlearned=list.filter(w=>{
+    const s=(typeof store!=='undefined'&&store.srs)?store.srs[w.id]:null;
+    return !s||((s.reps||0)<1&&((s.interval||0)<1));
+  });
+  const btns=[{k:'all',lbl:`Tất cả (${list.length})`,items:list}];
+  for(let start=0;start<list.length;start+=CHUNK){
+    const end=Math.min(list.length,start+CHUNK);
+    const n=Math.floor(start/CHUNK)+1;
+    btns.push({k:`g${n}`,lbl:`Nhóm ${n} (${start+1}–${end})`,items:list.slice(start,end)});
+  }
+  if(unlearned.length&&unlearned.length<list.length){
+    btns.push({k:'unlearned',lbl:`Chưa thuộc (${unlearned.length})`,items:unlearned});
+  }
+  if(!btns.some(b=>b.k===vcBatchKey))vcBatchKey='all';
+  bar.innerHTML=btns.map(b=>`<button type="button" class="vc-batch-chip${b.k===vcBatchKey?' on':''}" data-vbatch="${b.k}">${b.lbl}</button>`).join('');
+  bar.classList.remove('hide');
+  bar.querySelectorAll('[data-vbatch]').forEach(btn=>{
+    btn.onclick=()=>{
+      const k=btn.getAttribute('data-vbatch')||'all';
+      const found=btns.find(b=>b.k===k)||btns[0];
+      vcBatchKey=found.k;
+      bar.querySelectorAll('[data-vbatch]').forEach(x=>x.classList.toggle('on',x===btn));
+      vocab.reset(found.items);
+    };
+  });
+}
+const _origOpenWord=vocab.openWord.bind(vocab);
+vocab.openWord=function(id){
+  vcBatchKey='all';
+  renderVocabBatchBar(true);
+  _origOpenWord(id);
+};
+window.renderFlash=()=>{renderVocabBatchBar(true);vocab.reset();try{renderReviewDash();renderWordbook();}catch(_){}};
 
 /* ---------- Màn 2: Ôn tập SRS chồng thẻ ---------- */
 let rmode='today',rCustomIds=null,rUserPicked=false,inReviewSession=true;
@@ -628,6 +673,16 @@ function getReviewQueue(forcedMode){
 function updateReviewFooter(){
   updateGlobalCounts();
   const weakEl=$('#rv-weak-txt');if(!weakEl)return;
+  const spWeak=(store&&store.speaking&&Array.isArray(store.speaking.weakChars))?store.speaking.weakChars:[];
+  if(spWeak.length>0){
+    const wt=(store.speaking&&store.speaking.weakTones)||{};
+    let wTone=0,wToneCnt=0;
+    [1,2,3,4,5].forEach(t=>{const c=Number(wt[t]&&wt[t].weak)||0;if(c>wToneCnt){wToneCnt=c;wTone=t;}});
+    weakEl.innerHTML=`Phát âm yếu: <b>${spWeak.length} từ</b>${wTone&&wTone<=4?` (Thanh ${wTone})`:''} · <button type="button" class="rv-weak-link" id="rv-open-weak-speak">Ôn ngay →</button>`;
+    const btn=$('#rv-open-weak-speak');
+    if(btn)btn.onclick=()=>{if(typeof window.openWeakPronunciation==='function')window.openWeakPronunciation(0);};
+    return;
+  }
   const tm=(store&&store.listening&&store.listening.toneMistakes)||{};
   let bestTone=0,maxToneErr=0;
   [1,2,3,4].forEach(t=>{const c=Number(tm[t])||0;if(c>maxToneErr){maxToneErr=c;bestTone=t;}});

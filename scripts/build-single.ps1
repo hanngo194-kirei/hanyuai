@@ -46,8 +46,9 @@ $cssEvaluator = [System.Text.RegularExpressions.MatchEvaluator]{
     throw "File CSS chua chuoi </style> khong hop le de nhung noi tuyen: $relPath"
   }
   $inlinedCss.Add($relPath)
-  $trimmed = $cssContent.TrimEnd("`r", "`n")
-  return "<style>`n$trimmed`n</style>"
+  $cssCompact = [regex]::Replace($cssContent, '/\*[\s\S]*?\*/', '')
+  $cssCompact = (($cssCompact -split "`r?`n") | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }) -join "`n"
+  return "<style>`n$cssCompact`n</style>"
 }
 $html = [regex]::Replace($html, $cssPattern, $cssEvaluator, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
 
@@ -76,6 +77,9 @@ $lazyPacks = New-Object System.Collections.Generic.List[string]
 $dataDir = Join-Path $rootDir 'data'
 if (Test-Path -LiteralPath $dataDir) {
   $packFiles = Get-ChildItem -LiteralPath $dataDir -Filter '*-full.js' -File | Sort-Object Name
+  Add-Type -AssemblyName System.Web.Extensions
+  $packSer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
+  $packSer.MaxJsonLength = [int]::MaxValue
   $lazyHtmlBuilder = New-Object System.Text.StringBuilder
   foreach ($pf in $packFiles) {
     $relPack = ('data/' + $pf.Name)
@@ -85,8 +89,38 @@ if (Test-Path -LiteralPath $dataDir) {
       throw "File goi du lieu chua chuoi </script> khong hop le de nhung: $relPack"
     }
     $trimmedPack = $packContent.TrimEnd("`r", "`n")
+    if (($trimmedPack.Split("`n").Count) -gt 20) {
+      try {
+        $eqIdx = $trimmedPack.IndexOf('=')
+        if ($eqIdx -gt 0) {
+          $prefix = $trimmedPack.Substring(0, $eqIdx + 1).Trim()
+          $jsonPart = $trimmedPack.Substring($eqIdx + 1).Trim()
+          $hasSemi = $jsonPart.EndsWith(';')
+          if ($hasSemi) { $jsonPart = $jsonPart.Substring(0, $jsonPart.Length - 1).Trim() }
+          $obj = $packSer.DeserializeObject($jsonPart)
+          if ($null -ne $obj) {
+            $trimmedPack = $prefix + $packSer.Serialize($obj) + $(if ($hasSemi) { ';' } else { '' })
+          }
+        }
+      } catch { }
+    }
     [void]$lazyHtmlBuilder.Append("<script type=`"text/plain`" data-lazy-pack=`"$relPack`">`n$trimmedPack`n</script>`n")
     $lazyPacks.Add($relPack)
+  }
+  $coversDir = Join-Path $rootDir 'assets\covers'
+  if (Test-Path -LiteralPath $coversDir) {
+    $coverFiles = Get-ChildItem -LiteralPath $coversDir -Filter '*.jpg' -File | Sort-Object Name
+    if ($coverFiles.Count -gt 0) {
+      $covMap = @{}
+      foreach ($cf in $coverFiles) {
+        $cid = [System.IO.Path]::GetFileNameWithoutExtension($cf.Name)
+        $b64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($cf.FullName))
+        $covMap[$cid] = 'data:image/jpeg;base64,' + $b64
+      }
+      $covJson = $covMap | ConvertTo-Json -Compress
+      [void]$lazyHtmlBuilder.Append("<script type=`"text/plain`" data-lazy-pack=`"lesson-covers`">`n$covJson`n</script>`n")
+      $lazyPacks.Add(("lesson-covers ({0})" -f $coverFiles.Count))
+    }
   }
   if ($lazyHtmlBuilder.Length -gt 0) {
     $bodyCloseIdx = $html.LastIndexOf('</body>', [System.StringComparison]::OrdinalIgnoreCase)

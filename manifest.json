@@ -1,0 +1,26 @@
+{
+  "name": "Hanyu AI — Học tiếng Trung",
+  "short_name": "Hanyu AI",
+  "description": "Ứng dụng học tiếng Trung Giản thể theo Giáo trình Hán ngữ & NEW HSK 3.0",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#8B2E2E",
+  "background_color": "#FFF9F4",
+  "lang": "vi",
+  "icons": [
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -615,15 +615,7 @@
       return `${m}:${s < 10 ? '0' : ''}${s}`;
     }
     async function findLessonAudioBlob(){
-      const l = curLesson();
-      if(!l || !Array.isArray(l.audioTracks) || !l.audioTracks.length || typeof HanyuIDB === 'undefined') return null;
-      for(const tr of l.audioTracks){
-        let rec = await HanyuIDB.get('media', normMediaName(tr.fileName));
-        if(!rec && tr.fileName && tr.fileName.includes('/')){
-          rec = await HanyuIDB.get('media', normMediaName(tr.fileName.split('/').pop()));
-        }
-        if(rec && rec.blob) return { blob: rec.blob, label: tr.label || tr.fileName };
-      }
+      // Đã thống nhất dùng giọng đọc tích hợp của app (TTS) theo từng câu để đồng bộ highlight và tốc độ
       return null;
     }
     function syncPlayerUI(){

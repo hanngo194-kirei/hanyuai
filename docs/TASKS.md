@@ -55,7 +55,16 @@
 ## Milestone 4 — Nạp Khẩu ngữ tốc thành & Bổ trợ Chữ Hán
 - [ ] Bộ *Khẩu ngữ tốc thành* (`HanYu KouYu SuCheng` 1m–5m) vào nhóm `kouyu`
 - [x] Mở *Hack não* và *Sơ đồ tư duy* ngay trên thẻ từ vựng, trước khi trả lời câu hỏi, cho 76 bài Hán ngữ Quyển 1–6 và 48 bài NEW HSK 3.0 Cấp 1–3. Gắn tham chiếu theo chữ từ ảnh ba tập *Hack não* và mục lục tra 214 chữ của *Sơ đồ tư duy*. Mục bổ trợ theo từ trong bài dùng bộ tra và số nét của 1.645 chữ từ Unihan 17.0. Bản scan Hack não Tập 1 thiếu trang in 121 (mục 476–479).
-- [ ] Nạp đầy đủ bộ *Hack não 3000 chữ Hán* (tập 1–3) và *Sơ đồ tư duy 3300 chữ Hán* vào nhóm `hanzi`.
+- [ ] Nạp đầy đủ bộ *Hack não 3000 chữ Hán* (tập 1–3) và *Sơ đồ tư duy 3300 chữ Hán* vào nhóm `hanzi`:
+  - [x] *Sơ đồ tư duy 3300 chữ Hán* — **Đợt 1** (50 trang nội dung đầu `p006–p055` / Phần 1–2: 50 chữ gốc + nhánh từ ghép & câu chuyện ghi nhớ → `data/hanzi-mindmap-full.js` tải theo yêu cầu, liên kết `HANZI_MINDMAP_DB`).
+  - [x] *Sơ đồ tư duy 3300 chữ Hán* — **Đợt 2** (50 trang tiếp theo `p056–p105` / Phần 3–4: +49 chữ gốc, bỏ qua trang trống bị kẹt scan `p069`, tổng 99 chữ gốc + sửa lỗi tách dòng `.learn-top-head` do `.btn { width: 100% }`).
+  - [ ] *Sơ đồ tư duy 3300 chữ Hán* — Đợt 3–4 (Phần 5–9: chữ gốc 100–214).
+  - [ ] *Hack não 3000 chữ Hán* (Tập 1–3):
+    - [x] **Tập 1 · Đợt 1** (Phần 1–2: 188 chữ đầu `一–馆` từ `p008–p057` → `data/hanzi-hacknao1-full.js` tải theo yêu cầu, liên kết `HANZI_HACKNAO_DB`).
+    - [x] **Tập 1 · Đợt 2** (Phần 3: +108 chữ `193–300` `棺–娘` từ `p058–p086` → tổng `296` chữ trong `data/hanzi-hacknao1-full.js` & `dist/hanyu-ai.html`).
+    - [x] **Tập 1 · Đợt 3 (Hoàn tất Tập 1)** (Phần 4–10: `p088–p275`, mã `301–1000` → tổng `989` chữ Hán trong `data/hanzi-hacknao1-full.js`, `js/curriculum-idb-seed.js` & `dist/hanyu-ai.html`; ghi chú mất trang in 121 / mã `476–479` trong PDF scan gốc).
+    - [x] **Tập 2 (Hoàn tất Tập 2)** (Phần 1–10: trang in `1–252` / PDF `p024–p275`, mã `1001–2002` → đầy đủ `1.002` chữ Hán trong `data/hanzi-hacknao2-full.js`, `js/curriculum-idb-seed.js` & `dist/hanyu-ai.html`).
+    - [ ] **Tập 3** (chữ 2003–3123).
 
 ---
 
