@@ -812,10 +812,24 @@ const speakCtrl=(function(){
   let viewTab='practice',guideTab='tone',weakToneFilter=0;
   let idx=0,mediaRec=null,stream=null,audioCtx=null,analyser=null,rafId=null,timerId=null;
   let chunks=[],recBlob=null,recUrl=null,recDuration=0,recStart=0,isRecording=false,recAborted=false;
+  let micStreamSuspect=false,micPermGranted=(()=>{try{return localStorage.getItem('hanyu_mic_granted')==='1';}catch(_){return false;}})();
   let liveRec=null,lastLiveTranscript='',lastLiveAlternatives=[];
   let assessInFlight=false,apiCallsInSession=0;
   const MAX_API_CALLS_SESSION=600;
   const isIOSDevice=()=>(typeof LocalSpeechAnalyzer!=='undefined'&&LocalSpeechAnalyzer.isIOS)?LocalSpeechAnalyzer.isIOS():(/iPhone|iPad|iPod/i.test(navigator.userAgent||'')||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1));
+  try{
+    if(navigator.permissions&&typeof navigator.permissions.query==='function'){
+      navigator.permissions.query({name:'microphone'}).then(st=>{
+        const syncPerm=()=>{
+          const ok=st.state==='granted';
+          micPermGranted=ok;
+          try{if(ok)localStorage.setItem('hanyu_mic_granted','1');else if(st.state==='denied')localStorage.removeItem('hanyu_mic_granted');}catch(_){}
+        };
+        syncPerm();
+        st.onchange=syncPerm;
+      }).catch(()=>{});
+    }
+  }catch(_){}
 
   // Render 16 thanh đo tín hiệu âm thanh thật
   const meterEl=$('#sp-meter');
@@ -959,14 +973,15 @@ const speakCtrl=(function(){
   function destroyMicStream(){
     if(stream){try{stream.getTracks().forEach(t=>t.stop());}catch(_){}stream=null;}
   }
-  async function getReusableMicStream(){
-    if(isIOSDevice()){
-      // Trên iOS Safari, TTS đổi AVAudioSession sang Playback khiến track micro cũ bị ngắt tiếng âm thầm dù readyState === 'live'
+  async function getReusableMicStream(forceRefresh){
+    if(forceRefresh===true||micStreamSuspect){
       destroyMicStream();
+      micStreamSuspect=false;
     }else if(stream){
       const tracks=stream.getAudioTracks();
       if(tracks.some(t=>t.readyState==='live')){
         tracks.forEach(t=>{try{t.enabled=true;}catch(_){}});
+        micPermGranted=true;
         return stream;
       }
       destroyMicStream();
@@ -974,10 +989,25 @@ const speakCtrl=(function(){
     let s;
     try{
       s=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-    }catch(_){
-      s=await navigator.mediaDevices.getUserMedia({audio:true});
+    }catch(err){
+      if(err&&err.name==='NotAllowedError'){
+        micPermGranted=false;
+        try{localStorage.removeItem('hanyu_mic_granted');}catch(_){}
+        throw err;
+      }
+      try{
+        s=await navigator.mediaDevices.getUserMedia({audio:true});
+      }catch(err2){
+        if(err2&&err2.name==='NotAllowedError'){
+          micPermGranted=false;
+          try{localStorage.removeItem('hanyu_mic_granted');}catch(_){}
+        }
+        throw err2;
+      }
     }
     stream=s;
+    micPermGranted=true;
+    micStreamSuspect=false;
     try{localStorage.setItem('hanyu_mic_granted','1');}catch(_){}
     return stream;
   }
@@ -991,9 +1021,9 @@ const speakCtrl=(function(){
     if(mediaRec&&mediaRec.state==='recording'){
       $('#sp-rec-state').textContent='Đang xử lý bản ghi…';
       try{if(typeof mediaRec.requestData==='function')mediaRec.requestData();}catch(_){}
-      try{mediaRec.stop();}catch(_){releaseMic(isIOSDevice());}
+      try{mediaRec.stop();}catch(_){releaseMic(false);}
     }else{
-      releaseMic(isIOSDevice());
+      releaseMic(false);
     }
   }
   function releaseMic(hardStop){
@@ -1002,7 +1032,7 @@ const speakCtrl=(function(){
     if(typeof cancelAnimationFrame==='function'&&rafId)cancelAnimationFrame(rafId);rafId=null;
     if(liveRec){try{liveRec.stop();}catch(_){}liveRec=null;}
     if(mediaRec&&mediaRec.state!=='inactive'){try{mediaRec.stop();}catch(_){}}
-    if(hardStop===true||isIOSDevice()){
+    if(hardStop===true){
       destroyMicStream();
     }else if(stream){
       try{stream.getAudioTracks().forEach(t=>{t.enabled=false;});}catch(_){}
@@ -1027,7 +1057,7 @@ const speakCtrl=(function(){
   }
   function stopAll(){
     if(isRecording)recAborted=true;
-    releaseMic(isIOSDevice());
+    releaseMic(false);
     stopListeningAudio();
     const au=$('#sp-audio');if(au)try{au.pause();}catch(_){}
   }
@@ -1450,10 +1480,11 @@ const speakCtrl=(function(){
       const finalMime=(mediaRec&&mediaRec.mimeType)||mime||'audio/webm';
       const aborted=recAborted;
       recAborted=false;
-      releaseMic(isIOSDevice());
+      releaseMic(false);
       if(aborted)return;
       const totalBytes=chunks.reduce((s,c)=>s+(c&&c.size?c.size:0),0);
       if(!chunks.length||totalBytes<80){
+        micStreamSuspect=true;
         toast('Không thu được âm thanh từ micro, hãy thử ghi âm lại');
         $('#sp-rec-state').textContent='Chưa thu được âm thanh từ micro';
         return;

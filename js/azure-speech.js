@@ -379,54 +379,99 @@
     return btoa(bin);
   }
 
-  function trimSilenceSamples(samples, sampleRate){
-    if(!samples || samples.length < sampleRate * 0.4) return samples;
+  function decodeAudioBufferCompat(ctx, arrBuf){
+    const copyBuf = arrBuf.slice(0);
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const ok = buf => { if(!settled){ settled = true; resolve(buf); } };
+      const fail = err => { if(!settled){ settled = true; reject(err || new Error('DECODE_AUDIO_FAILED')); } };
+      try{
+        const p = ctx.decodeAudioData(copyBuf, ok, fail);
+        if(p && typeof p.then === 'function') p.then(ok, fail);
+      }catch(err){ fail(err); }
+    });
+  }
+
+  function resampleTo16kMono(samples, srcRate){
+    const rate = Number(srcRate) > 0 ? Number(srcRate) : 16000;
+    if(!samples || !samples.length || rate === 16000) return samples || new Float32Array(0);
+    const targetLen = Math.max(1, Math.round(samples.length * 16000 / rate));
+    const out = new Float32Array(targetLen);
+    const ratio = samples.length / targetLen;
+    if(ratio >= 2){
+      for(let i = 0; i < targetLen; i++){
+        const start = Math.floor(i * ratio);
+        const end = Math.min(samples.length, Math.max(start + 1, Math.ceil((i + 1) * ratio)));
+        let sum = 0;
+        for(let k = start; k < end; k++) sum += samples[k];
+        out[i] = sum / (end - start);
+      }
+    }else{
+      for(let i = 0; i < targetLen; i++){
+        const pos = i * ratio;
+        const i0 = Math.floor(pos);
+        const i1 = Math.min(samples.length - 1, i0 + 1);
+        const frac = pos - i0;
+        out[i] = samples[i0] * (1 - frac) + samples[i1] * frac;
+      }
+    }
+    return out;
+  }
+
+  function normalizeAndTrimMono(samples, sampleRate, trimSilence){
+    if(!samples || !samples.length) return new Float32Array(0);
+    const sr = Number(sampleRate) > 0 ? Number(sampleRate) : 16000;
     let peak = 0;
     for(let i = 0; i < samples.length; i++){
       const a = Math.abs(samples[i]);
       if(a > peak) peak = a;
     }
-    if(peak < 0.005) return samples;
-    const thresh = Math.max(0.01, peak * 0.08);
-    const pad = Math.round(sampleRate * 0.15);
+    let src = samples;
+    let normPeak = peak;
+    if(peak >= 0.002 && peak < 0.85){
+      const gain = Math.min(10, 0.85 / peak);
+      const boosted = new Float32Array(samples.length);
+      for(let i = 0; i < samples.length; i++){
+        boosted[i] = Math.max(-0.98, Math.min(0.98, samples[i] * gain));
+      }
+      src = boosted;
+      normPeak = Math.min(0.98, peak * gain);
+    }
+    if(!trimSilence || src.length < sr * 0.35 || normPeak < 0.005) return src;
+    const thresh = Math.max(0.015, normPeak * 0.06);
+    const pad = Math.round(sr * 0.25);
     let first = 0;
-    while(first < samples.length && Math.abs(samples[first]) < thresh) first++;
-    let last = samples.length - 1;
-    while(last > first && Math.abs(samples[last]) < thresh) last--;
-    if(last <= first) return samples;
+    while(first < src.length && Math.abs(src[first]) < thresh) first++;
+    let last = src.length - 1;
+    while(last > first && Math.abs(src[last]) < thresh) last--;
+    if(last <= first) return src;
     const start = Math.max(0, first - pad);
-    const end = Math.min(samples.length, last + pad + 1);
-    if(end - start < sampleRate * 0.3) return samples;
-    return samples.subarray(start, end);
+    const end = Math.min(src.length, last + pad + 1);
+    const trimmed = (end - start >= sr * 0.25) ? src.subarray(start, end) : src;
+    const leadTrail = Math.round(sr * 0.16);
+    const padded = new Float32Array(trimmed.length + leadTrail * 2);
+    padded.set(trimmed, leadTrail);
+    return padded;
   }
 
   async function blobToWav16kBytes(blob, trimSilence){
     if(!blob) throw new Error('EMPTY_AUDIO_BLOB');
     const AC = window.AudioContext || window.webkitAudioContext;
     if(!AC) throw new Error('NO_AUDIO_CONTEXT');
-    const arrBuf = await blob.arrayBuffer();
+    const arrBuf = (typeof blob.arrayBuffer === 'function')
+      ? await blob.arrayBuffer()
+      : await new Response(blob).arrayBuffer();
     const ctx = new AC();
     let decoded;
     try{
-      decoded = await ctx.decodeAudioData(arrBuf.slice(0));
+      decoded = await decodeAudioBufferCompat(ctx, arrBuf);
     }finally{
       try{ ctx.close(); }catch(_){}
     }
-
-    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-    if(OAC && decoded.duration > 0){
-      const targetLen = Math.max(1, Math.ceil(decoded.duration * 16000));
-      const offline = new OAC(1, targetLen, 16000);
-      const src = offline.createBufferSource();
-      src.buffer = decoded;
-      src.connect(offline.destination);
-      src.start(0);
-      const rendered = await offline.startRendering();
-      const ch0 = rendered.getChannelData(0);
-      return encodeWav16kMono(trimSilence ? trimSilenceSamples(ch0, 16000) : ch0, 16000);
-    }
     const mono = mixDownToMono(decoded);
-    return encodeWav16kMono(trimSilence ? trimSilenceSamples(mono, decoded.sampleRate) : mono, decoded.sampleRate);
+    const resampled = resampleTo16kMono(mono, decoded.sampleRate || 16000);
+    const processed = normalizeAndTrimMono(resampled, 16000, Boolean(trimSilence));
+    return encodeWav16kMono(processed, 16000);
   }
 
   async function blobToPcm16k(blob){
@@ -1038,7 +1083,7 @@
   }
 
   async function openChivoxSession(key, signal){
-    const session = {key, id: '', protocol: ''};
+    const session = {key, id: '', protocol: '', evalProps: null};
     const result = await mcpCallRaw(session, 'initialize', {
       protocolVersion: '2025-03-26',
       capabilities: {},
@@ -1047,20 +1092,51 @@
     session.protocol = result?.protocolVersion;
     if(typeof session.protocol !== 'string' || !session.protocol) throw chivoxError('Chivox chưa xác nhận phiên bản MCP', 502);
     await mcpCallRaw(session, 'notifications/initialized', {}, signal);
+    try{
+      const toolsRes = await mcpCallRaw(session, 'tools/list', {}, signal);
+      const tools = Array.isArray(toolsRes?.tools) ? toolsRes.tools : [];
+      const evalTool = tools.find(t => t && t.name === 'cn_sentence_eval');
+      const props = evalTool && evalTool.inputSchema && evalTool.inputSchema.properties;
+      if(props && typeof props === 'object') session.evalProps = Object.keys(props);
+    }catch(_){}
     if(key === getChivoxConfig().key) chivoxSession = session;
     return session;
   }
 
-  async function mcpCallTool(key, params, signal){
+  function buildChivoxEvalArgs(session, refZh, wavBytes){
+    const props = (session && Array.isArray(session.evalProps)) ? session.evalProps : null;
+    const textKey = props
+      ? (props.includes('ref_text') ? 'ref_text' : (props.includes('reference_text') ? 'reference_text' : (props.includes('text') ? 'text' : 'ref_text')))
+      : 'ref_text';
+    const audioKey = (props && !props.includes('audio_base64') && props.includes('audio_data')) ? 'audio_data' : 'audio_base64';
+    const args = {
+      [textKey]: refZh,
+      [audioKey]: uint8ToBase64(wavBytes)
+    };
+    if(props && props.includes('audio_format')) args.audio_format = 'wav';
+    if(props && props.includes('audio_type')) args.audio_type = 'wav';
+    if(props && props.includes('sample_rate')) args.sample_rate = 16000;
+    return args;
+  }
+
+  function normalizeChinesePunct(txt){
+    return String(txt || '').trim()
+      .replace(/\?/g, '？')
+      .replace(/!/g, '！')
+      .replace(/,/g, '，')
+      .replace(/\./g, '。');
+  }
+
+  async function mcpCallTool(key, buildParams, signal){
     const session = chivoxSession?.key === key ? chivoxSession : await openChivoxSession(key, signal);
     try{
-      return await mcpCallRaw(session, 'tools/call', params, signal);
+      return await mcpCallRaw(session, 'tools/call', buildParams(session), signal);
     }catch(err){
       // Chỉ gửi lại khi máy chủ xác nhận phiên đã hết hạn, không lặp bài chấm bị timeout.
       if(err.status !== 404 || !session.id || signal.aborted) throw err;
       if(chivoxSession === session) chivoxSession = null;
       const renewed = await openChivoxSession(key, signal);
-      return await mcpCallRaw(renewed, 'tools/call', params, signal);
+      return await mcpCallRaw(renewed, 'tools/call', buildParams(renewed), signal);
     }
   }
 
@@ -1121,6 +1197,9 @@
   function buildChivoxFeedback(out){
     const parts = [];
     const words = out.wordResults || [];
+    if(out.overallScore === 0 && (!words.length || words.every(w => w.errorType === 'Omission' || w.accuracyScore === 0))){
+      return 'Chivox không nghe rõ giọng nói trong bản ghi (0đ) — hãy nói to, gần micro hơn hoặc thử chấm bằng TonePerfect / Web (nhanh).';
+    }
     if(!words.length) return 'Chivox chưa trả về điểm từng chữ cho đoạn ghi âm này.';
     const omitted = words.filter(w => w.errorType === 'Omission').map(w => w.word);
     const bad = words.filter(w => w.errorType === 'Mispronunciation' || (w.accuracyScore !== null && w.accuracyScore < 75));
@@ -1149,14 +1228,14 @@
     }
 
     if(!blob?.size) throw new Error('EMPTY_AUDIO_BLOB');
-    const refZh = String(referenceText || '').trim();
+    const refZh = normalizeChinesePunct(referenceText);
     const parsed = await withChivoxDeadline(CHIVOX_ASSESS_TIMEOUT_MS, async signal => {
       const wavBytes = await blobToWav16kBytes(blob, true);
       if(signal.aborted) throw signal.reason;
-      const rawRes = await mcpCallTool(cfg.key, {
+      const rawRes = await mcpCallTool(cfg.key, session => ({
         name: 'cn_sentence_eval',
-        arguments: {ref_text: refZh, audio_base64: uint8ToBase64(wavBytes)}
-      }, signal);
+        arguments: buildChivoxEvalArgs(session, refZh, wavBytes)
+      }), signal);
       return extractChivoxJson(rawRes);
     });
     const num = v => (v !== null && v !== undefined && Number.isFinite(Number(v))) ? Math.round(Number(v)) : null;
@@ -1919,6 +1998,7 @@
     stopAudio,
     synthesizeToUrl,
     encodeWav16kMono,
+    blobToWav16kBytes,
     blobToPcm16k,
     loadSdk,
     assessPronunciation,
