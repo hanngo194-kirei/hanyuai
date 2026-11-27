@@ -811,10 +811,11 @@ const speakCtrl=(function(){
   let mode=(store.speaking&&store.speaking.mode)||'sentence';
   let viewTab='practice',guideTab='tone',weakToneFilter=0;
   let idx=0,mediaRec=null,stream=null,audioCtx=null,analyser=null,rafId=null,timerId=null;
-  let chunks=[],recBlob=null,recUrl=null,recDuration=0,recStart=0,isRecording=false;
+  let chunks=[],recBlob=null,recUrl=null,recDuration=0,recStart=0,isRecording=false,recAborted=false;
   let liveRec=null,lastLiveTranscript='',lastLiveAlternatives=[];
   let assessInFlight=false,apiCallsInSession=0;
   const MAX_API_CALLS_SESSION=600;
+  const isIOSDevice=()=>(typeof LocalSpeechAnalyzer!=='undefined'&&LocalSpeechAnalyzer.isIOS)?LocalSpeechAnalyzer.isIOS():(/iPhone|iPad|iPod/i.test(navigator.userAgent||'')||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1));
 
   // Render 16 thanh đo tín hiệu âm thanh thật
   const meterEl=$('#sp-meter');
@@ -959,7 +960,10 @@ const speakCtrl=(function(){
     if(stream){try{stream.getTracks().forEach(t=>t.stop());}catch(_){}stream=null;}
   }
   async function getReusableMicStream(){
-    if(stream){
+    if(isIOSDevice()){
+      // Trên iOS Safari, TTS đổi AVAudioSession sang Playback khiến track micro cũ bị ngắt tiếng âm thầm dù readyState === 'live'
+      destroyMicStream();
+    }else if(stream){
       const tracks=stream.getAudioTracks();
       if(tracks.some(t=>t.readyState==='live')){
         tracks.forEach(t=>{try{t.enabled=true;}catch(_){}});
@@ -967,10 +971,30 @@ const speakCtrl=(function(){
       }
       destroyMicStream();
     }
-    const s=await navigator.mediaDevices.getUserMedia({audio:true});
+    let s;
+    try{
+      s=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+    }catch(_){
+      s=await navigator.mediaDevices.getUserMedia({audio:true});
+    }
     stream=s;
     try{localStorage.setItem('hanyu_mic_granted','1');}catch(_){}
     return stream;
+  }
+  function stopRecGracefully(){
+    isRecording=false;
+    clearInterval(timerId);timerId=null;
+    if(typeof cancelAnimationFrame==='function'&&rafId)cancelAnimationFrame(rafId);rafId=null;
+    if(liveRec){try{liveRec.stop();}catch(_){}liveRec=null;}
+    $('#sp-mic').classList.remove('rec');
+    if(meterEl)$$('i',meterEl).forEach(el=>el.style.height='4px');
+    if(mediaRec&&mediaRec.state==='recording'){
+      $('#sp-rec-state').textContent='Đang xử lý bản ghi…';
+      try{if(typeof mediaRec.requestData==='function')mediaRec.requestData();}catch(_){}
+      try{mediaRec.stop();}catch(_){releaseMic(isIOSDevice());}
+    }else{
+      releaseMic(isIOSDevice());
+    }
   }
   function releaseMic(hardStop){
     isRecording=false;
@@ -978,7 +1002,7 @@ const speakCtrl=(function(){
     if(typeof cancelAnimationFrame==='function'&&rafId)cancelAnimationFrame(rafId);rafId=null;
     if(liveRec){try{liveRec.stop();}catch(_){}liveRec=null;}
     if(mediaRec&&mediaRec.state!=='inactive'){try{mediaRec.stop();}catch(_){}}
-    if(hardStop===true){
+    if(hardStop===true||isIOSDevice()){
       destroyMicStream();
     }else if(stream){
       try{stream.getAudioTracks().forEach(t=>{t.enabled=false;});}catch(_){}
@@ -992,6 +1016,7 @@ const speakCtrl=(function(){
     window.addEventListener('pagehide',()=>releaseMic(true));
   }
   function clearRecBlob(){
+    if(isRecording)recAborted=true;
     if(recUrl){try{URL.revokeObjectURL(recUrl);}catch(_){}recUrl=null;}
     recBlob=null;recDuration=0;lastLiveTranscript='';lastLiveAlternatives=[];
     const au=$('#sp-audio');if(au){au.pause();au.removeAttribute('src');au.load();}
@@ -1001,7 +1026,8 @@ const speakCtrl=(function(){
     $('#sp-assess').disabled=true;
   }
   function stopAll(){
-    releaseMic();
+    if(isRecording)recAborted=true;
+    releaseMic(isIOSDevice());
     stopListeningAudio();
     const au=$('#sp-audio');if(au)try{au.pause();}catch(_){}
   }
@@ -1357,7 +1383,7 @@ const speakCtrl=(function(){
   }
 
   async function startRec(){
-    if(isRecording){releaseMic();return;}
+    if(isRecording){stopRecGracefully();return;}
     if(!window.isSecureContext&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'){
       toast('Cần chạy qua HTTPS hoặc localhost để truy cập micro');
       $('#sp-rec-state').textContent='Môi trường hiện tại không hỗ trợ quyền micro (cần HTTPS)';
@@ -1370,6 +1396,7 @@ const speakCtrl=(function(){
     }
     stopListeningAudio();
     clearRecBlob();
+    recAborted=false;
     const maxSec=Number($('#sp-maxsec').value)||15;
     try{
       stream=await getReusableMicStream();
@@ -1421,10 +1448,19 @@ const speakCtrl=(function(){
     mediaRec.onstop=()=>{
       const dur=(Date.now()-recStart)/1000;
       const finalMime=(mediaRec&&mediaRec.mimeType)||mime||'audio/webm';
-      releaseMic();
-      if(dur<0.4||!chunks.length){
-        toast('Bản ghi quá ngắn hoặc rỗng, hãy thử nói lâu hơn');
-        $('#sp-rec-state').textContent='Bản ghi quá ngắn hoặc rỗng';
+      const aborted=recAborted;
+      recAborted=false;
+      releaseMic(isIOSDevice());
+      if(aborted)return;
+      const totalBytes=chunks.reduce((s,c)=>s+(c&&c.size?c.size:0),0);
+      if(!chunks.length||totalBytes<80){
+        toast('Không thu được âm thanh từ micro, hãy thử ghi âm lại');
+        $('#sp-rec-state').textContent='Chưa thu được âm thanh từ micro';
+        return;
+      }
+      if(dur<0.15){
+        toast('Bản ghi quá ngắn (< 0,15s), hãy giữ nút lâu hơn một chút');
+        $('#sp-rec-state').textContent='Bản ghi quá ngắn';
         return;
       }
       recBlob=new Blob(chunks,{type:finalMime});
@@ -1446,11 +1482,11 @@ const speakCtrl=(function(){
       }
     };
 
-    mediaRec.start();
+    try{mediaRec.start(250);}catch(_){mediaRec.start();}
     timerId=setInterval(()=>{
       const el=(Date.now()-recStart)/1000;
       $('#sp-timer').textContent=`${fmtSec(el)} / ${fmtSec(maxSec)}`;
-      if(el>=maxSec)releaseMic();
+      if(el>=maxSec)stopRecGracefully();
     },250);
   }
 

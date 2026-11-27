@@ -24,21 +24,27 @@ create table if not exists public.hanyu_user_data (
 
 alter table public.hanyu_user_data enable row level security;
 
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on table public.hanyu_user_data to authenticated;
+
 drop policy if exists "Users can read own hanyu data" on public.hanyu_user_data;
 create policy "Users can read own hanyu data"
   on public.hanyu_user_data
   for select
+  to authenticated
   using (auth.uid() = user_id);
 
 drop policy if exists "Users can insert own hanyu data" on public.hanyu_user_data;
 create policy "Users can insert own hanyu data"
   on public.hanyu_user_data
   for insert
+  to authenticated
   with check (auth.uid() = user_id);
 
 drop policy if exists "Users can update own hanyu data" on public.hanyu_user_data;
 create policy "Users can update own hanyu data"
   on public.hanyu_user_data
   for update
+  to authenticated
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);

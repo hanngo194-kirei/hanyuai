@@ -310,6 +310,7 @@ window.HanyuAuth = (function(){
     if(low.includes('email not confirmed')) return 'Email chưa được xác nhận · Hãy kiểm tra hộp thư (hoặc tắt Confirm Email trong Supabase)';
     if(low.includes('password should be at least')) return 'Mật khẩu cần tối thiểu 6 ký tự';
     if(low.includes('relation') && low.includes('hanyu_user_data')) return 'Chưa tạo bảng hanyu_user_data trên Supabase (hãy chạy SQL trong docs/SUPABASE_SETUP.sql)';
+    if(low.includes('permission denied') && low.includes('hanyu_user_data')) return 'Thiếu quyền truy cập bảng hanyu_user_data trên Supabase — hãy chạy lệnh GRANT trong docs/SUPABASE_SETUP.sql tại SQL Editor';
     if(status === 0 || low.includes('failed to fetch')) return 'Không kết nối được tới Supabase (kiểm tra mạng hoặc URL dự án)';
     return msg || `Lỗi kết nối (${status})`;
   }

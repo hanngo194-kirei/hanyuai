@@ -50,6 +50,7 @@
   };
 
   let playSeq = 0;
+  let localSpeakTimer = null;
   let activeAudio = null;
   let reuseAudioEl = null;
   let sdkPromise = null;
@@ -170,6 +171,10 @@
 
   function stopAudio(keepSeq){
     if(!keepSeq) playSeq++;
+    if(localSpeakTimer){
+      clearTimeout(localSpeakTimer);
+      localSpeakTimer = null;
+    }
     try{
       if(activeAudio){
         activeAudio.onended = null;
@@ -197,7 +202,10 @@
       return;
     }
     try{
+      const mySeq = playSeq;
+      const wasSpeaking = Boolean(speechSynthesis.speaking || speechSynthesis.pending);
       if(!skipCancel){
+        if(localSpeakTimer){ clearTimeout(localSpeakTimer); localSpeakTimer = null; }
         try{ if(activeAudio){ activeAudio.pause(); activeAudio = null; } }catch(_){}
         speechSynthesis.cancel();
       }
@@ -220,7 +228,16 @@
         }
         done();
       };
-      speechSynthesis.speak(u);
+      // Trì hoãn nhẹ bất đồng bộ để không chặn thao tác chạm/DOM trên iOS Safari
+      localSpeakTimer = setTimeout(() => {
+        localSpeakTimer = null;
+        if(mySeq !== playSeq) return;
+        try{
+          speechSynthesis.speak(u);
+        }catch(_){
+          done();
+        }
+      }, wasSpeaking ? 25 : 0);
     }catch(_){
       notify('Thiết bị chưa hỗ trợ đọc mẫu');
       done();
