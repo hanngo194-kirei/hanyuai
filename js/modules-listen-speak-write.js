@@ -2319,21 +2319,121 @@ function renderStrokeStrip(){
   }).join('');
 }
 
-// Render SVG thứ tự nét thủ công để highlight chính xác từng nét (đã học / hiện tại / chưa học)
-function renderOrderSvg(activeIdx){
+let orderRaf=null,orderPauseTimer=null,orderAnimSeq=0;
+function buildMedianGeom(medianPts){
+  if(!Array.isArray(medianPts)||medianPts.length<2)return null;
+  const pts=medianPts.map(p=>[Number(p[0])||0,Number(p[1])||0]);
+  const ext=(a,b,len)=>{
+    const dx=a[0]-b[0],dy=a[1]-b[1],d=Math.hypot(dx,dy);
+    if(d<0.01)return a;
+    return [a[0]+dx/d*len,a[1]+dy/d*len];
+  };
+  pts[0]=ext(pts[0],pts[1],28);
+  const last=pts.length-1;
+  pts[last]=ext(pts[last],pts[last-1],28);
+  const cumLen=[0];
+  let totalLen=0;
+  for(let i=1;i<pts.length;i++){
+    totalLen+=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);
+    cumLen.push(totalLen);
+  }
+  if(totalLen<1)totalLen=1;
+  const d=pts.map((p,idx)=>(idx===0?'M':'L')+Math.round(p[0])+' '+Math.round(p[1])).join(' ');
+  const pointAt=dist=>{
+    const clamped=Math.max(0,Math.min(totalLen,dist));
+    for(let i=1;i<pts.length;i++){
+      if(clamped<=cumLen[i]||i===pts.length-1){
+        const seg=Math.max(0.001,cumLen[i]-cumLen[i-1]);
+        const frac=Math.max(0,Math.min(1,(clamped-cumLen[i-1])/seg));
+        return {
+          x:pts[i-1][0]+(pts[i][0]-pts[i-1][0])*frac,
+          y:pts[i-1][1]+(pts[i][1]-pts[i-1][1])*frac
+        };
+      }
+    }
+    return {x:pts[0][0],y:pts[0][1]};
+  };
+  return {d,totalLen:Number(totalLen.toFixed(2)),pointAt};
+}
+
+// Render SVG thứ tự nét thủ công để highlight & mô phỏng chuyển động viết thật theo quỹ đạo nét (medians)
+function renderOrderSvg(activeIdx,animateStroke,onAnimDone){
   if(!hwCharData)return;
+  if(orderRaf){cancelAnimationFrame(orderRaf);orderRaf=null;}
+  clearTimeout(orderPauseTimer);orderPauseTimer=null;
+  const mySeq=++orderAnimSeq;
   const total=hwCharData.strokes.length;
   $('#w-stroke-cur').textContent=`Nét ${Math.min(activeIdx+1,total)} / ${total}`;
-  const paths=hwCharData.strokes.map((d,k)=>{
-    const color=k===activeIdx?'var(--accent)':k<activeIdx?'var(--ink)':'var(--line)';
-    const op=k<=activeIdx?1:.55;
-    return `<path d="${d}" fill="${color}" opacity="${op}"/>`;
-  }).join('');
-  hwBox.innerHTML=`<svg viewBox="0 0 1024 1024" aria-label="Thứ tự nét ${CHARS[ci].ch}"><g transform="scale(1,-1) translate(0,-900)">${paths}</g></svg>`;
   renderStrokeStrip();
+
+  const guidePaths=[],donePaths=[];
+  for(let k=0;k<total;k++){
+    const d=hwCharData.strokes[k];
+    if(k<activeIdx)donePaths.push(`<path d="${d}" fill="var(--ink)" opacity="1"/>`);
+    else if(k>activeIdx)guidePaths.push(`<path d="${d}" fill="var(--line)" opacity="0.55"/>`);
+  }
+
+  const curD=hwCharData.strokes[activeIdx]||'';
+  const med=hwCharData.medians&&hwCharData.medians[activeIdx];
+  const geom=animateStroke?buildMedianGeom(med):null;
+
+  if(animateStroke&&geom){
+    const startPt=geom.pointAt(0);
+    hwBox.innerHTML=`<svg viewBox="0 0 1024 1024" aria-label="Thứ tự nét ${CHARS[ci].ch}">
+      <defs><clipPath id="wo-clip-cur"><path d="${curD}"/></clipPath></defs>
+      <g transform="scale(1,-1) translate(0,-900)">
+        ${guidePaths.join('')}
+        <path d="${curD}" fill="var(--line)" opacity="0.55"/>
+        ${donePaths.join('')}
+        <path id="wo-anim-stroke" d="${geom.d}" fill="none" stroke="var(--accent)" stroke-width="210" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#wo-clip-cur)" stroke-dasharray="${geom.totalLen}" stroke-dashoffset="${geom.totalLen}"/>
+        <circle id="wo-anim-dot" cx="${startPt.x.toFixed(1)}" cy="${startPt.y.toFixed(1)}" r="22" fill="#FFF9F4" stroke="var(--accent)" stroke-width="10"/>
+      </g>
+    </svg>`;
+    const animPath=$('#wo-anim-stroke',hwBox);
+    const animDot=$('#wo-anim-dot',hwBox);
+    const durMs=Math.max(420,Math.min(880,Math.round(geom.totalLen*0.72)));
+    const t0=(typeof performance!=='undefined'&&performance.now)?performance.now():Date.now();
+    const step=()=>{
+      if(mySeq!==orderAnimSeq||!animPath||!animPath.isConnected){orderRaf=null;return;}
+      const now=(typeof performance!=='undefined'&&performance.now)?performance.now():Date.now();
+      const raw=Math.min(1,Math.max(0,(now-t0)/durMs));
+      const eased=raw<0.5?4*raw*raw*raw:1-Math.pow(-2*raw+2,3)/2;
+      const drawn=geom.totalLen*eased;
+      animPath.style.strokeDashoffset=String((geom.totalLen-drawn).toFixed(2));
+      if(animDot){
+        const pt=geom.pointAt(drawn);
+        animDot.setAttribute('cx',pt.x.toFixed(1));
+        animDot.setAttribute('cy',pt.y.toFixed(1));
+      }
+      if(raw<1){
+        orderRaf=requestAnimationFrame(step);
+      }else{
+        orderRaf=null;
+        if(mySeq!==orderAnimSeq)return;
+        if(animDot&&animDot.parentNode)animDot.parentNode.removeChild(animDot);
+        const g=animPath.parentNode;
+        if(g){
+          const solid=document.createElementNS('http://www.w3.org/2000/svg','path');
+          solid.setAttribute('d',curD);
+          solid.setAttribute('fill','var(--accent)');
+          solid.setAttribute('opacity','1');
+          g.replaceChild(solid,animPath);
+        }
+        if(typeof onAnimDone==='function')onAnimDone();
+      }
+    };
+    orderRaf=requestAnimationFrame(step);
+    return;
+  }
+
+  hwBox.innerHTML=`<svg viewBox="0 0 1024 1024" aria-label="Thứ tự nét ${CHARS[ci].ch}"><g transform="scale(1,-1) translate(0,-900)">${guidePaths.join('')}${donePaths.join('')}<path d="${curD}" fill="var(--accent)" opacity="1"/></g></svg>`;
+  if(typeof onAnimDone==='function'){
+    orderPauseTimer=setTimeout(()=>{orderPauseTimer=null;if(mySeq===orderAnimSeq)onAnimDone();},500);
+  }
 }
 
 function stopWriter(){
+  stopOrderAnim();
   if(hwWriter){try{if(hwWriter.cancelQuiz)hwWriter.cancelQuiz();if(hwWriter.pauseAnimation)hwWriter.pauseAnimation();}catch(_){}}
   hwWriter=null;hwPlaying=false;hwPaused=false;
   const pb=$('#wo-play');if(pb)pb.innerHTML='<svg class="ic f"><use href="#i-play"/></svg>Phát';
@@ -2532,26 +2632,48 @@ $('#wmode').addEventListener('click',e=>{
 });
 
 // Điều khiển chế độ Xem nét
-let orderTimer=null;
-function stopOrderAnim(){clearInterval(orderTimer);orderTimer=null;hwPlaying=false;$('#wo-play').innerHTML='<svg class="ic f"><use href="#i-play"/></svg>Phát';}
+function stopOrderAnim(){
+  if(orderRaf){cancelAnimationFrame(orderRaf);orderRaf=null;}
+  clearTimeout(orderPauseTimer);orderPauseTimer=null;
+  orderAnimSeq++;
+  hwPlaying=false;
+  const pb=$('#wo-play');if(pb)pb.innerHTML='<svg class="ic f"><use href="#i-play"/></svg>Phát';
+}
+function playOrderFrom(startIdx){
+  if(!hwCharData||!hwCharData.strokes.length)return;
+  hwPlaying=true;
+  hwStrokeIdx=Math.max(0,Math.min(hwCharData.strokes.length-1,startIdx||0));
+  const pb=$('#wo-play');if(pb)pb.innerHTML='<svg class="ic"><use href="#i-x"/></svg>Tạm dừng';
+  const stepPlay=()=>{
+    if(!hwPlaying||!hwCharData)return;
+    renderOrderSvg(hwStrokeIdx,true,()=>{
+      if(!hwPlaying||!hwCharData)return;
+      if(hwStrokeIdx<hwCharData.strokes.length-1){
+        orderPauseTimer=setTimeout(()=>{
+          orderPauseTimer=null;
+          if(!hwPlaying||!hwCharData)return;
+          hwStrokeIdx++;
+          stepPlay();
+        },220);
+      }else{
+        stopOrderAnim();
+      }
+    });
+  };
+  stepPlay();
+}
 $('#wo-play').onclick=()=>{
   if(!hwCharData){toast('Chưa có dữ liệu nét cho chữ này');return;}
   if(hwPlaying){stopOrderAnim();return;}
-  hwPlaying=true;
-  $('#wo-play').innerHTML='<svg class="ic"><use href="#i-x"/></svg>Tạm dừng';
-  if(hwStrokeIdx>=hwCharData.strokes.length-1)hwStrokeIdx=0;
-  renderOrderSvg(hwStrokeIdx);
-  orderTimer=setInterval(()=>{
-    if(hwStrokeIdx<hwCharData.strokes.length-1){hwStrokeIdx++;renderOrderSvg(hwStrokeIdx);}
-    else stopOrderAnim();
-  },750);
+  const startAt=(hwStrokeIdx>=hwCharData.strokes.length-1)?0:hwStrokeIdx;
+  playOrderFrom(startAt);
 };
-$('#wo-prev').onclick=()=>{stopOrderAnim();if(!hwCharData)return;hwStrokeIdx=Math.max(0,hwStrokeIdx-1);renderOrderSvg(hwStrokeIdx);};
-$('#wo-next').onclick=()=>{stopOrderAnim();if(!hwCharData)return;hwStrokeIdx=Math.min(hwCharData.strokes.length-1,hwStrokeIdx+1);renderOrderSvg(hwStrokeIdx);};
-$('#wo-replay').onclick=()=>{stopOrderAnim();if(!hwCharData)return;hwStrokeIdx=0;renderOrderSvg(0);$('#wo-play').click();};
+$('#wo-prev').onclick=()=>{stopOrderAnim();if(!hwCharData)return;hwStrokeIdx=Math.max(0,hwStrokeIdx-1);renderOrderSvg(hwStrokeIdx,true);};
+$('#wo-next').onclick=()=>{stopOrderAnim();if(!hwCharData)return;hwStrokeIdx=Math.min(hwCharData.strokes.length-1,hwStrokeIdx+1);renderOrderSvg(hwStrokeIdx,true);};
+$('#wo-replay').onclick=()=>{stopOrderAnim();if(!hwCharData)return;playOrderFrom(0);};
 $('#w-strip').addEventListener('click',e=>{
   const b=e.target.closest('[data-si]');if(!b||!hwCharData)return;
-  stopOrderAnim();hwStrokeIdx=+b.dataset.si;renderOrderSvg(hwStrokeIdx);
+  stopOrderAnim();hwStrokeIdx=+b.dataset.si;renderOrderSvg(hwStrokeIdx,true);
 });
 
 // Điều khiển chế độ Tô mẫu / Hướng dẫn
