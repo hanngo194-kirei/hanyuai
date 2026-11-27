@@ -27,6 +27,22 @@ const VOCAB_EXAMPLE_MAP={
   '妹妹':{ex:'我妹妹很好。',exPy:'Wǒ mèimei hěn hǎo.',exVi:'Em gái tôi rất tốt.'}
 };
 
+let _tapSpeakRaf=0,_tapSpeakTimer=0;
+function cancelPendingTapSpeak(){
+  if(_tapSpeakRaf){try{cancelAnimationFrame(_tapSpeakRaf);}catch(_){}_tapSpeakRaf=0;}
+  if(_tapSpeakTimer){clearTimeout(_tapSpeakTimer);_tapSpeakTimer=0;}
+}
+function speakAfterPaint(text){
+  if(!text)return;
+  cancelPendingTapSpeak();
+  const run=()=>{_tapSpeakTimer=setTimeout(()=>{_tapSpeakTimer=0;if(typeof speak==='function')speak(text);},0);};
+  if(typeof requestAnimationFrame==='function'){
+    _tapSpeakRaf=requestAnimationFrame(()=>{_tapSpeakRaf=0;run();});
+  }else{
+    run();
+  }
+}
+
 function resolveWordExample(w){
   if(!w||!w.zh)return {ex:'',exPy:'',exVi:''};
   const normLen=s=>String(s||'').replace(/[\s.,!?;:。，！？；：“”"']/g,'').length;
@@ -478,7 +494,7 @@ if($('#vc-ext-panel'))$('#vc-ext-panel').addEventListener('click',e=>{
 
 function makeVocabQuiz(root,opts){
   let queue=[],i=0,session={studiedSet:new Set(),wrongMap:new Map(),answers:{},choices:{},done:false,summaryShown:false};
-  const stopTts=()=>{if(typeof window._stopTts==='function')window._stopTts();};
+  const stopTts=()=>{cancelPendingTapSpeak();if(typeof window._stopTts==='function')window._stopTts();};
   const f=k=>$(`[data-f="${k}"]`,root);
   const audioRate=()=>store.settings.slowAudio?.45:.65;
   const ABC=['A','B','C','D'];
@@ -1212,7 +1228,7 @@ function buildExerciseQuestions(mode){
 const exCtrl=(function(){
   let mode='mix',qs=[],qi=0,correct=0,wrong=0,wrongQs=[],answered=false,recorded=false,placed=[],mSelL=null,mSelR=null,mDone=new Set(),mErrors=0;
   let showPy=(!store.settings||store.settings.showPinyin!==false);
-  const stopTts=()=>{if(typeof window._stopTts==='function')window._stopTts();};
+  const stopTts=()=>{cancelPendingTapSpeak();if(typeof window._stopTts==='function')window._stopTts();};
 
   function syncPyBtn(){
     const exSec=$('#exercise'),btn=$('#ex-tog-py');
@@ -1394,7 +1410,7 @@ const exCtrl=(function(){
         mSelL=b.dataset.ml;
         const zh=b.dataset.zh||b.textContent;
         tryMatch();
-        if(typeof speak==='function')speak(zh);
+        speakAfterPaint(zh);
       });
       $$('[data-mr]',stage).forEach(b=>b.onclick=()=>{
         if(answered||mDone.has(b.dataset.mr))return;
@@ -1431,7 +1447,7 @@ const exCtrl=(function(){
         const sp=String(q.tokens[ti]||'').replace(/[，。！？、；：“”‘’（）《》….,!?;:\s]+/g,'');
         placed.push(ti);
         syncOrderUI();
-        if(sp&&typeof speak==='function')speak(sp);
+        if(sp)speakAfterPaint(sp);
       });
       $('#ord-clr',stage).onclick=()=>{if(answered)return;stopTts();placed=[];syncOrderUI();};
       $('#ord-chk',stage).onclick=()=>{
@@ -1520,7 +1536,7 @@ const HN_GRAMMAR_QUIZ_BANK={
 const gramCtrl=(function(){
   let curGp='ye',gMode='mix',quizList=[],qi=0,correct=0,wrong=0,answered=false,recorded=false,wrongList=[],placed=[],phase='theory',gpKeys=[],gpIdx=0;
   const esc=s=>(typeof escHtml==='function')?escHtml(s):String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  const stopTts=()=>{if(typeof window._stopTts==='function')window._stopTts();};
+  const stopTts=()=>{cancelPendingTapSpeak();if(typeof window._stopTts==='function')window._stopTts();};
 
   function syncHeader(){
     const l=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
@@ -1816,7 +1832,7 @@ const gramCtrl=(function(){
         const sp=String(tokens[ti]||'').replace(/[，。！？、；：“”‘’（）《》….,!?;:\s]+/g,'');
         placed.push(ti);
         syncGqOrderUI();
-        if(sp&&typeof speak==='function')speak(sp);
+        if(sp)speakAfterPaint(sp);
       });
       $('#gq-ord-clr').onclick=()=>{if(answered)return;stopTts();placed=[];syncGqOrderUI();};
       $('#gq-ord-chk').onclick=()=>{

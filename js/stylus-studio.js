@@ -26,14 +26,24 @@ window.HanyuStylus = (function(){
     dockOpen: false
   };
 
+  function isPhoneViewport(){
+    try{
+      const minSide = Math.min(window.innerWidth || 999, window.innerHeight || 999);
+      const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+      return minSide < 600 || /iPhone|iPod|Android.*Mobile/i.test(ua);
+    }catch(_){
+      return false;
+    }
+  }
+
   function loadPrefs(){
     try{
       const raw = localStorage.getItem(PREFS_KEY);
-      if(!raw) return Object.assign({}, DEFAULTS);
+      if(!raw) return Object.assign({}, DEFAULTS, { allowTouchDraw: isPhoneViewport() });
       const p = JSON.parse(raw);
       return Object.assign({}, DEFAULTS, p && typeof p === 'object' ? p : {});
     }catch(_){
-      return Object.assign({}, DEFAULTS);
+      return Object.assign({}, DEFAULTS, { allowTouchDraw: isPhoneViewport() });
     }
   }
 
@@ -181,7 +191,7 @@ window.HanyuStylus = (function(){
   }
 
   function shouldAcceptPointer(e, lastPenAt){
-    if(state.inputMode === 'keyboard'){
+    if(state.inputMode === 'keyboard' && getActiveView() !== 'writing'){
       notifyPalmBlocked('keyboard');
       return false;
     }
@@ -194,11 +204,13 @@ window.HanyuStylus = (function(){
         notifyPalmBlocked('touch');
         return false;
       }
-      if((e.width && e.width > 20) || (e.height && e.height > 20)){
+      if(lastPenAt && (Date.now() - lastPenAt < 10000)){
         notifyPalmBlocked('palm');
         return false;
       }
-      if(lastPenAt && (Date.now() - lastPenAt < 10000)){
+      const maxDim = Math.max(Number(e.width) || 0, Number(e.height) || 0);
+      const palmLimit = lastPenAt ? 55 : 85;
+      if(maxDim > palmLimit){
         notifyPalmBlocked('palm');
         return false;
       }
@@ -229,8 +241,9 @@ window.HanyuStylus = (function(){
     }
 
     hwEl.addEventListener('pointerdown', e => {
+      const inWriting = getActiveView() === 'writing';
       if(isStylusLikeEvent(e)){
-        if(state.inputMode === 'keyboard'){
+        if(state.inputMode === 'keyboard' && !inWriting){
           e.stopPropagation();
           e.preventDefault();
           notifyPalmBlocked('keyboard');
@@ -272,33 +285,33 @@ window.HanyuStylus = (function(){
     hwEl.addEventListener('touchstart', e => {
       if(e.touches && e.touches.length >= 2) return;
       const now = Date.now();
-      if(state.inputMode === 'keyboard'){
+      const inWriting = getActiveView() === 'writing';
+      if(state.inputMode === 'keyboard' && !inWriting){
         e.stopPropagation();
         e.preventDefault();
         notifyPalmBlocked('keyboard');
         return;
       }
       if(penDown || hasStylusTouch(e) || now <= allowPenTouchUntil) return;
-      if(now < rejectTouchUntil || !state.allowTouchDraw){
-        e.stopPropagation();
-        e.preventDefault();
-        notifyPalmBlocked('touch');
-      }
+      if(state.allowTouchDraw && now >= rejectTouchUntil) return;
+      e.stopPropagation();
+      e.preventDefault();
+      notifyPalmBlocked('touch');
     }, { passive: false, capture: true });
 
     hwEl.addEventListener('touchmove', e => {
       if(e.touches && e.touches.length >= 2) return;
       const now = Date.now();
-      if(state.inputMode === 'keyboard'){
+      const inWriting = getActiveView() === 'writing';
+      if(state.inputMode === 'keyboard' && !inWriting){
         e.stopPropagation();
         e.preventDefault();
         return;
       }
       if(penDown || hasStylusTouch(e) || now <= allowPenTouchUntil) return;
-      if(now < rejectTouchUntil || !state.allowTouchDraw){
-        e.stopPropagation();
-        e.preventDefault();
-      }
+      if(state.allowTouchDraw && now >= rejectTouchUntil) return;
+      e.stopPropagation();
+      e.preventDefault();
     }, { passive: false, capture: true });
   }
 
@@ -337,9 +350,17 @@ window.HanyuStylus = (function(){
     emitChange('inputMode');
   }
 
-  function setAllowTouchDraw(allow){
+  function setAllowTouchDraw(allow, showToast){
     state.allowTouchDraw = !!allow;
+    if(state.allowTouchDraw && state.inputMode === 'keyboard' && getActiveView() === 'writing'){
+      state.inputMode = 'pen';
+    }
     emitChange('touch');
+    if(showToast && typeof toast === 'function'){
+      toast(state.allowTouchDraw
+        ? 'Đã bật viết bằng ngón tay + bút'
+        : 'Đã bật chế độ Chỉ bút (khóa ngón tay)');
+    }
   }
 
   function setTool(tool){
@@ -610,12 +631,13 @@ window.HanyuStylus = (function(){
     });
 
     const touchChk = root.querySelector('[data-sz-touch]');
+    const lockTouchOpt = !isPen && getActiveView() !== 'writing';
     if(touchChk){
       touchChk.checked = !!state.allowTouchDraw;
-      touchChk.disabled = !isPen;
+      touchChk.disabled = lockTouchOpt;
     }
     const touchWrap = root.querySelector('.sz-touch-opt');
-    if(touchWrap) touchWrap.classList.toggle('disabled', !isPen);
+    if(touchWrap) touchWrap.classList.toggle('disabled', lockTouchOpt);
 
     if(inst.statusEl){
       if(!isPen){
@@ -805,7 +827,8 @@ window.HanyuStylus = (function(){
         <div id="sz-dock-body"></div>
       </div>
       <div class="sz-dock-rail" role="toolbar" aria-label="Thanh công cụ bút viết nhanh">
-        <button type="button" class="sz-rail-btn on" data-szf="pen" title="Chế độ Bút / Ngón bút"><svg class="ic"><use href="#i-pencil"></use></svg><span>Bút</span></button>
+        <button type="button" class="sz-rail-btn on" data-szf="pen" title="Chế độ Bút / Bật tắt Chỉ bút"><svg class="ic"><use href="#i-pencil"></use></svg><span>Bút</span></button>
+        <button type="button" class="sz-rail-btn" data-szf="touch" title="Bật / Tắt viết bằng ngón tay" aria-pressed="false"><svg class="ic" viewBox="0 0 24 24"><path d="M12 11V4.5a1.5 1.5 0 0 1 3 0V11"></path><path d="M15 9.5a1.5 1.5 0 0 1 3 0V13"></path><path d="M18 11a1.5 1.5 0 0 1 3 0v3.5a6.5 6.5 0 0 1-6.5 6.5h-1.8a5.5 5.5 0 0 1-4.3-2.1l-3.1-3.9a1.4 1.4 0 0 1 2.1-1.8L10 15V7.5a1.5 1.5 0 0 1 2 0V11"></path></svg><span>Tay</span></button>
         <button type="button" class="sz-rail-btn" data-szf="eraser" title="Tẩy"><svg class="ic" viewBox="0 0 24 24"><path d="M20 20H7l-4-4a2 2 0 0 1 0-2.8L12.8 3.4a2 2 0 0 1 2.8 0l5.1 5.1a2 2 0 0 1 0 2.8L12 20"></path><path d="M7.5 8.5l8 8"></path></svg><span>Tẩy</span></button>
         <button type="button" class="sz-rail-btn" data-szf="undo" title="Hoàn tác"><svg class="ic" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"></path><path d="M4 9h10a6 6 0 0 1 0 12h-3"></path></svg><span>Lùi</span></button>
         <button type="button" class="sz-rail-btn" data-szf="clear" title="Xóa nét"><svg class="ic"><use href="#i-trash"></use></svg><span>Xóa</span></button>
@@ -826,9 +849,18 @@ window.HanyuStylus = (function(){
       const b = e.target.closest('[data-szf]');
       if(!b) return;
       const act = b.dataset.szf;
-      if(act === 'pen' || act === 'eraser'){
+      if(act === 'touch'){
+        setAllowTouchDraw(!state.allowTouchDraw, true);
+      }else if(act === 'pen'){
+        if(getActiveView() === 'writing' && state.inputMode === 'pen' && state.tool === 'pen'){
+          setAllowTouchDraw(!state.allowTouchDraw, true);
+        }else{
+          if(state.inputMode === 'keyboard') setInputMode('pen');
+          setTool('pen');
+        }
+      }else if(act === 'eraser'){
         if(state.inputMode === 'keyboard') setInputMode('pen');
-        setTool(act);
+        setTool('eraser');
       }else if(act === 'undo'){
         runViewAction('undo');
       }else if(act === 'clear'){
@@ -857,9 +889,19 @@ window.HanyuStylus = (function(){
       return;
     }
     const penBtn = dock.querySelector('[data-szf="pen"]');
+    const touchBtn = dock.querySelector('[data-szf="touch"]');
     const erBtn = dock.querySelector('[data-szf="eraser"]');
     const lkBtn = dock.querySelector('[data-szf="lock"]');
     if(penBtn) penBtn.classList.toggle('on', state.inputMode === 'pen' && state.tool === 'pen');
+    if(touchBtn){
+      touchBtn.classList.toggle('on', !!state.allowTouchDraw);
+      touchBtn.setAttribute('aria-pressed', String(!!state.allowTouchDraw));
+      touchBtn.title = state.allowTouchDraw
+        ? 'Đang bật viết bằng ngón tay (bấm để chuyển sang Chỉ bút)'
+        : 'Đang khóa ngón tay · Chỉ bút (bấm để bật viết bằng ngón tay)';
+      const tsp = touchBtn.querySelector('span');
+      if(tsp) tsp.textContent = state.allowTouchDraw ? 'Tay' : 'Chỉ bút';
+    }
     if(erBtn) erBtn.classList.toggle('on', state.inputMode === 'pen' && state.tool === 'eraser');
     if(lkBtn){
       lkBtn.classList.toggle('on', !!state.zoomLocked);

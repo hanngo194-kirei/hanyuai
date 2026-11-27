@@ -1,17 +1,20 @@
 /* ---------- Công đoạn 4: Luyện nghe, Chép chính tả & Hội thoại ---------- */
 let activeAudio=null;
 function stopListeningAudio(){
-  try{if(activeAudio){activeAudio.pause();activeAudio=null;}}catch(_){}
-  try{if(typeof speechSynthesis!=='undefined')speechSynthesis.cancel();}catch(_){}
-  try{if(typeof AzureSpeech!=='undefined'&&AzureSpeech.stopAudio)AzureSpeech.stopAudio();}catch(_){}
+  try{if(activeAudio){activeAudio.onended=null;activeAudio.onerror=null;activeAudio.pause();activeAudio=null;}}catch(_){}
+  if(typeof AzureSpeech!=='undefined'&&AzureSpeech.stopAudio){
+    try{AzureSpeech.stopAudio();}catch(_){}
+  }else if(typeof speechSynthesis!=='undefined'&&(speechSynthesis.speaking||speechSynthesis.pending)){
+    try{speechSynthesis.cancel();}catch(_){}
+  }
 }
 function playItemAudio(item,rate,onEnd){
-  stopListeningAudio();
   const spd=Number(rate)||1;
   const ttsSpd=(rate===undefined||rate===null||spd===1)?0.65:(spd>=0.9?Math.max(0.4,spd-0.25):Math.max(0.4,spd));
   const text=typeof item==='string'?item:(item&&item.zh)||'';
   const url=item&&typeof item==='object'?item.audio:null;
   if(url){
+    stopListeningAudio();
     try{
       const a=new Audio(url);activeAudio=a;a.playbackRate=spd;a.volume=1.0;
       if(typeof boostAudioEl==='function')boostAudioEl(a,1.75);
@@ -20,6 +23,8 @@ function playItemAudio(item,rate,onEnd){
       const p=a.play();if(p&&p.catch)p.catch(()=>speak(text,ttsSpd,onEnd));
       return;
     }catch(_){}
+  }else{
+    try{if(activeAudio){activeAudio.onended=null;activeAudio.onerror=null;activeAudio.pause();activeAudio=null;}}catch(_){}
   }
   if(!text){if(onEnd)onEnd();return;}
   speak(text,ttsSpd,onEnd);
@@ -1242,17 +1247,40 @@ const speakCtrl=(function(){
         const verdict=sc===null?'':(sc>=80?' · Đạt tốt':(sc>=65?' · Khá, cần chỉnh nhẹ':' · Cần luyện lại'));
         const heroTitle=(isLocal?'Kết quả phân tích trên trình duyệt':'Điểm phát âm tổng')+verdict;
         const heroSub=wordsHtml?'Xanh = Đạt · Cam = Chưa rõ · Đỏ = Sai (chạm thẻ chữ để nghe mẫu)':'Chưa phát hiện rõ giọng nói trong bản ghi';
-        const metricsHtml=wordsHtml?(isLocal?`
+        const hasVal=v=>v!==null&&v!==undefined&&Number.isFinite(Number(v));
+        let metricsHtml='';
+        if(wordsHtml){
+          if(isLocal){
+            metricsHtml=`
           <div class="sp-metrics-grid sp-metrics-2">
-            ${mBox('Thanh điệu',saved.toneScore!==undefined&&saved.toneScore!==null?saved.toneScore:saved.accuracyScore)}
+            ${mBox('Thanh điệu',hasVal(saved.toneScore)?saved.toneScore:saved.accuracyScore)}
             ${mBox('Đầy đủ',saved.completenessScore)}
-          </div>`:`
-          <div class="sp-metrics-grid">
-            ${mBox('Chính xác',saved.accuracyScore)}
-            ${mBox('Trôi chảy',saved.fluencyScore)}
-            ${mBox('Đầy đủ',saved.completenessScore)}
-            ${mBox('Ngữ điệu',saved.prosodyScore)}
-          </div>`):'';
+          </div>`;
+          }else{
+            const picked=[
+              {k:'accuracy',lbl:'Chính xác',val:saved.accuracyScore},
+              {k:'completeness',lbl:'Đầy đủ',val:saved.completenessScore},
+              {k:'fluency',lbl:'Trôi chảy',val:saved.fluencyScore},
+              {k:'prosody',lbl:'Ngữ điệu',val:saved.prosodyScore}
+            ].filter(x=>hasVal(x.val));
+            const extras=[
+              {k:'tone',lbl:'Thanh điệu',val:saved.toneScore},
+              {k:'initial',lbl:'Âm đầu',val:saved.initialScore},
+              {k:'final',lbl:'Vần',val:saved.finalScore}
+            ].filter(x=>hasVal(x.val));
+            for(const ex of extras){
+              if(picked.length>=4)break;
+              if(!picked.some(p=>p.k===ex.k))picked.push(ex);
+            }
+            if(picked.length){
+              const twoColCls=picked.length<=2?' sp-metrics-2':'';
+              metricsHtml=`
+          <div class="sp-metrics-grid${twoColCls}">
+            ${picked.map(m=>mBox(m.lbl,m.val)).join('')}
+          </div>`;
+            }
+          }
+        }
         resWrap.innerHTML=`
           <div class="sp-score-hero">
             <div><b>${heroTitle}</b><div class="small muted">${heroSub}</div></div>
@@ -1873,16 +1901,24 @@ function getStylusCfg(){
 }
 function updateStylusPill(){
   const pill=$('#w-stylus-pill');if(!pill)return;
+  if(!pill.dataset.touchToggleBound){
+    pill.dataset.touchToggleBound='1';
+    pill.style.cursor='pointer';
+    pill.title='Chạm để bật / tắt viết bằng ngón tay';
+    pill.onclick=()=>{
+      if(typeof window.HanyuStylus!=='undefined'&&window.HanyuStylus.setAllowTouchDraw){
+        const cur=window.HanyuStylus.getState();
+        window.HanyuStylus.setAllowTouchDraw(!cur.allowTouchDraw,true);
+      }
+    };
+  }
   const st=getStylusCfg();
   if(st){
-    const active=(st.inputMode==='pen');
-    pill.classList.toggle('pen-on',active||wPenActive);
-    if(st.inputMode==='keyboard'){
-      pill.textContent='Đang ở chế độ Gõ phím · Bấm “Viết bút” ở bảng bên để viết S-Pen';
-    }else if(st.allowTouchDraw){
-      pill.textContent=wPenActive?'Đang viết S-Pen · Chống chạm lòng bàn tay':'Cho phép Bút + Ngón tay · Chống chạm lòng bàn tay';
+    pill.classList.toggle('pen-on',!!st.allowTouchDraw||wPenActive);
+    if(st.allowTouchDraw){
+      pill.textContent=wPenActive?'Đang viết S-Pen · Chống chạm lòng bàn tay':'Đang bật Ngón tay + Bút · Chạm để chuyển sang Chỉ bút';
     }else{
-      pill.textContent='Chỉ nhận bút S-Pen / Apple Pencil · Chạm tay không hiển thị nét';
+      pill.textContent='Chỉ nhận bút S-Pen / Apple Pencil · Chạm vào đây để bật ngón tay';
     }
     return;
   }

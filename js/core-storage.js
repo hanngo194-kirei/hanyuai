@@ -60,8 +60,15 @@ function speak(text,rate,onEnd){
     if(v)u.voice=v;
     else if(voices.length>0&&!zhWarned){zhWarned=true;toast('Thiết bị chưa có giọng đọc tiếng Trung (zh-CN)');}
     u.onend=()=>{if(_coreUtterance===u)_coreUtterance=null;if(typeof onEnd==='function')onEnd();};
-    u.onerror=()=>{if(_coreUtterance===u)_coreUtterance=null;if(!zhWarned){zhWarned=true;toast('Không thể phát âm thanh tiếng Trung trên thiết bị này');}if(typeof onEnd==='function')onEnd();};
+    u.onerror=ev=>{
+      if(_coreUtterance===u)_coreUtterance=null;
+      const errCode=String((ev&&ev.error)||'').toLowerCase();
+      if(errCode==='canceled'||errCode==='interrupted'){if(typeof onEnd==='function')onEnd();return;}
+      if(!zhWarned){zhWarned=true;toast('Không thể phát âm thanh tiếng Trung trên thiết bị này');}
+      if(typeof onEnd==='function')onEnd();
+    };
     _coreUtterance=u;
+    if(speechSynthesis.paused){try{speechSynthesis.resume();}catch(_){}}
     speechSynthesis.speak(u);
   }catch(e){_coreUtterance=null;toast('Thiết bị chưa hỗ trợ đọc mẫu');if(typeof onEnd==='function')onEnd();}
 }

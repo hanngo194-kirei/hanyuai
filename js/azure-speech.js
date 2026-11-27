@@ -56,6 +56,9 @@
   let sdkPromise = null;
   let localZhWarned = false;
   let azureErrNotified = false;
+  let cachedZhVoices = null;
+  let speakTimerId = null;
+  let watchdogTimerId = null;
   const ttsCache = new Map();
 
   function esc(s){
@@ -98,6 +101,7 @@
     next.useAssess = next.useAssess !== false;
     next.localVoiceName = String(next.localVoiceName || '').trim();
     azureErrNotified = false;
+    cachedZhVoices = null;
     try{
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     }catch(_){}
@@ -146,8 +150,11 @@
     return score;
   }
 
-  function getLocalZhVoices(){
+  function getLocalZhVoices(forceRefresh){
     if(typeof speechSynthesis === 'undefined') return [];
+    if(!forceRefresh && Array.isArray(cachedZhVoices) && cachedZhVoices.length > 0){
+      return cachedZhVoices;
+    }
     const voices = speechSynthesis.getVoices() || [];
     const ranked = [];
     for(let i = 0; i < voices.length; i++){
@@ -155,7 +162,9 @@
       if(sc > -9000) ranked.push({ voice: voices[i], score: sc });
     }
     ranked.sort((a, b) => b.score - a.score);
-    return ranked.map(x => x.voice);
+    const list = ranked.map(x => x.voice);
+    if(list.length > 0) cachedZhVoices = list;
+    return list;
   }
 
   function pickBestZhVoice(){
@@ -169,10 +178,30 @@
     return list[0];
   }
 
+  if(typeof speechSynthesis !== 'undefined' && speechSynthesis.addEventListener){
+    try{
+      speechSynthesis.addEventListener('voiceschanged', () => {
+        cachedZhVoices = null;
+        localZhWarned = false;
+      });
+    }catch(_){}
+  }
+
   function stopAudio(keepSeq){
     if(!keepSeq) playSeq++;
+    if(speakTimerId){
+      clearTimeout(speakTimerId);
+      speakTimerId = null;
+    }
+    if(watchdogTimerId){
+      clearTimeout(watchdogTimerId);
+      watchdogTimerId = null;
+    }
+    const synthBusy = (typeof speechSynthesis !== 'undefined') && Boolean(speechSynthesis.speaking || speechSynthesis.pending);
+    const wasBusy = Boolean(activeUtterance) || synthBusy;
     try{
       if(activeUtterance){
+        activeUtterance.onstart = null;
         activeUtterance.onend = null;
         activeUtterance.onerror = null;
         activeUtterance = null;
@@ -187,13 +216,14 @@
       }
     }catch(_){}
     try{
-      if(typeof speechSynthesis !== 'undefined' && (speechSynthesis.speaking || speechSynthesis.pending)){
+      if(wasBusy && typeof speechSynthesis !== 'undefined'){
         speechSynthesis.cancel();
       }
     }catch(_){}
+    return wasBusy;
   }
 
-  function speakLocal(text, rate, onEnd, skipCancel){
+  function speakLocal(text, rate, onEnd, skipCancel, needDelay){
     let ended = false;
     const done = () => {
       if(ended) return;
@@ -206,40 +236,116 @@
       done();
       return;
     }
-    try{
-      if(!skipCancel){
-        stopAudio(true);
-      }
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'zh-CN';
-      u.volume = 1.0;
-      u.rate = Math.min(2, Math.max(0.4, Number(rate) || 0.65));
-      const voices = speechSynthesis.getVoices() || [];
-      const best = pickBestZhVoice();
-      if(best) u.voice = best;
-      else if(voices.length > 0 && !localZhWarned){
-        localZhWarned = true;
-        notify('Thiết bị chưa có giọng đọc tiếng Trung chuẩn (zh-CN)');
-      }
-      u.onend = () => {
-        if(activeUtterance === u) activeUtterance = null;
+    if(!skipCancel){
+      playSeq++;
+      const wasBusy = stopAudio(true);
+      needDelay = Boolean(needDelay || wasBusy);
+    }
+    const mySeq = playSeq;
+    const safeRate = Math.min(2, Math.max(0.4, Number(rate) || 0.65));
+
+    const dispatchSpeak = isRetry => {
+      if(mySeq !== playSeq || ended){
         done();
-      };
-      u.onerror = () => {
-        if(activeUtterance === u) activeUtterance = null;
-        if(!localZhWarned){
-          localZhWarned = true;
-          notify('Không thể phát âm thanh tiếng Trung trên thiết bị này');
+        return;
+      }
+      try{
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'zh-CN';
+        u.volume = 1.0;
+        u.rate = safeRate;
+        const best = pickBestZhVoice();
+        if(best){
+          u.voice = best;
+        }else if(!localZhWarned){
+          const rawVoices = speechSynthesis.getVoices ? (speechSynthesis.getVoices() || []) : [];
+          if(rawVoices.length > 0){
+            localZhWarned = true;
+            notify('Thiết bị chưa có giọng đọc tiếng Trung chuẩn (zh-CN)');
+          }
         }
+        let started = false;
+        u.onstart = () => {
+          started = true;
+          if(watchdogTimerId){
+            clearTimeout(watchdogTimerId);
+            watchdogTimerId = null;
+          }
+        };
+        u.onend = () => {
+          if(watchdogTimerId){
+            clearTimeout(watchdogTimerId);
+            watchdogTimerId = null;
+          }
+          if(activeUtterance === u) activeUtterance = null;
+          done();
+        };
+        u.onerror = ev => {
+          if(watchdogTimerId){
+            clearTimeout(watchdogTimerId);
+            watchdogTimerId = null;
+          }
+          if(activeUtterance === u) activeUtterance = null;
+          const errCode = String((ev && ev.error) || '').toLowerCase();
+          if(mySeq !== playSeq || errCode === 'canceled' || errCode === 'interrupted'){
+            done();
+            return;
+          }
+          if(!isRetry){
+            try{
+              speechSynthesis.cancel();
+              speechSynthesis.resume();
+            }catch(_){}
+            speakTimerId = setTimeout(() => {
+              speakTimerId = null;
+              dispatchSpeak(true);
+            }, 80);
+            return;
+          }
+          if(!localZhWarned){
+            localZhWarned = true;
+            notify('Không thể phát âm thanh tiếng Trung trên thiết bị này');
+          }
+          done();
+        };
+        activeUtterance = u;
+        if(speechSynthesis.paused){
+          try{ speechSynthesis.resume(); }catch(_){}
+        }
+        speechSynthesis.speak(u);
+        watchdogTimerId = setTimeout(() => {
+          watchdogTimerId = null;
+          if(mySeq === playSeq && activeUtterance === u && !started && !ended && !isRetry){
+            try{
+              u.onstart = null;
+              u.onend = null;
+              u.onerror = null;
+            }catch(_){}
+            activeUtterance = null;
+            try{
+              speechSynthesis.cancel();
+              speechSynthesis.resume();
+            }catch(_){}
+            speakTimerId = setTimeout(() => {
+              speakTimerId = null;
+              dispatchSpeak(true);
+            }, 80);
+          }
+        }, 550);
+      }catch(_){
+        activeUtterance = null;
+        notify('Thiết bị chưa hỗ trợ đọc mẫu');
         done();
-      };
-      activeUtterance = u;
-      // Gọi đồng bộ trực tiếp trong sự kiện chạm để iOS Safari không làm mất UserActivation
-      speechSynthesis.speak(u);
-    }catch(_){
-      activeUtterance = null;
-      notify('Thiết bị chưa hỗ trợ đọc mẫu');
-      done();
+      }
+    };
+
+    if(needDelay){
+      speakTimerId = setTimeout(() => {
+        speakTimerId = null;
+        dispatchSpeak(false);
+      }, 60);
+    }else{
+      dispatchSpeak(false);
     }
   }
 
@@ -304,8 +410,8 @@
     if(!text){ done(); return; }
 
     playSeq++;
-    stopAudio(true);
-    speakLocal(text, rate, done, true);
+    const wasBusy = stopAudio(true);
+    speakLocal(text, rate, done, true, wasBusy);
   }
 
   function encodeWav16kMono(float32Samples, sampleRate){
@@ -1475,9 +1581,15 @@
       const num = v => (v !== null && v !== undefined && Number.isFinite(Number(v))) ? Math.round(Number(v)) : null;
       const sc = data.scores || data;
       const rawWords = Array.isArray(data.words) ? data.words : [];
+      const dimBuckets = { initial: [], final: [], tone: [] };
       const wordResults = rawWords.map(w => {
         const units = Array.isArray(w.units) ? w.units : [];
         const notes = [];
+        units.forEach(u => {
+          if(!u || !u.dimension) return;
+          const uSc = num(u.score);
+          if(uSc !== null && dimBuckets[u.dimension]) dimBuckets[u.dimension].push(uSc);
+        });
         const toneUnit = units.find(u => u && u.dimension === 'tone');
         const initUnit = units.find(u => u && u.dimension === 'initial');
         const finUnit = units.find(u => u && u.dimension === 'final');
@@ -1504,6 +1616,16 @@
         };
       }).filter(w => w.word);
 
+      const avgDim = k => dimBuckets[k].length
+        ? Math.round(dimBuckets[k].reduce((a, b) => a + b, 0) / dimBuckets[k].length)
+        : null;
+      const initScore = num(sc.initial !== undefined ? sc.initial : data.initial);
+      const finScore = num(sc.final !== undefined ? sc.final : data.final);
+      const tScore = num(sc.tone !== undefined ? sc.tone : data.tone);
+      const flScore = num(sc.fluency !== undefined ? sc.fluency : data.fluency);
+      const prRaw = [sc.rhythm, sc.prosody, sc.intonation, data.rhythm, data.prosody, data.intonation]
+        .find(v => v !== null && v !== undefined && Number.isFinite(Number(v)));
+
       const out = {
         provider: 'toneperfect',
         assessedAt: Date.now(),
@@ -1512,12 +1634,12 @@
         recognizedText: '',
         overallScore: num(sc.overall !== undefined ? sc.overall : sc.pronunciation),
         accuracyScore: num(sc.pronunciation !== undefined ? sc.pronunciation : sc.overall),
-        initialScore: num(sc.initial),
-        finalScore: num(sc.final),
-        toneScore: num(sc.tone),
-        fluencyScore: num(sc.fluency),
-        completenessScore: num(sc.completeness),
-        prosodyScore: num(sc.rhythm !== undefined ? sc.rhythm : sc.tone),
+        initialScore: initScore !== null ? initScore : avgDim('initial'),
+        finalScore: finScore !== null ? finScore : avgDim('final'),
+        toneScore: tScore !== null ? tScore : avgDim('tone'),
+        fluencyScore: flScore,
+        completenessScore: num(sc.completeness !== undefined ? sc.completeness : data.completeness),
+        prosodyScore: prRaw !== undefined ? num(prRaw) : null,
         wordResults,
         status: 'assessed'
       };
@@ -1578,7 +1700,7 @@
   }
 
   function renderLocalVoiceOptions(selectedName){
-    const voices = getLocalZhVoices();
+    const voices = getLocalZhVoices(true);
     const head = `<option value="" ${!selectedName ? 'selected' : ''}>Tự động chọn giọng hay nhất (${voices.length ? esc(voices[0].name) : 'Mặc định máy'})</option>`;
     return head + voices.map(v => `<option value="${esc(v.name)}" ${selectedName === v.name ? 'selected' : ''}>${esc(v.name)} (${esc(v.lang)})</option>`).join('');
   }

@@ -240,6 +240,10 @@ body.stylus-zoom-locked #writing .pad{
   color:#fff;box-shadow:0 3px 10px rgba(199,70,59,.24);
 }
 .sz-rail-btn.on .ic{color:#fff}
+.sz-rail-btn[data-szf="touch"].on{
+  background:linear-gradient(180deg,#2C8C56,#1E6B40);
+  box-shadow:0 3px 10px rgba(30,107,64,.24);
+}
 .sz-rail-btn[data-szf="lock"].on{
   background:linear-gradient(180deg,#E6A043,#C77C1E);
 }
