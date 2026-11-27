@@ -477,9 +477,8 @@ if($('#vc-ext-panel'))$('#vc-ext-panel').addEventListener('click',e=>{
 });
 
 function makeVocabQuiz(root,opts){
-  let queue=[],i=0,vcSpeakTimer=null,session={studiedSet:new Set(),wrongMap:new Map(),answers:{},choices:{},done:false,summaryShown:false};
-  const cancelVcSpeak=()=>{if(vcSpeakTimer){clearTimeout(vcSpeakTimer);vcSpeakTimer=null;}};
-  const queueVcSpeak=(txt,rate,delay=0)=>{cancelVcSpeak();if(!txt||typeof speak!=='function')return;vcSpeakTimer=setTimeout(()=>{vcSpeakTimer=null;speak(txt,rate);},delay);};
+  let queue=[],i=0,session={studiedSet:new Set(),wrongMap:new Map(),answers:{},choices:{},done:false,summaryShown:false};
+  const stopTts=()=>{if(typeof window._stopTts==='function')window._stopTts();};
   const f=k=>$(`[data-f="${k}"]`,root);
   const audioRate=()=>store.settings.slowAudio?.45:.65;
   const ABC=['A','B','C','D'];
@@ -570,7 +569,7 @@ function makeVocabQuiz(root,opts){
   }
 
   function render(){
-    cancelVcSpeak();
+    stopTts();
     if(i>=queue.length&&queue.length>0)i=0;
     const w=queue[i];
     if(f('count'))f('count').textContent=queue.length?`${i+1} / ${queue.length} từ`:'0 / 0 từ';
@@ -618,10 +617,10 @@ function makeVocabQuiz(root,opts){
           if(oi>=0){const ob=$$('.opt',optsEl)[oi];if(ob){ob.classList.add('ok');const ost=$('.st-ic',ob);if(ost)ost.textContent='✓';}}
         }
         if(typeof playSfx==='function')playSfx(isOk?'ok':'no');
-        queueVcSpeak(w.zh,0.65,240);
         recordWord(w.id,isOk?2:0,'zh');
         updateGlobalCounts();
         applyRevealState(w);
+        if(typeof speak==='function')speak(w.zh,0.65);
       });
     }
     applyRevealState(w);
@@ -646,9 +645,9 @@ function makeVocabQuiz(root,opts){
     if(opts.onMutate)opts.onMutate();
   });
 
-  if($('#vc-prev-btn'))$('#vc-prev-btn').onclick=()=>{cancelVcSpeak();if(i>0){i--;render();}};
+  if($('#vc-prev-btn'))$('#vc-prev-btn').onclick=()=>{stopTts();if(i>0){i--;render();}};
   if($('#vc-next-btn'))$('#vc-next-btn').onclick=()=>{
-    cancelVcSpeak();
+    stopTts();
     if(!queue.length)return;
     if(i+1<queue.length){
       i+=1;render();
@@ -1211,10 +1210,9 @@ function buildExerciseQuestions(mode){
 
 /* ---------- Bộ điều khiển Bài tập tương tác (#exercise) ---------- */
 const exCtrl=(function(){
-  let mode='mix',qs=[],qi=0,correct=0,wrong=0,wrongQs=[],answered=false,recorded=false,placed=[],mSelL=null,mSelR=null,mDone=new Set(),mErrors=0,exSpeakTimer=null;
+  let mode='mix',qs=[],qi=0,correct=0,wrong=0,wrongQs=[],answered=false,recorded=false,placed=[],mSelL=null,mSelR=null,mDone=new Set(),mErrors=0;
   let showPy=(!store.settings||store.settings.showPinyin!==false);
-  const cancelExSpeak=()=>{if(exSpeakTimer){clearTimeout(exSpeakTimer);exSpeakTimer=null;}};
-  const queueExSpeak=(txt,delay=0)=>{cancelExSpeak();if(!txt||typeof speak!=='function')return;exSpeakTimer=setTimeout(()=>{exSpeakTimer=null;speak(txt);},delay);};
+  const stopTts=()=>{if(typeof window._stopTts==='function')window._stopTts();};
 
   function syncPyBtn(){
     const exSec=$('#exercise'),btn=$('#ex-tog-py');
@@ -1286,7 +1284,7 @@ const exCtrl=(function(){
   }
 
   function renderQ(){
-    cancelExSpeak();
+    stopTts();
     const play=$('#ex-play'),em=$('#ex-empty'),sum=$('#ex-summary');
     sum.classList.add('hide');
     if(!qs.length){
@@ -1340,7 +1338,7 @@ const exCtrl=(function(){
         $('.st-ic',btn).textContent=ok?'✓':'✕';
         if(!ok){const oi=q.opts.findIndex(x=>x.ok);if(oi>=0){const ob=$$('.opt',stage)[oi];ob.classList.add('ok');$('.st-ic',ob).textContent='✓';}}
         gradeSimple(ok,q);
-        queueExSpeak(q.zh,240);
+        if(typeof speak==='function')speak(q.zh);
       });
     }else if(q.type==='fill'){
       pbox.innerHTML=`<p class="muted small">${q.prompt}</p><div style="font-family:var(--han);font-size:24px;font-weight:700;margin-top:10px">${q.sentence}</div><div class="q-sub">${q.vi}</div>`;
@@ -1352,23 +1350,33 @@ const exCtrl=(function(){
         $('.st-ic',btn).textContent=ok?'✓':'✕';
         if(!ok){const oi=q.opts.findIndex(x=>x.ok);if(oi>=0){const ob=$$('.opt',stage)[oi];ob.classList.add('ok');$('.st-ic',ob).textContent='✓';}}
         gradeSimple(ok,q);
-        queueExSpeak(q.zh,240);
+        if(typeof speak==='function')speak(q.zh);
       });
     }else if(q.type==='match'){
       pbox.innerHTML=`<p class="muted small">${q.prompt}</p><div class="q-sub">Chạm 1 chữ Hán bên trái và 1 nghĩa bên phải</div>`;
-      const drawMatch=()=>{
-        stage.innerHTML=`<div class="match-grid">
-          <div class="match-col">${q.left.map(p=>`<button type="button" class="m-btn zh ${mDone.has(p.id)?'ok':mSelL===p.id?'sel':''}" data-ml="${p.id}" data-zh="${p.zh}"><span class="m-han">${p.zh}</span><span class="ex-py m-py">${p.py}</span></button>`).join('')}</div>
-          <div class="match-col">${q.right.map(p=>`<button type="button" class="m-btn ${mDone.has(p.id)?'ok':mSelR===p.id?'sel':''}" data-mr="${p.id}"><span>${p.vi}</span></button>`).join('')}</div>
-        </div>`;
-        $$('[data-ml]',stage).forEach(b=>b.onclick=()=>{if(answered||mDone.has(b.dataset.ml))return;mSelL=b.dataset.ml;const zh=b.dataset.zh||b.textContent;tryMatch();queueExSpeak(zh,0);});
-        $$('[data-mr]',stage).forEach(b=>b.onclick=()=>{if(answered||mDone.has(b.dataset.mr))return;mSelR=b.dataset.mr;tryMatch();});
+      stage.innerHTML=`<div class="match-grid">
+        <div class="match-col">${q.left.map(p=>`<button type="button" class="m-btn zh" data-ml="${p.id}" data-zh="${p.zh}"><span class="m-han">${p.zh}</span><span class="ex-py m-py">${p.py}</span></button>`).join('')}</div>
+        <div class="match-col">${q.right.map(p=>`<button type="button" class="m-btn" data-mr="${p.id}"><span>${p.vi}</span></button>`).join('')}</div>
+      </div>`;
+      const syncMatchUI=(badL,badR)=>{
+        $$('[data-ml]',stage).forEach(b=>{
+          const id=b.dataset.ml;
+          b.classList.toggle('ok',mDone.has(id));
+          b.classList.toggle('sel',!mDone.has(id)&&mSelL===id);
+          b.classList.toggle('no',Boolean(badL&&id===badL));
+        });
+        $$('[data-mr]',stage).forEach(b=>{
+          const id=b.dataset.mr;
+          b.classList.toggle('ok',mDone.has(id));
+          b.classList.toggle('sel',!mDone.has(id)&&mSelR===id);
+          b.classList.toggle('no',Boolean(badR&&id===badR));
+        });
       };
       const tryMatch=()=>{
         if(mSelL&&mSelR){
           if(mSelL===mSelR){
             if(typeof playSfx==='function')playSfx('ok');
-            mDone.add(mSelL);mSelL=null;mSelR=null;drawMatch();
+            mDone.add(mSelL);mSelL=null;mSelR=null;syncMatchUI();
             if(mDone.size===q.pairs.length){
               gradeSimple(mErrors===0,q);
               if(mErrors>0)showFb(false,`Hoàn thành (sai ${mErrors} lần ghép)`,q.exp,true);
@@ -1376,36 +1384,65 @@ const exCtrl=(function(){
           }else{
             if(typeof playSfx==='function')playSfx('no');
             mErrors++;
-            const l=mSelL,r=mSelR;mSelL=null;mSelR=null;drawMatch();
-            const lb=$(`[data-ml="${l}"]`,stage),rb=$(`[data-mr="${r}"]`,stage);
-            if(lb)lb.classList.add('no');if(rb)rb.classList.add('no');
+            const l=mSelL,r=mSelR;mSelL=null;mSelR=null;syncMatchUI(l,r);
             toast('Chưa khớp, thử chọn lại nhé');
           }
-        }else drawMatch();
+        }else syncMatchUI();
       };
-      drawMatch();
+      $$('[data-ml]',stage).forEach(b=>b.onclick=()=>{
+        if(answered||mDone.has(b.dataset.ml))return;
+        mSelL=b.dataset.ml;
+        const zh=b.dataset.zh||b.textContent;
+        tryMatch();
+        if(typeof speak==='function')speak(zh);
+      });
+      $$('[data-mr]',stage).forEach(b=>b.onclick=()=>{
+        if(answered||mDone.has(b.dataset.mr))return;
+        mSelR=b.dataset.mr;
+        tryMatch();
+      });
+      syncMatchUI();
     }else if(q.type==='order'){
       pbox.innerHTML=`<p class="muted small">${q.prompt}</p><div class="q-sub" style="font-size:16px;color:var(--ink);font-weight:600;margin-top:8px">“${q.vi}”</div>`;
       const tokPys=q.tokens.map(t=>resolveTokenPinyin(t,q.ans,q.py));
       const renderTokInner=(t,idx)=>`<span class="tok-zh">${escH(t)}</span>${tokPys[idx]?`<span class="tok-py">${escH(tokPys[idx])}</span>`:''}`;
-      const drawOrder=()=>{
-        stage.innerHTML=`
-          <div class="order-zone" id="ord-ans">${placed.length?placed.map((ti,pos)=>`<button type="button" class="tok placed" data-op="${pos}">${renderTokInner(q.tokens[ti],ti)}</button>`).join(''):'<span class="muted small">Chạm các mảnh từ bên dưới để xếp câu...</span>'}</div>
-          <div class="bank-zone" style="margin-top:10px">${q.tokens.map((t,ti)=>`<button type="button" class="tok ${placed.includes(ti)?'used':''}" data-ot="${ti}">${renderTokInner(t,ti)}</button>`).join('')}</div>
-          <div class="btnrow" style="margin-top:10px"><button type="button" class="btn ghost sm" id="ord-clr">Xếp lại</button><button type="button" class="btn sm" id="ord-chk">Kiểm tra</button></div>`;
-        $$('[data-ot]',stage).forEach(b=>b.onclick=()=>{if(answered)return;const ti=+b.dataset.ot;if(placed.includes(ti))return;const sp=String(q.tokens[ti]||'').replace(/[，。！？、；：“”‘’（）《》….,!?;:\s]+/g,'');placed.push(ti);drawOrder();if(sp)queueExSpeak(sp,0);});
-        $$('[data-op]',stage).forEach(b=>b.onclick=()=>{if(answered)return;placed.splice(+b.dataset.op,1);drawOrder();});
-        $('#ord-clr',stage).onclick=()=>{if(answered)return;cancelExSpeak();placed=[];drawOrder();};
-        $('#ord-chk',stage).onclick=()=>{
-          if(answered)return;
-          if(!placed.length){toast('Hãy chọn các từ trước khi kiểm tra');return;}
-          const userStr=placed.map(ti=>q.tokens[ti]).join('').replace(/\s+/g,'');
-          const ok=userStr===String(q.ans||'').replace(/\s+/g,'');
-          gradeSimple(ok,q);
-          queueExSpeak(q.ans,240);
-        };
+      stage.innerHTML=`
+        <div class="order-zone" id="ord-ans"></div>
+        <div class="bank-zone" style="margin-top:10px">${q.tokens.map((t,ti)=>`<button type="button" class="tok" data-ot="${ti}">${renderTokInner(t,ti)}</button>`).join('')}</div>
+        <div class="btnrow" style="margin-top:10px"><button type="button" class="btn ghost sm" id="ord-clr">Xếp lại</button><button type="button" class="btn sm" id="ord-chk">Kiểm tra</button></div>`;
+      const ansEl=$('#ord-ans',stage);
+      const syncOrderUI=()=>{
+        ansEl.innerHTML=placed.length
+          ?placed.map((ti,pos)=>`<button type="button" class="tok placed" data-op="${pos}">${renderTokInner(q.tokens[ti],ti)}</button>`).join('')
+          :'<span class="muted small">Chạm các mảnh từ bên dưới để xếp câu...</span>';
+        $$('[data-ot]',stage).forEach(b=>b.classList.toggle('used',placed.includes(+b.dataset.ot)));
       };
-      drawOrder();
+      ansEl.onclick=e=>{
+        if(answered)return;
+        const b=e.target.closest('[data-op]');
+        if(!b)return;
+        placed.splice(+b.dataset.op,1);
+        syncOrderUI();
+      };
+      $$('[data-ot]',stage).forEach(b=>b.onclick=()=>{
+        if(answered)return;
+        const ti=+b.dataset.ot;
+        if(placed.includes(ti))return;
+        const sp=String(q.tokens[ti]||'').replace(/[，。！？、；：“”‘’（）《》….,!?;:\s]+/g,'');
+        placed.push(ti);
+        syncOrderUI();
+        if(sp&&typeof speak==='function')speak(sp);
+      });
+      $('#ord-clr',stage).onclick=()=>{if(answered)return;stopTts();placed=[];syncOrderUI();};
+      $('#ord-chk',stage).onclick=()=>{
+        if(answered)return;
+        if(!placed.length){toast('Hãy chọn các từ trước khi kiểm tra');return;}
+        const userStr=placed.map(ti=>q.tokens[ti]).join('').replace(/\s+/g,'');
+        const ok=userStr===String(q.ans||'').replace(/\s+/g,'');
+        gradeSimple(ok,q);
+        if(typeof speak==='function')speak(q.ans);
+      };
+      syncOrderUI();
     }
   }
 
@@ -1447,11 +1484,11 @@ const exCtrl=(function(){
   }
 
   if($('#ex-tog-py'))$('#ex-tog-py').onclick=()=>{showPy=!showPy;syncPyBtn();};
-  $('#ex-modes').addEventListener('click',e=>{const b=e.target.closest('button');if(b){cancelExSpeak();start(b.dataset.em);}});
-  $('#ex-next').onclick=()=>{cancelExSpeak();qi+=1;if(qi<qs.length)saveActive();renderQ();};
+  $('#ex-modes').addEventListener('click',e=>{const b=e.target.closest('button');if(b){stopTts();start(b.dataset.em);}});
+  $('#ex-next').onclick=()=>{stopTts();qi+=1;if(qi<qs.length)saveActive();renderQ();};
   $('#ex-retry').onclick=()=>{
     // Cho làm lại ngay câu vừa sai (không cộng trùng vào total)
-    cancelExSpeak();
+    stopTts();
     const q=qs[qi];
     if(answered&&wrong>0){wrong--;const idx=wrongQs.indexOf(q);if(idx>=0)wrongQs.splice(idx,1);}
     renderQ();
@@ -1481,10 +1518,9 @@ const HN_GRAMMAR_QUIZ_BANK={
 };
 
 const gramCtrl=(function(){
-  let curGp='ye',gMode='mix',quizList=[],qi=0,correct=0,wrong=0,answered=false,recorded=false,wrongList=[],placed=[],phase='theory',gpKeys=[],gpIdx=0,gqSpeakTimer=null;
+  let curGp='ye',gMode='mix',quizList=[],qi=0,correct=0,wrong=0,answered=false,recorded=false,wrongList=[],placed=[],phase='theory',gpKeys=[],gpIdx=0;
   const esc=s=>(typeof escHtml==='function')?escHtml(s):String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  const cancelGqSpeak=()=>{if(gqSpeakTimer){clearTimeout(gqSpeakTimer);gqSpeakTimer=null;}};
-  const queueGqSpeak=(txt,delay=0)=>{cancelGqSpeak();if(!txt||typeof speak!=='function')return;gqSpeakTimer=setTimeout(()=>{gqSpeakTimer=null;speak(txt);},delay);};
+  const stopTts=()=>{if(typeof window._stopTts==='function')window._stopTts();};
 
   function syncHeader(){
     const l=(typeof LESSONS!=='undefined'&&Array.isArray(LESSONS))?LESSONS.find(x=>x.id===store.activeLessonId):null;
@@ -1741,7 +1777,7 @@ const gramCtrl=(function(){
       return;
     }
     wrap.classList.toggle('hide',phase!=='quiz');sum.classList.add('hide');
-    cancelGqSpeak();
+    stopTts();
     answered=false;placed=[];
     const q=quizList[qi],ABC=['A','B','C','D','E','F'];
     $('#gq-count').textContent=`${qi+1} / ${quizList.length}`;
@@ -1754,33 +1790,53 @@ const gramCtrl=(function(){
       const tokPys=tokens.map(t=>resolveTokenPinyin(t,q.ans,q.py));
       const renderTokInner=(t,idx)=>`<span class="tok-zh">${esc(t)}</span>${tokPys[idx]?`<span class="tok-py">${esc(tokPys[idx])}</span>`:''}`;
       $('#gq-q').textContent=q.vi?`“${q.vi}”`:'Ghép thành câu tiếng Trung hoàn chỉnh';
-      const drawOrder=()=>{
-        $('#gq-opts').innerHTML=`
-          <div class="order-zone" id="gq-ord-ans">${placed.length?placed.map((ti,pos)=>`<button type="button" class="tok placed" data-gop="${pos}">${renderTokInner(tokens[ti],ti)}</button>`).join(''):'<span class="muted small">Chạm các mảnh từ bên dưới để xếp câu...</span>'}</div>
-          <div class="bank-zone" style="margin-top:8px">${tokens.map((t,ti)=>`<button type="button" class="tok ${placed.includes(ti)?'used':''}" data-got="${ti}">${renderTokInner(t,ti)}</button>`).join('')}</div>
-          <div class="btnrow" style="margin-top:8px"><button type="button" class="btn ghost sm" id="gq-ord-clr">Xếp lại</button><button type="button" class="btn sm" id="gq-ord-chk">Kiểm tra</button></div>`;
-        $$('[data-got]',$('#gq-opts')).forEach(b=>b.onclick=()=>{if(answered)return;const ti=+b.dataset.got;if(placed.includes(ti))return;const sp=String(tokens[ti]||'').replace(/[，。！？、；：“”‘’（）《》….,!?;:\s]+/g,'');placed.push(ti);drawOrder();if(sp)queueGqSpeak(sp,0);});
-        $$('[data-gop]',$('#gq-opts')).forEach(b=>b.onclick=()=>{if(answered)return;placed.splice(+b.dataset.gop,1);drawOrder();});
-        $('#gq-ord-clr').onclick=()=>{if(answered)return;cancelGqSpeak();placed=[];drawOrder();};
-        $('#gq-ord-chk').onclick=()=>{
-          if(answered)return;
-          if(!placed.length){toast('Hãy chọn các mảnh từ trước khi kiểm tra');return;}
-          answered=true;
-          const userStr=placed.map(ti=>tokens[ti]).join('').replace(/\s+/g,'');
-          const ok=userStr===String(q.ans||'').replace(/\s+/g,'');
-          if(typeof playSfx==='function')playSfx(ok?'ok':'no');
-          queueGqSpeak(q.ans,240);
-          if(ok)correct++;else{wrong++;wrongList.push(q);}
-          const fb=$('#gq-fb');
-          fb.className='fb-card '+(ok?'ok':'no');
-          fb.innerHTML=`<b><svg class="ic" style="width:1.1em;height:1.1em"><use href="#i-${ok?'check':'x'}"/></svg>${ok?'Chính xác!':'Chưa đúng trật tự'}</b><span>${esc(q.exp||'')}</span>`;
-          fb.classList.remove('hide');
-          $('#gq-actions').classList.remove('hide');
-          $('#gq-retry').classList.toggle('hide',ok);
-          $('#gq-next').textContent=(qi+1>=quizList.length)?'Xem tổng kết':'Câu tiếp theo →';
-        };
+      const optsEl=$('#gq-opts');
+      optsEl.innerHTML=`
+        <div class="order-zone" id="gq-ord-ans"></div>
+        <div class="bank-zone" style="margin-top:8px">${tokens.map((t,ti)=>`<button type="button" class="tok" data-got="${ti}">${renderTokInner(t,ti)}</button>`).join('')}</div>
+        <div class="btnrow" style="margin-top:8px"><button type="button" class="btn ghost sm" id="gq-ord-clr">Xếp lại</button><button type="button" class="btn sm" id="gq-ord-chk">Kiểm tra</button></div>`;
+      const gAnsEl=$('#gq-ord-ans');
+      const syncGqOrderUI=()=>{
+        gAnsEl.innerHTML=placed.length
+          ?placed.map((ti,pos)=>`<button type="button" class="tok placed" data-gop="${pos}">${renderTokInner(tokens[ti],ti)}</button>`).join('')
+          :'<span class="muted small">Chạm các mảnh từ bên dưới để xếp câu...</span>';
+        $$('[data-got]',optsEl).forEach(b=>b.classList.toggle('used',placed.includes(+b.dataset.got)));
       };
-      drawOrder();
+      gAnsEl.onclick=e=>{
+        if(answered)return;
+        const b=e.target.closest('[data-gop]');
+        if(!b)return;
+        placed.splice(+b.dataset.gop,1);
+        syncGqOrderUI();
+      };
+      $$('[data-got]',optsEl).forEach(b=>b.onclick=()=>{
+        if(answered)return;
+        const ti=+b.dataset.got;
+        if(placed.includes(ti))return;
+        const sp=String(tokens[ti]||'').replace(/[，。！？、；：“”‘’（）《》….,!?;:\s]+/g,'');
+        placed.push(ti);
+        syncGqOrderUI();
+        if(sp&&typeof speak==='function')speak(sp);
+      });
+      $('#gq-ord-clr').onclick=()=>{if(answered)return;stopTts();placed=[];syncGqOrderUI();};
+      $('#gq-ord-chk').onclick=()=>{
+        if(answered)return;
+        if(!placed.length){toast('Hãy chọn các mảnh từ trước khi kiểm tra');return;}
+        answered=true;
+        const userStr=placed.map(ti=>tokens[ti]).join('').replace(/\s+/g,'');
+        const ok=userStr===String(q.ans||'').replace(/\s+/g,'');
+        if(typeof playSfx==='function')playSfx(ok?'ok':'no');
+        if(ok)correct++;else{wrong++;wrongList.push(q);}
+        const fb=$('#gq-fb');
+        fb.className='fb-card '+(ok?'ok':'no');
+        fb.innerHTML=`<b><svg class="ic" style="width:1.1em;height:1.1em"><use href="#i-${ok?'check':'x'}"/></svg>${ok?'Chính xác!':'Chưa đúng trật tự'}</b><span>${esc(q.exp||'')}</span>`;
+        fb.classList.remove('hide');
+        $('#gq-actions').classList.remove('hide');
+        $('#gq-retry').classList.toggle('hide',ok);
+        $('#gq-next').textContent=(qi+1>=quizList.length)?'Xem tổng kết':'Câu tiếp theo →';
+        if(typeof speak==='function')speak(q.ans);
+      };
+      syncGqOrderUI();
       return;
     }
 
@@ -1794,7 +1850,6 @@ const gramCtrl=(function(){
       $('.st-ic',btn).textContent=ok?'✓':'✕';
       if(!ok){const oi=q.opts.findIndex(x=>x.ok);if(oi>=0){const ob=$$('#gq-opts .opt')[oi];ob.classList.add('ok');$('.st-ic',ob).textContent='✓';}}
       if(typeof playSfx==='function')playSfx(ok?'ok':'no');
-      if(q.ansZh)queueGqSpeak(q.ansZh,240);
       if(ok)correct++;else{wrong++;wrongList.push(q);}
       const fb=$('#gq-fb');
       fb.className='fb-card '+(ok?'ok':'no');
@@ -1803,6 +1858,7 @@ const gramCtrl=(function(){
       $('#gq-actions').classList.remove('hide');
       $('#gq-retry').classList.toggle('hide',ok);
       $('#gq-next').textContent=(qi+1>=quizList.length)?'Xem tổng kết':'Câu tiếp theo →';
+      if(q.ansZh&&typeof speak==='function')speak(q.ansZh);
     });
   }
 
@@ -1810,9 +1866,9 @@ const gramCtrl=(function(){
   if($('#gp-prev-btn'))$('#gp-prev-btn').onclick=()=>{if(gpIdx>0)renderPoint(gpKeys[gpIdx-1]);};
   if($('#gp-next-btn'))$('#gp-next-btn').onclick=()=>{if(gpIdx+1<gpKeys.length)renderPoint(gpKeys[gpIdx+1]);else{setPhase('quiz');startQuiz(gMode);}};
   if($('#gr-peek-btn'))$('#gr-peek-btn').onclick=openGrammarPopup;
-  if($('#gq-modes'))$('#gq-modes').addEventListener('click',e=>{const b=e.target.closest('button');if(b){cancelGqSpeak();phase='quiz';startQuiz(b.dataset.gm);}});
-  $('#gq-next').onclick=()=>{cancelGqSpeak();qi+=1;renderQuiz();};
-  $('#gq-retry').onclick=()=>{cancelGqSpeak();if(answered&&wrong>0)wrong--;renderQuiz();};
+  if($('#gq-modes'))$('#gq-modes').addEventListener('click',e=>{const b=e.target.closest('button');if(b){stopTts();phase='quiz';startQuiz(b.dataset.gm);}});
+  $('#gq-next').onclick=()=>{stopTts();qi+=1;renderQuiz();};
+  $('#gq-retry').onclick=()=>{stopTts();if(answered&&wrong>0)wrong--;renderQuiz();};
 
   window.renderGrammarPoint=renderPoint;
   function refresh(){

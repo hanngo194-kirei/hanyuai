@@ -15,7 +15,7 @@ function applyActiveLesson(){
   }else{
     WORDS=getLessonVocab(l);
     const dlg=(l.dialog||[]);
-    LISTEN_DIALOG=dlg.map((d,i)=>({section:d.section||'',context:d.context||'',audio:d.audio||'',speaker:d.speaker||(i%2===0?'A':'B'),name:d.name||(i%2===0?'Người A':'Người B'),zh:d.zh||'',py:d.py||'',vi:d.vi||''})).filter(d=>d.zh);
+    LISTEN_DIALOG=dlg.map((d,i)=>({section:d.section||'',context:d.context||'',audio:d.audio||'',who:d.who||d.speaker||(i%2===0?'A':'B'),speaker:d.speaker||d.who||(i%2===0?'A':'B'),name:d.name||(i%2===0?'Người A':'Người B'),zh:d.zh||'',py:d.py||'',vi:d.vi||''})).filter(d=>d.zh);
     SENT=(l.sentences&&l.sentences.length)?l.sentences:LISTEN_DIALOG.map(d=>({zh:d.zh,py:d.py,vi:d.vi}));
     DIALOG_QUESTIONS=l.dialogQuestions||[];
     GRAMMAR_POINTS=l.grammarPoints||{};

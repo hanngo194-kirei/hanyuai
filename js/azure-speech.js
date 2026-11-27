@@ -50,7 +50,7 @@
   };
 
   let playSeq = 0;
-  let localSpeakTimer = null;
+  let activeUtterance = null;
   let activeAudio = null;
   let reuseAudioEl = null;
   let sdkPromise = null;
@@ -171,10 +171,13 @@
 
   function stopAudio(keepSeq){
     if(!keepSeq) playSeq++;
-    if(localSpeakTimer){
-      clearTimeout(localSpeakTimer);
-      localSpeakTimer = null;
-    }
+    try{
+      if(activeUtterance){
+        activeUtterance.onend = null;
+        activeUtterance.onerror = null;
+        activeUtterance = null;
+      }
+    }catch(_){}
     try{
       if(activeAudio){
         activeAudio.onended = null;
@@ -184,7 +187,9 @@
       }
     }catch(_){}
     try{
-      if(typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+      if(typeof speechSynthesis !== 'undefined' && (speechSynthesis.speaking || speechSynthesis.pending)){
+        speechSynthesis.cancel();
+      }
     }catch(_){}
   }
 
@@ -202,12 +207,8 @@
       return;
     }
     try{
-      const mySeq = playSeq;
-      const wasSpeaking = Boolean(speechSynthesis.speaking || speechSynthesis.pending);
       if(!skipCancel){
-        if(localSpeakTimer){ clearTimeout(localSpeakTimer); localSpeakTimer = null; }
-        try{ if(activeAudio){ activeAudio.pause(); activeAudio = null; } }catch(_){}
-        speechSynthesis.cancel();
+        stopAudio(true);
       }
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'zh-CN';
@@ -220,25 +221,23 @@
         localZhWarned = true;
         notify('Thiết bị chưa có giọng đọc tiếng Trung chuẩn (zh-CN)');
       }
-      u.onend = done;
+      u.onend = () => {
+        if(activeUtterance === u) activeUtterance = null;
+        done();
+      };
       u.onerror = () => {
+        if(activeUtterance === u) activeUtterance = null;
         if(!localZhWarned){
           localZhWarned = true;
           notify('Không thể phát âm thanh tiếng Trung trên thiết bị này');
         }
         done();
       };
-      // Trì hoãn nhẹ bất đồng bộ để không chặn thao tác chạm/DOM trên iOS Safari
-      localSpeakTimer = setTimeout(() => {
-        localSpeakTimer = null;
-        if(mySeq !== playSeq) return;
-        try{
-          speechSynthesis.speak(u);
-        }catch(_){
-          done();
-        }
-      }, wasSpeaking ? 25 : 0);
+      activeUtterance = u;
+      // Gọi đồng bộ trực tiếp trong sự kiện chạm để iOS Safari không làm mất UserActivation
+      speechSynthesis.speak(u);
     }catch(_){
+      activeUtterance = null;
       notify('Thiết bị chưa hỗ trợ đọc mẫu');
       done();
     }
@@ -300,7 +299,7 @@
     return reuseAudioEl;
   }
 
-  async function speak(text, rate, onEnd){
+  function speak(text, rate, onEnd){
     const done = typeof onEnd === 'function' ? onEnd : () => {};
     if(!text){ done(); return; }
 
@@ -421,33 +420,52 @@
   function normalizeAndTrimMono(samples, sampleRate, trimSilence){
     if(!samples || !samples.length) return new Float32Array(0);
     const sr = Number(sampleRate) > 0 ? Number(sampleRate) : 16000;
-    let peak = 0;
-    for(let i = 0; i < samples.length; i++){
-      const a = Math.abs(samples[i]);
-      if(a > peak) peak = a;
-    }
-    let src = samples;
-    let normPeak = peak;
-    if(peak >= 0.002 && peak < 0.85){
-      const gain = Math.min(10, 0.85 / peak);
-      const boosted = new Float32Array(samples.length);
-      for(let i = 0; i < samples.length; i++){
-        boosted[i] = Math.max(-0.98, Math.min(0.98, samples[i] * gain));
+    const win = Math.max(160, Math.round(sr * 0.02));
+    const frameRms = [];
+    let maxRms = 0;
+    for(let off = 0; off < samples.length; off += win){
+      const end = Math.min(samples.length, off + win);
+      let sq = 0;
+      for(let k = off; k < end; k++){
+        const v = samples[k];
+        sq += v * v;
       }
-      src = boosted;
-      normPeak = Math.min(0.98, peak * gain);
+      const rms = Math.sqrt(sq / Math.max(1, end - off));
+      if(rms > maxRms) maxRms = rms;
+      frameRms.push({ off, end, rms });
     }
-    if(!trimSilence || src.length < sr * 0.35 || normPeak < 0.005) return src;
-    const thresh = Math.max(0.015, normPeak * 0.06);
-    const pad = Math.round(sr * 0.25);
-    let first = 0;
-    while(first < src.length && Math.abs(src[first]) < thresh) first++;
-    let last = src.length - 1;
-    while(last > first && Math.abs(src[last]) < thresh) last--;
-    if(last <= first) return src;
-    const start = Math.max(0, first - pad);
-    const end = Math.min(src.length, last + pad + 1);
-    const trimmed = (end - start >= sr * 0.25) ? src.subarray(start, end) : src;
+    const sorted = frameRms.map(f => f.rms).sort((a, b) => a - b);
+    const p95Idx = Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95));
+    // Dùng bách phân vị thứ 95 theo khung 20ms để tránh tiếng chạm nút trên iPhone làm dìm giọng nói
+    const speechRms = (sorted.length >= 3 ? sorted[p95Idx] : maxRms) || maxRms;
+    const gain = speechRms >= 0.0015 ? Math.max(1, Math.min(12, 0.14 / speechRms)) : 1;
+
+    const boosted = new Float32Array(samples.length);
+    for(let i = 0; i < samples.length; i++){
+      const scaled = samples[i] * gain;
+      boosted[i] = scaled > 0.96 ? 0.96 : (scaled < -0.96 ? -0.96 : scaled);
+    }
+
+    let trimmed = boosted;
+    if(trimSilence && frameRms.length >= 4 && speechRms * gain >= 0.004){
+      const thresh = Math.max(0.012, (speechRms * gain) * 0.18);
+      let firstFr = -1, lastFr = -1;
+      for(let f = 0; f < frameRms.length; f++){
+        if(frameRms[f].rms * gain >= thresh){
+          if(firstFr < 0) firstFr = f;
+          lastFr = f;
+        }
+      }
+      if(firstFr >= 0 && lastFr >= firstFr){
+        const pad = Math.round(sr * 0.25);
+        const start = Math.max(0, frameRms[firstFr].off - pad);
+        const end = Math.min(boosted.length, frameRms[lastFr].end + pad);
+        if(end - start >= sr * 0.25){
+          trimmed = boosted.subarray(start, end);
+        }
+      }
+    }
+
     const leadTrail = Math.round(sr * 0.16);
     const padded = new Float32Array(trimmed.length + leadTrail * 2);
     padded.set(trimmed, leadTrail);
@@ -749,7 +767,7 @@
   }
 
   async function callGeminiGenerate(key, model, bodyObj){
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
     const retryDelays = [];
 
     for(let attempt = 0; attempt <= retryDelays.length; attempt++){
@@ -757,7 +775,10 @@
       try{
         res = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': key
+          },
           body: JSON.stringify(bodyObj)
         });
       }catch(netErr){
@@ -1198,7 +1219,8 @@
     const parts = [];
     const words = out.wordResults || [];
     if(out.overallScore === 0 && (!words.length || words.every(w => w.errorType === 'Omission' || w.accuracyScore === 0))){
-      return 'Chivox không nghe rõ giọng nói trong bản ghi (0đ) — hãy nói to, gần micro hơn hoặc thử chấm bằng TonePerfect / Web (nhanh).';
+      const diagTxt = out._diag ? ` [${out._diag}]` : '';
+      return `Chivox không nghe rõ giọng nói trong bản ghi (0đ) — hãy nói to, gần micro hơn hoặc thử chấm bằng TonePerfect / Web (nhanh).${diagTxt}`;
     }
     if(!words.length) return 'Chivox chưa trả về điểm từng chữ cho đoạn ghi âm này.';
     const omitted = words.filter(w => w.errorType === 'Omission').map(w => w.word);
@@ -1229,13 +1251,18 @@
 
     if(!blob?.size) throw new Error('EMPTY_AUDIO_BLOB');
     const refZh = normalizeChinesePunct(referenceText);
+    let wavKB = 0, schemaKeys = '';
     const parsed = await withChivoxDeadline(CHIVOX_ASSESS_TIMEOUT_MS, async signal => {
-      const wavBytes = await blobToWav16kBytes(blob, true);
+      const wavBytes = await blobToWav16kBytes(blob, false);
+      wavKB = Math.round(wavBytes.length / 1024);
       if(signal.aborted) throw signal.reason;
-      const rawRes = await mcpCallTool(cfg.key, session => ({
-        name: 'cn_sentence_eval',
-        arguments: buildChivoxEvalArgs(session, refZh, wavBytes)
-      }), signal);
+      const rawRes = await mcpCallTool(cfg.key, session => {
+        schemaKeys = (session && Array.isArray(session.evalProps)) ? session.evalProps.join(',') : 'default';
+        return {
+          name: 'cn_sentence_eval',
+          arguments: buildChivoxEvalArgs(session, refZh, wavBytes)
+        };
+      }, signal);
       return extractChivoxJson(rawRes);
     });
     const num = v => (v !== null && v !== undefined && Number.isFinite(Number(v))) ? Math.round(Number(v)) : null;
@@ -1295,7 +1322,10 @@
     if(!wordResults.length && [out.overallScore, out.accuracyScore, out.fluencyScore, out.completenessScore, out.prosodyScore].every(score => score === null)){
       throw chivoxError('Chivox không trả về điểm phát âm', 502);
     }
+    const errTag = root.errId || root.error || root.info || '';
+    out._diag = `WAV ${wavKB}KB · schema=${schemaKeys}${errTag ? ' · ' + String(errTag) : ''}`;
     out.feedback = buildChivoxFeedback(out);
+    delete out._diag;
     return out;
   }
 

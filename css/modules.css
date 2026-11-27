@@ -1195,6 +1195,7 @@ button,a{touch-action:manipulation}
     border-radius:14px;
     box-shadow:0 -4px 12px rgba(90,30,20,.08);
   }
+  #vocab,#exercise,#grammar,#listen{padding-bottom:68px}
 
   /* Ngữ pháp */
   #grammar .seg2 button{padding:6px 6px;font-size:13px}

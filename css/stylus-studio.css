@@ -211,7 +211,7 @@ body.stylus-zoom-locked #writing .pad{
   .view[data-view="writing"]{max-width:1040px}
   .w-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px;align-items:start}
   .w-side-rail{
-    display:block;position:sticky;top:14px;max-height:calc(100vh - 28px);overflow-y:auto;
+    display:block;position:sticky;top:14px;max-height:calc(100vh - 28px);max-height:calc(100dvh - 28px);overflow-y:auto;
     background:var(--surface,#FFFDFB);border:1px solid var(--line,#EAD3C4);
     border-radius:20px;padding:12px;box-shadow:var(--shadow);
   }

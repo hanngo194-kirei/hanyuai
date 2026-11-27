@@ -325,9 +325,11 @@ const listenCtrl=(function(){
   function renderDialogList(){
     const dl=$('#ln-dlg-list');if(!dl)return;
     if(!LISTEN_DIALOG.length){dl.innerHTML='<div class="card"><p class="muted small" style="margin:0">Bài học này chưa có hội thoại mẫu.</p></div>';return;}
-    dl.innerHTML=LISTEN_DIALOG.map((line,idx)=>`
+    dl.innerHTML=LISTEN_DIALOG.map((line,idx)=>{
+      const who=line.who||line.speaker||(idx%2===0?'A':'B');
+      return `
       <div class="bub" data-dl="${idx}">
-        <span class="who ${line.who==='B'?'f':''}">${line.who}</span>
+        <span class="who ${who==='B'?'f':''}">${who}</span>
         <div class="body">
           <div class="mid">
             <div class="zh">${line.zh}</div>
@@ -336,7 +338,8 @@ const listenCtrl=(function(){
           </div>
           <button class="playbtn" type="button" data-dsay="${idx}" aria-label="Nghe câu ${idx+1}"><svg class="ic f"><use href="#i-play"/></svg></button>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
     applyDlgToggles();
   }
 
@@ -559,18 +562,6 @@ try{
   updateLessonListenStatus();
   updateLessonWriteStatus();
 }catch(err){console.error('Init error:',err);}
-
-/* ---------- Hội thoại ---------- */
-(function(){
-  const root=$('#rep');if(!root)return;
-  const f=k=>$(`[data-f="${k}"]`,root);let i=1;
-  const page=$('[data-view="dialog"]');
-  function render(){const s=SENT[i];f('zh').textContent=s.zh;f('vi').textContent=s.vi;f('n').textContent=i+1;
-    $('[data-f="count"]',page).textContent=`${i+1} / 5`;$('[data-f="bar"]',page).style.width=((i+1)/5*100)+'%';f('score').textContent='--/100'}
-  f('prev').onclick=()=>{i=(i+4)%5;render()};f('nxt').onclick=()=>{i=(i+1)%5;render()};
-  f('again').onclick=()=>speak(SENT[i].zh,f('speed').value);
-  f('mic').onclick=()=>fakeRecord(f('mic'),f('micl'),s=>{f('score').textContent=s.total+'/100'});
-})();
 
 /* ---------- Công đoạn 6: Ghi âm thật, Thanh điệu & Adapter đánh giá phát âm ---------- */
 // Phân biệt 5 loại thanh điệu (1,2,3,4, nhẹ=5) + biến điệu ngữ cảnh (hai thanh 3, 一, 不)

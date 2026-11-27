@@ -41,7 +41,7 @@ let zhWarned=false;
 const HANYU_TTS_RATE = 0.65, HANYU_TTS_SLOW = 0.45;
 window.HANYU_TTS_RATE = HANYU_TTS_RATE;
 window.HANYU_TTS_SLOW = HANYU_TTS_SLOW;
-let _coreSpeakSeq=0,_coreSpeakTimer=null;
+let _coreUtterance=null;
 function speak(text,rate,onEnd){
   if(!text){if(typeof onEnd==='function')onEnd();return;}
   if(typeof AzureSpeech!=='undefined'&&AzureSpeech&&AzureSpeech.speak){
@@ -52,36 +52,27 @@ function speak(text,rate,onEnd){
     toast('Thiết bị chưa hỗ trợ đọc mẫu');if(typeof onEnd==='function')onEnd();return;
   }
   try{
-    const mySeq=++_coreSpeakSeq;
-    if(_coreSpeakTimer){clearTimeout(_coreSpeakTimer);_coreSpeakTimer=null;}
-    const wasSpeaking=Boolean(speechSynthesis.speaking||speechSynthesis.pending);
+    if(_coreUtterance){_coreUtterance.onend=null;_coreUtterance.onerror=null;_coreUtterance=null;}
+    if(speechSynthesis.speaking||speechSynthesis.pending)speechSynthesis.cancel();
     const u=new SpeechSynthesisUtterance(text);u.lang='zh-CN';u.volume=1.0;u.rate=Math.max(0.4,+rate||HANYU_TTS_RATE);
     const voices=speechSynthesis.getVoices()||[];
     const v=voices.find(x=>x.lang&&x.lang.toLowerCase().startsWith('zh'));
     if(v)u.voice=v;
     else if(voices.length>0&&!zhWarned){zhWarned=true;toast('Thiết bị chưa có giọng đọc tiếng Trung (zh-CN)');}
-    if(typeof onEnd==='function')u.onend=onEnd;
-    u.onerror=()=>{if(!zhWarned){zhWarned=true;toast('Không thể phát âm thanh tiếng Trung trên thiết bị này');}if(typeof onEnd==='function')onEnd();};
-    if(wasSpeaking)speechSynthesis.cancel();
-    _coreSpeakTimer=setTimeout(()=>{
-      _coreSpeakTimer=null;
-      if(mySeq!==_coreSpeakSeq)return;
-      try{speechSynthesis.speak(u);}catch(_){if(typeof onEnd==='function')onEnd();}
-    },wasSpeaking?25:0);
-  }catch(e){toast('Thiết bị chưa hỗ trợ đọc mẫu');if(typeof onEnd==='function')onEnd();}
+    u.onend=()=>{if(_coreUtterance===u)_coreUtterance=null;if(typeof onEnd==='function')onEnd();};
+    u.onerror=()=>{if(_coreUtterance===u)_coreUtterance=null;if(!zhWarned){zhWarned=true;toast('Không thể phát âm thanh tiếng Trung trên thiết bị này');}if(typeof onEnd==='function')onEnd();};
+    _coreUtterance=u;
+    speechSynthesis.speak(u);
+  }catch(e){_coreUtterance=null;toast('Thiết bị chưa hỗ trợ đọc mẫu');if(typeof onEnd==='function')onEnd();}
 }
+window._stopTts=function(){
+  try{
+    if(typeof AzureSpeech!=='undefined'&&AzureSpeech&&AzureSpeech.stopAudio)AzureSpeech.stopAudio();
+    else if(typeof speechSynthesis!=='undefined'&&(speechSynthesis.speaking||speechSynthesis.pending))speechSynthesis.cancel();
+  }catch(_){}
+};
 if(typeof speechSynthesis!=='undefined'&&speechSynthesis.addEventListener){
   try{speechSynthesis.addEventListener('voiceschanged',()=>{zhWarned=false});}catch(e){}
-}
-const rnd=(a,b)=>Math.round(a+Math.random()*(b-a));
-function newScores(){const s={init:rnd(72,96),fin:rnd(72,96),tone:rnd(64,94),flu:rnd(70,95)};s.total=Math.floor((s.init+s.fin+s.tone+s.flu)/4);return s}
-const labelOf=t=>t>=90?'Rất tốt':t>=80?'Khá tốt':'Cần luyện thêm';
-const TIPS={init:"Âm đầu của ‘xǐhuan’ chưa rõ, thử đặt đầu lưỡi sau răng dưới khi phát âm ‘x’.",fin:"Vần ‘uan’ cần tròn môi hơn và đọc liền mạch.",tone:"Thanh điệu của ‘xǐhuan’ chưa rõ, thử nâng rõ thanh 3 ở âm ‘xǐ’.",flu:"Đọc liền hơi hơn, tránh ngắt giữa các âm tiết."};
-function weakest(s){return ['init','fin','tone','flu'].reduce((a,b)=>s[b]<s[a]?b:a,'init')}
-function fakeRecord(btn,label,done){
-  if(btn.classList.contains('rec'))return;
-  btn.classList.add('rec');label.textContent='Đang ghi âm…';
-  setTimeout(()=>{btn.classList.remove('rec');label.textContent='Nhấn để ghi âm';done(newScores())},1600);
 }
 
 /* ---------- Router (hoạt động cả khi WebView chặn hashchange) ---------- */
@@ -464,18 +455,56 @@ function migrateStore(raw){
   return base;
 }
 function loadStore(){
+  if(typeof localStorage==='undefined')return defaultStore();
+  let rawStr='';
   try{
-    if(typeof localStorage==='undefined')return defaultStore();
-    const s=localStorage.getItem(STORAGE_KEY);if(!s)return defaultStore();
-    const p=JSON.parse(s),m=migrateStore(p);
+    rawStr=localStorage.getItem(STORAGE_KEY)||'';
+    if(!rawStr)return defaultStore();
+    const p=JSON.parse(rawStr),m=migrateStore(p);
+    try{localStorage.setItem(STORAGE_KEY+'_bak',JSON.stringify(m));}catch(_){}
     if(!p.version||p.version<SCHEMA_VERSION)saveStore(m,{skipCloud:true});
     return m;
-  }catch(e){return defaultStore();}
+  }catch(e){
+    if(rawStr){
+      try{localStorage.setItem(STORAGE_KEY+'_corrupt_'+Date.now(),rawStr);}catch(_){}
+    }
+    try{
+      const bak=localStorage.getItem(STORAGE_KEY+'_bak');
+      if(bak){
+        const recovered=migrateStore(JSON.parse(bak));
+        setTimeout(()=>{if(typeof toast==='function')toast('Đã khôi phục tiến độ từ bản dự phòng');},600);
+        return recovered;
+      }
+    }catch(_){}
+    setTimeout(()=>{if(typeof toast==='function')toast('Phát hiện lỗi dữ liệu cục bộ — đã sao lưu bản hỏng');},600);
+    return defaultStore();
+  }
 }
-let storageWarned=false;
+function showStorageWarnBanner(show){
+  if(typeof document==='undefined')return;
+  let el=document.getElementById('hanyu-storage-warn');
+  if(!show){
+    if(el)el.remove();
+    return;
+  }
+  if(el)return;
+  el=document.createElement('div');
+  el.id='hanyu-storage-warn';
+  el.setAttribute('role','alert');
+  el.style.cssText='position:fixed;top:max(8px,env(safe-area-inset-top,8px));left:50%;transform:translateX(-50%);z-index:998;max-width:min(520px,calc(100vw - 24px));background:#9B1C1C;color:#fff;padding:10px 14px;border-radius:12px;font:600 13px/1.4 var(--ui,sans-serif);box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;align-items:center;gap:10px';
+  el.innerHTML='<span>Chưa lưu được tiến độ vào bộ nhớ trình duyệt — hãy xuất sao lưu JSON trong mục Cá nhân.</span><button type="button" aria-label="Đóng" style="background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:8px;padding:4px 8px;cursor:pointer;font-weight:700">✕</button>';
+  const btn=el.querySelector('button');
+  if(btn)btn.onclick=()=>el.remove();
+  (document.body||document.documentElement).appendChild(el);
+}
 function saveStore(st,opts){
-  try{if(typeof localStorage!=='undefined')localStorage.setItem(STORAGE_KEY,JSON.stringify(st));}
-  catch(e){if(!storageWarned){storageWarned=true;toast('Không thể lưu tiến độ vào bộ nhớ trình duyệt');}}
+  try{
+    if(typeof localStorage!=='undefined')localStorage.setItem(STORAGE_KEY,JSON.stringify(st));
+    showStorageWarnBanner(false);
+  }catch(e){
+    showStorageWarnBanner(true);
+    toast('Không thể lưu tiến độ vào bộ nhớ trình duyệt');
+  }
   if(!(opts&&opts.skipCloud)&&typeof window.HanyuAuth!=='undefined'&&typeof window.HanyuAuth.scheduleCloudPush==='function'){
     try{window.HanyuAuth.scheduleCloudPush(st);}catch(_){}
   }
@@ -806,9 +835,15 @@ function updateGlobalCounts(){
       }
     }catch(_){}
   }
+  const isIOSDevice=()=>/iPhone|iPad|iPod/i.test(navigator.userAgent||'')||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
   window.playSfx=function(kind){
     try{
       if(typeof store!=='undefined'&&store.settings&&store.settings.sfx===false)return;
+      if(isIOSDevice()){
+        // Tránh <audio> chiếm AVAudioSession làm ngắt/chậm speechSynthesis trên iPhone/iPad
+        fallbackWebAudioSfx(kind);
+        return;
+      }
       const urls=getSfxUrls();
       const url=urls[kind];
       const a=getSfxAudioEl();
