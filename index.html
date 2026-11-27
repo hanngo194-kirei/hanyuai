@@ -640,13 +640,14 @@
 <div class="pad" id="pad">
 <div class="ghost" id="wghost">—</div>
 <div class="hw-box" id="hw-target"></div>
+<div class="hw-num-overlay hide" id="hw-num-overlay" aria-hidden="true"></div>
 <canvas aria-label="Khung tự viết chữ Hán, dùng chuột hoặc bút cảm ứng S-Pen" id="cv"></canvas>
 </div>
 </div>
 <!-- Dải nét cho chế độ Xem nét -->
 <div class="card hide" id="w-order-panel" style="padding:10px 12px">
-<div class="barrow" style="justify-content:space-between"><b class="small" id="w-stroke-cur">Nét 1 / 12</b><span class="small muted" id="w-net-note">Dữ liệu Hanzi Writer</span></div>
-<div class="stroke-strip" id="w-strip"></div>
+<div class="barrow" style="justify-content:space-between"><b class="small" id="w-stroke-cur">Nét 1 / 12</b><span class="small muted" id="w-net-note">Chạm số trên ô giấy hoặc bấm Phát</span></div>
+<div class="stroke-strip hide" id="w-strip"></div>
 <div class="tools" style="grid-template-columns:repeat(4,1fr);gap:6px">
 <button id="wo-prev" type="button"><svg class="ic"><use href="#i-back"></use></svg>Trước</button>
 <button id="wo-play" type="button"><svg class="ic f"><use href="#i-play"></use></svg>Phát</button>

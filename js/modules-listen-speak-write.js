@@ -1808,7 +1808,7 @@ try{
 
 /* ---------- Công đoạn 5 + Đợt 3: Luyện viết chữ Hán (Apple Pencil / S Pen + 2 ô đối chiếu) ---------- */
 const cv=$('#cv'),cx=cv.getContext('2d'),pad=$('#pad'),hwBox=$('#hw-target');
-let ci=0,wMode=(store.writing&&store.writing.mode)||'trace',wOutline=true,drawing=false,strokesHist=[],curStroke=[],wPenActive=false,hwLibPromise=null,hwWriter=null,hwCharData=null,hwPlaying=false,hwPaused=false,hwStrokeIdx=0,runMistakes=0,runHints=0,runDone=false,loadSeq=0;
+let ci=0,wMode=(store.writing&&store.writing.mode)||'trace',wOutline=true,drawing=false,strokesHist=[],curStroke=[],wPenActive=false,hwLibPromise=null,hwWriter=null,hwCharData=null,hwPlaying=false,hwPaused=false,hwStrokeIdx=0,quizStrokeIdx=0,runMistakes=0,runHints=0,runDone=false,loadSeq=0;
 
 function enrichCharMeta(c){
   if(!c)return c;
@@ -2356,7 +2356,62 @@ function buildMedianGeom(medianPts){
   return {d,totalLen:Number(totalLen.toFixed(2)),pointAt};
 }
 
-// Render SVG thứ tự nét thủ công để highlight & mô phỏng chuyển động viết thật theo quỹ đạo nét (medians)
+function computeStrokeNumberPositions(medians){
+  if(!Array.isArray(medians)||!medians.length)return [];
+  const raw=medians.map(pts=>{
+    if(!Array.isArray(pts)||!pts.length)return {x:512,y:512};
+    const p0=pts[0];
+    let bx=Number(p0[0])||0,by=Number(p0[1])||0;
+    if(pts.length>=2){
+      const p1=pts[1];
+      const dx=(Number(p1[0])||0)-bx,dy=(Number(p1[1])||0)-by,len=Math.hypot(dx,dy);
+      if(len>1){bx-=dx/len*18;by-=dy/len*18;}
+    }
+    // Chuyển sang tọa độ xuôi 1024x1024 khớp transform scale(1,-1) translate(0,-900)
+    return {
+      x:Math.max(46,Math.min(978,bx)),
+      y:Math.max(46,Math.min(978,900-by))
+    };
+  });
+  for(let pass=0;pass<3;pass++){
+    for(let i=0;i<raw.length;i++){
+      for(let j=i+1;j<raw.length;j++){
+        const dx=raw[j].x-raw[i].x,dy=raw[j].y-raw[i].y,dist=Math.hypot(dx,dy);
+        if(dist<74){
+          const ux=dist>0.5?dx/dist:0.707,uy=dist>0.5?dy/dist:0.707;
+          const push=(74-dist)*0.52;
+          raw[i].x=Math.max(46,Math.min(978,raw[i].x-ux*push));
+          raw[i].y=Math.max(46,Math.min(978,raw[i].y-uy*push));
+          raw[j].x=Math.max(46,Math.min(978,raw[j].x+ux*push));
+          raw[j].y=Math.max(46,Math.min(978,raw[j].y+uy*push));
+        }
+      }
+    }
+  }
+  return raw;
+}
+function buildStrokeNumberBadgesSvg(medians,activeIdx,clickable){
+  const pos=computeStrokeNumberPositions(medians);
+  if(!pos.length)return '';
+  return pos.map((p,k)=>{
+    const cls=k<activeIdx?'done':k===activeIdx?'now':'';
+    const attr=clickable?` data-osi="${k}"`:'';
+    return `<g class="wo-num ${cls}"${attr} transform="translate(${p.x.toFixed(1)},${p.y.toFixed(1)})"><circle class="wo-num-bg" r="31"/><text class="wo-num-txt" y="1">${k+1}</text></g>`;
+  }).join('');
+}
+function renderQuizNumberOverlay(activeIdx,visible){
+  const ov=$('#hw-num-overlay');
+  if(!ov)return;
+  if(!visible||!hwCharData||!Array.isArray(hwCharData.medians)||!hwCharData.medians.length){
+    ov.classList.add('hide');
+    ov.innerHTML='';
+    return;
+  }
+  ov.innerHTML=`<svg viewBox="0 0 1024 1024">${buildStrokeNumberBadgesSvg(hwCharData.medians,activeIdx,false)}</svg>`;
+  ov.classList.remove('hide');
+}
+
+// Render SVG thứ tự nét thủ công để highlight, đánh số trên ô giấy & chạy chuyển động viết mượt theo quỹ đạo (medians)
 function renderOrderSvg(activeIdx,animateStroke,onAnimDone){
   if(!hwCharData)return;
   if(orderRaf){cancelAnimationFrame(orderRaf);orderRaf=null;}
@@ -2364,7 +2419,6 @@ function renderOrderSvg(activeIdx,animateStroke,onAnimDone){
   const mySeq=++orderAnimSeq;
   const total=hwCharData.strokes.length;
   $('#w-stroke-cur').textContent=`Nét ${Math.min(activeIdx+1,total)} / ${total}`;
-  renderStrokeStrip();
 
   const guidePaths=[],donePaths=[];
   for(let k=0;k<total;k++){
@@ -2376,6 +2430,7 @@ function renderOrderSvg(activeIdx,animateStroke,onAnimDone){
   const curD=hwCharData.strokes[activeIdx]||'';
   const med=hwCharData.medians&&hwCharData.medians[activeIdx];
   const geom=animateStroke?buildMedianGeom(med):null;
+  const badgesSvg=buildStrokeNumberBadgesSvg(hwCharData.medians,activeIdx,true);
 
   if(animateStroke&&geom){
     const startPt=geom.pointAt(0);
@@ -2385,19 +2440,20 @@ function renderOrderSvg(activeIdx,animateStroke,onAnimDone){
         ${guidePaths.join('')}
         <path d="${curD}" fill="var(--line)" opacity="0.55"/>
         ${donePaths.join('')}
-        <path id="wo-anim-stroke" d="${geom.d}" fill="none" stroke="var(--accent)" stroke-width="210" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#wo-clip-cur)" stroke-dasharray="${geom.totalLen}" stroke-dashoffset="${geom.totalLen}"/>
-        <circle id="wo-anim-dot" cx="${startPt.x.toFixed(1)}" cy="${startPt.y.toFixed(1)}" r="22" fill="#FFF9F4" stroke="var(--accent)" stroke-width="10"/>
+        <path id="wo-anim-stroke" d="${geom.d}" fill="none" stroke="var(--accent)" stroke-width="235" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#wo-clip-cur)" stroke-dasharray="${geom.totalLen}" stroke-dashoffset="${geom.totalLen}"/>
+        <circle id="wo-anim-dot" cx="${startPt.x.toFixed(1)}" cy="${startPt.y.toFixed(1)}" r="20" fill="#FFF9F4" stroke="var(--accent)" stroke-width="9"/>
       </g>
+      <g class="wo-num-layer">${badgesSvg}</g>
     </svg>`;
     const animPath=$('#wo-anim-stroke',hwBox);
     const animDot=$('#wo-anim-dot',hwBox);
-    const durMs=Math.max(420,Math.min(880,Math.round(geom.totalLen*0.72)));
+    const durMs=Math.max(480,Math.min(950,Math.round(geom.totalLen*0.82)));
     const t0=(typeof performance!=='undefined'&&performance.now)?performance.now():Date.now();
     const step=()=>{
       if(mySeq!==orderAnimSeq||!animPath||!animPath.isConnected){orderRaf=null;return;}
       const now=(typeof performance!=='undefined'&&performance.now)?performance.now():Date.now();
       const raw=Math.min(1,Math.max(0,(now-t0)/durMs));
-      const eased=raw<0.5?4*raw*raw*raw:1-Math.pow(-2*raw+2,3)/2;
+      const eased=0.5-0.5*Math.cos(Math.PI*raw);
       const drawn=geom.totalLen*eased;
       animPath.style.strokeDashoffset=String((geom.totalLen-drawn).toFixed(2));
       if(animDot){
@@ -2426,14 +2482,15 @@ function renderOrderSvg(activeIdx,animateStroke,onAnimDone){
     return;
   }
 
-  hwBox.innerHTML=`<svg viewBox="0 0 1024 1024" aria-label="Thứ tự nét ${CHARS[ci].ch}"><g transform="scale(1,-1) translate(0,-900)">${guidePaths.join('')}${donePaths.join('')}<path d="${curD}" fill="var(--accent)" opacity="1"/></g></svg>`;
+  hwBox.innerHTML=`<svg viewBox="0 0 1024 1024" aria-label="Thứ tự nét ${CHARS[ci].ch}"><g transform="scale(1,-1) translate(0,-900)">${guidePaths.join('')}${donePaths.join('')}<path d="${curD}" fill="var(--accent)" opacity="1"/></g><g class="wo-num-layer">${badgesSvg}</g></svg>`;
   if(typeof onAnimDone==='function'){
-    orderPauseTimer=setTimeout(()=>{orderPauseTimer=null;if(mySeq===orderAnimSeq)onAnimDone();},500);
+    orderPauseTimer=setTimeout(()=>{orderPauseTimer=null;if(mySeq===orderAnimSeq)onAnimDone();},480);
   }
 }
 
 function stopWriter(){
   stopOrderAnim();
+  renderQuizNumberOverlay(0,false);
   if(hwWriter){try{if(hwWriter.cancelQuiz)hwWriter.cancelQuiz();if(hwWriter.pauseAnimation)hwWriter.pauseAnimation();}catch(_){}}
   hwWriter=null;hwPlaying=false;hwPaused=false;
   const pb=$('#wo-play');if(pb)pb.innerHTML='<svg class="ic f"><use href="#i-play"/></svg>Phát';
@@ -2507,18 +2564,20 @@ async function setupPadForChar(){
     $('#w-strokes-tag').classList.remove('hide');
 
     if(wMode==='order'){
+      renderQuizNumberOverlay(0,false);
       hwStrokeIdx=0;
-      renderOrderSvg(0);
-      setWriteFb('','Bấm “Phát” để xem hoạt ảnh từ nét đầu đến nét cuối hoặc chạm từng nét.');
+      setWriteFb('','Bấm vào số thứ tự nét trên ô giấy hoặc nút “Phát” để xem chuyển động nét bút.');
+      playOrderFrom(0);
       return;
     }
 
     const size=Math.round(pad.getBoundingClientRect().width)||300;
-    const outlineVisible=wMode==='trace'?true:wOutline;
-    $('#w-outline span').textContent=outlineVisible?'Ẩn mẫu':'Hiện mẫu';
+    wOutline=(wMode==='trace');
+    quizStrokeIdx=0;
+    $('#w-outline span').textContent=wOutline?'Ẩn mẫu':'Hiện mẫu';
     hwWriter=HW.create('hw-target',c.ch,{
       width:size,height:size,padding:16,
-      showOutline:outlineVisible,
+      showOutline:wOutline,
       showCharacter:false,
       strokeColor:'#4B1E17',
       outlineColor:'#D9C2BA',
@@ -2528,22 +2587,26 @@ async function setupPadForChar(){
       strokeAnimationSpeed:1,
       delayBetweenStrokes:220
     });
-    setWriteFb('',wMode==='trace'?'Tô theo chữ mẫu mờ đúng thứ tự từng nét.':'Viết chữ theo trí nhớ; hệ thống sẽ kiểm tra từng nét.');
+    renderQuizNumberOverlay(0,wOutline);
+    setWriteFb('',wMode==='trace'?'Tô theo chữ mẫu mờ đúng thứ tự 1 → 2 → 3… (bấm “Ẩn mẫu” để tự viết không nhìn số nét).':'Chữ mẫu & số thứ tự đã ẩn: tự nhớ viết đúng thứ tự nét; nét viết sai thứ tự sẽ không được nhận.');
     hwWriter.quiz({
-      showHintAfterMisses:2,
+      showHintAfterMisses:false,
       highlightOnComplete:true,
       onMistake(){
         runMistakes++;
         if(typeof playSfx==='function')playSfx('no');
-        setWriteFb('no','Nét này chưa đúng hướng hoặc thứ tự, hãy thử lại.');
+        setWriteFb('no','Sai thứ tự hoặc hướng nét — nét chưa được nhận, hãy viết đúng thứ tự!');
       },
       onCorrectStroke(info){
         const left=info.strokesRemaining;
-        setWriteFb('ok',left>0?`Tốt! Còn ${left} nét nữa.`:'Đủ nét rồi!');
+        quizStrokeIdx=Math.max(0,c.strokes-left);
+        renderQuizNumberOverlay(quizStrokeIdx,wOutline);
+        setWriteFb('ok',left>0?`Đúng thứ tự! Còn ${left} nét nữa.`:'Đủ nét rồi!');
       },
       onComplete(summary){
         if(runDone)return;
         runDone=true;
+        renderQuizNumberOverlay(c.strokes,false);
         if(typeof playSfx==='function')playSfx('ok');
         const totalSt=c.strokes;
         const prev=getWriteRec(c.id);
@@ -2654,7 +2717,7 @@ function playOrderFrom(startIdx){
           if(!hwPlaying||!hwCharData)return;
           hwStrokeIdx++;
           stepPlay();
-        },220);
+        },150);
       }else{
         stopOrderAnim();
       }
@@ -2671,6 +2734,12 @@ $('#wo-play').onclick=()=>{
 $('#wo-prev').onclick=()=>{stopOrderAnim();if(!hwCharData)return;hwStrokeIdx=Math.max(0,hwStrokeIdx-1);renderOrderSvg(hwStrokeIdx,true);};
 $('#wo-next').onclick=()=>{stopOrderAnim();if(!hwCharData)return;hwStrokeIdx=Math.min(hwCharData.strokes.length-1,hwStrokeIdx+1);renderOrderSvg(hwStrokeIdx,true);};
 $('#wo-replay').onclick=()=>{stopOrderAnim();if(!hwCharData)return;playOrderFrom(0);};
+hwBox.addEventListener('click',e=>{
+  if(wMode!=='order'||!hwCharData)return;
+  const b=e.target.closest('[data-osi]');
+  if(!b)return;
+  stopOrderAnim();hwStrokeIdx=+b.dataset.osi;renderOrderSvg(hwStrokeIdx,true);
+});
 $('#w-strip').addEventListener('click',e=>{
   const b=e.target.closest('[data-si]');if(!b||!hwCharData)return;
   stopOrderAnim();hwStrokeIdx=+b.dataset.si;renderOrderSvg(hwStrokeIdx,true);
@@ -2680,7 +2749,7 @@ $('#w-strip').addEventListener('click',e=>{
 $('#w-hint').onclick=()=>{
   if(!hwWriter||runDone)return;
   runHints++;
-  try{hwWriter.highlightStroke(Math.min((hwCharData?hwCharData.strokes.length-1:0),hwWriter._quiz?hwWriter._quiz._currentStrokeIndex:0));}
+  try{hwWriter.highlightStroke(Math.min((hwCharData?hwCharData.strokes.length-1:0),quizStrokeIdx));}
   catch(_){try{hwWriter.showOutline();}catch(__){}}
   toast('Đã hiện gợi ý nét tiếp theo');
 };
@@ -2688,6 +2757,7 @@ $('#w-outline').onclick=()=>{
   if(!hwWriter)return;
   wOutline=!wOutline;
   if(wOutline)hwWriter.showOutline();else hwWriter.hideOutline();
+  renderQuizNumberOverlay(quizStrokeIdx,!runDone&&wOutline);
   $('#w-outline span').textContent=wOutline?'Ẩn mẫu':'Hiện mẫu';
 };
 $('#w-reset-quiz').onclick=()=>setupPadForChar();
